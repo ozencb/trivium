@@ -1,0 +1,18 @@
+id: horizontal-scaling
+title: Horizontal Scaling
+category:
+  - Architecture
+  - Scalability
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - stateless-processes
+  - load-balancing
+dependents:
+  - sharding
+brief: Adding more instances rather than larger ones to handle increased load; requires stateless processes, externalized state, and a load balancer, but avoids the hard ceiling of vertical scaling.

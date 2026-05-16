@@ -1,0 +1,14 @@
+id: compositing-layers
+title: Compositing Layers
+category:
+  - Frontend
+  - Browsers
+roles:
+  - frontend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - browser-rendering-pipeline
+dependents: []
+brief: The GPU-accelerated phase where independently painted layers are combined; promoting elements to their own layer enables smooth animations but increases VRAM consumption.

@@ -1,0 +1,20 @@
+id: load-balancing
+title: Load Balancing
+category:
+  - Distributed Systems
+  - Traffic Management
+roles:
+  - backend
+  - sre
+  - devops
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - service-discovery
+  - dns-resolution
+dependents:
+  - service-mesh
+  - consistent-hashing
+brief: Distributing inbound traffic across a pool of healthy instances prevents hotspots and keeps latency stable as request volume shifts.

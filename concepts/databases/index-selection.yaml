@@ -1,0 +1,16 @@
+id: index-selection
+title: Index Selection
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - database-indexing
+  - query-optimization
+dependents: []
+brief: Choosing which columns and index types to create requires trading write amplification and storage against read latency for the actual query patterns in production.

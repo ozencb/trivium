@@ -1,0 +1,14 @@
+id: event-delegation
+title: Event Delegation
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents: []
+brief: Attaching one listener to a parent and discriminating by event.target exploits bubbling to handle many descendants without per-element listener overhead.

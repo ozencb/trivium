@@ -1,0 +1,17 @@
+id: outbox-pattern
+title: Transactional Outbox Pattern
+category:
+  - Architecture
+  - Messaging
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - distributed-transactions
+  - event-driven-architecture
+dependents:
+  - change-data-capture
+brief: Writing both the domain record and the outgoing event to the same database transaction, then delivering the event from an outbox table, eliminating the dual-write consistency gap.

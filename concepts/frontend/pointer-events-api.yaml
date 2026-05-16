@@ -1,0 +1,13 @@
+id: pointer-events-api
+title: Pointer Events API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: A unified input model handling mouse, touch, and stylus through a single event interface, eliminating device-specific branching and supporting multi-pointer tracking.

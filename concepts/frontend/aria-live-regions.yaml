@@ -1,0 +1,14 @@
+id: aria-live-regions
+title: ARIA Live Regions
+category:
+  - Frontend
+  - Accessibility
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - accessibility-tree
+dependents: []
+brief: Markup attributes that instruct screen readers to announce dynamic content changes—status updates, alerts, notifications—without requiring the user to navigate to them.

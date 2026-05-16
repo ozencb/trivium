@@ -1,0 +1,8 @@
+id: "tls-handshake"
+title: "TLS Handshake"
+category: ["Security", "Cryptography"]
+roles: [backend, sre, fullstack]
+lenses: [practical, foundational]
+prerequisites: ["tcp-basics", "public-key-crypto"]
+dependents: ["mtls", "certificate-pinning"]
+brief: "How client and server establish an encrypted connection and verify identity"

@@ -1,0 +1,14 @@
+id: shrinking-strategies
+title: Shrinking Strategies
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - property-based-testing
+dependents: []
+brief: The property-based testing engine's ability to reduce a failing input to its minimal reproducing case, making root-cause analysis tractable for randomly discovered failures.

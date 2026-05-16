@@ -1,0 +1,15 @@
+id: port-binding
+title: Port Binding
+category:
+  - Architecture
+  - Cloud Native
+roles:
+  - backend
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - twelve-factor-app
+dependents:
+  - container-internals
+brief: Services expose themselves by binding to a network port directly rather than relying on external web server injection, making the app self-contained and composable.

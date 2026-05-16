@@ -1,0 +1,15 @@
+id: admission-control
+title: Admission Control
+category:
+  - Architecture
+  - Reliability
+roles:
+  - backend
+  - sre
+lenses:
+  - career
+prerequisites:
+  - rate-limiting
+  - bulkhead-pattern
+dependents: []
+brief: Rejecting requests at ingress when the system is near capacity rather than queuing them, preventing latency from degrading for all in-flight requests when load exceeds what can be served well.

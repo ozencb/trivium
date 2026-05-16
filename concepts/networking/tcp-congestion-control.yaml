@@ -1,0 +1,8 @@
+id: "tcp-congestion-control"
+title: "TCP Congestion Control"
+category: ["Networking", "TCP/IP"]
+roles: [backend, sre]
+lenses: [foundational, practical]
+prerequisites: ["tcp-basics"]
+dependents: ["http2-flow-control"]
+brief: "How TCP adapts sending rate to avoid overwhelming the network"

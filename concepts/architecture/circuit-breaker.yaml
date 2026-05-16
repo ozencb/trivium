@@ -1,0 +1,17 @@
+id: circuit-breaker
+title: Circuit Breaker
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - timeout-patterns
+dependents:
+  - bulkhead-pattern
+brief: Wrapping remote calls in a state machine that trips open after repeated failures, failing fast to prevent cascading overload while periodically probing for recovery.

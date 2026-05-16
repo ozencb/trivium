@@ -1,0 +1,15 @@
+id: ssh-keys
+title: SSH Key Authentication
+category:
+  - Security
+  - Cryptography
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - public-key-crypto
+dependents: []
+brief: Challenge-response authentication where the server verifies ownership of a private key without it ever leaving the client, replacing password authentication for interactive and automated access.

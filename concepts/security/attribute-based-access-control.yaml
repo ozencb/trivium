@@ -1,0 +1,14 @@
+id: attribute-based-access-control
+title: Attribute-Based Access Control
+category:
+  - Security
+  - Authorization
+roles:
+  - backend
+  - sre
+lenses:
+  - career
+prerequisites:
+  - rbac
+dependents: []
+brief: Policy decisions based on arbitrary attributes of the subject, resource, and environment rather than static role assignments, enabling fine-grained authorization at the cost of policy complexity.

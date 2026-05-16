@@ -1,0 +1,15 @@
+id: jwt-signing
+title: JWT Signing and Verification
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - public-key-crypto
+dependents:
+  - jwt-auth
+brief: Asymmetric or symmetric signing of JSON Web Tokens to produce tamper-evident claims; understanding the difference between RS256 and HS256 matters for key rotation and service trust.

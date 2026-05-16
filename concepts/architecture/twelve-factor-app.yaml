@@ -1,0 +1,8 @@
+id: "twelve-factor-app"
+title: "Twelve-Factor App"
+category: ["Architecture", "Cloud Native"]
+roles: [backend, sre, devops, fullstack]
+lenses: [practical, career]
+prerequisites: []
+dependents: ["config-management", "stateless-processes", "port-binding"]
+brief: "The methodology for building apps that deploy cleanly to cloud platforms — why config in env vars, stateless processes, and disposability matter"

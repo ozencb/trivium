@@ -1,0 +1,13 @@
+id: svg-animation
+title: SVG Animation
+category:
+  - Frontend
+  - Animation
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Animating SVG elements via CSS or WAAPI produces resolution-independent vector animations without canvas overhead, but path morphing and clip-path have specific browser constraints.

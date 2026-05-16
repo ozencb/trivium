@@ -1,0 +1,14 @@
+id: session-management
+title: Session Management
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - stateless-processes
+dependents: []
+brief: Tracking authenticated user state across stateless HTTP requests via server-side session stores or signed client tokens, where the choice affects scalability, revocation capability, and sticky-session requirements.

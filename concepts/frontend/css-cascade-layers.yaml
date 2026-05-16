@@ -1,0 +1,13 @@
+id: css-cascade-layers
+title: CSS Cascade Layers
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Explicit layer ordering via @layer lets resets, library styles, and utilities compose by declared priority rather than specificity, eliminating !important escalation.

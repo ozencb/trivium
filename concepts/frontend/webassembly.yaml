@@ -1,0 +1,16 @@
+id: webassembly
+title: WebAssembly
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - wasm-memory-model
+  - offscreen-canvas
+brief: A binary instruction format that runs near-native CPU code in the browser, enabling C, Rust, and Go programs to execute on the web with predictable performance.

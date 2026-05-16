@@ -1,0 +1,14 @@
+id: token-bucket-algorithm
+title: Token Bucket Algorithm
+category:
+  - Algorithms
+  - Rate Limiting
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - rate-limiting
+dependents: []
+brief: A rate limiting algorithm that refills tokens at a constant rate and allows bursts up to bucket capacity, giving callers predictable burst allowances while enforcing a sustained rate ceiling.

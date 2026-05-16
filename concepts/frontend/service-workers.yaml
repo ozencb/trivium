@@ -1,0 +1,18 @@
+id: service-workers
+title: Service Workers
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - cache-api
+  - background-sync
+  - push-notifications-web
+  - offline-first
+brief: A proxy script running in a separate browser thread that intercepts network requests, enabling offline support, background sync, and push notifications.

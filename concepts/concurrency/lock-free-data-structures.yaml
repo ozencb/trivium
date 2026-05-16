@@ -1,0 +1,15 @@
+id: lock-free-data-structures
+title: Lock-Free Data Structures
+category:
+  - Concurrency
+  - Synchronization
+roles:
+  - backend
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - thread-safety
+  - mutexes-and-locks
+dependents: []
+brief: Structures that use atomic compare-and-swap operations to progress without mutual exclusion, trading implementation complexity for elimination of lock-induced contention.

@@ -1,0 +1,16 @@
+id: rollback-strategies
+title: Rollback Strategies
+category:
+  - DevOps
+  - Deployment Strategies
+roles:
+  - sre
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - blue-green-deployments
+dependents:
+  - database-migrations
+brief: Pre-planned mechanisms to revert a bad deployment quickly; the constraints of stateful services and schema migrations usually make forward fixes safer than true rollback.

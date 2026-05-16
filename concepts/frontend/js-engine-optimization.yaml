@@ -1,0 +1,13 @@
+id: js-engine-optimization
+title: JavaScript Engine Optimization
+category:
+  - Frontend
+  - JavaScript
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+prerequisites: []
+dependents: []
+brief: V8 uses hidden classes and inline caches to JIT-speculate on type stability; polymorphic call sites and object shape changes cause deoptimization and silent slowdowns.

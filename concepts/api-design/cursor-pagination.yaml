@@ -1,0 +1,15 @@
+id: cursor-pagination
+title: Cursor-Based Pagination
+category:
+  - API Design
+  - Performance
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - api-pagination
+  - database-indexing
+dependents: []
+brief: Encoding the last-seen row as an opaque cursor rather than an offset, preventing page drift when rows are inserted or deleted and enabling efficient indexed lookups.

@@ -1,0 +1,16 @@
+id: edge-rendering
+title: Edge Rendering
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - server-side-rendering
+dependents: []
+brief: Running SSR in geographically-distributed edge runtimes close to users to minimize TTFB while retaining per-request personalization that CDN caching cannot serve.

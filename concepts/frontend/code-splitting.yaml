@@ -1,0 +1,15 @@
+id: code-splitting
+title: Code Splitting
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - dynamic-import
+  - bundler-internals
+dependents: []
+brief: Dividing an application bundle into smaller chunks loaded on demand so users only download code needed for the current route or interaction.

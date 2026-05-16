@@ -1,0 +1,16 @@
+id: web-workers
+title: Web Workers
+category:
+  - Frontend
+  - Concurrency
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - offscreen-canvas
+  - shared-array-buffer
+  - broadcast-channel
+brief: Background threads that run JavaScript off the main thread, preventing CPU-intensive work from blocking rendering and keeping the UI responsive.

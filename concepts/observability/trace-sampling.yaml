@@ -1,0 +1,15 @@
+id: trace-sampling
+title: Trace Sampling
+category:
+  - Observability
+  - Tracing
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - distributed-tracing
+dependents: []
+brief: Strategies for capturing a representative fraction of traces at acceptable storage cost; head-based sampling is cheap but misses rare errors that tail-based sampling catches.

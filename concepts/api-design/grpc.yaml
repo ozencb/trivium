@@ -1,0 +1,16 @@
+id: grpc
+title: gRPC
+category:
+  - API Design
+  - RPC
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - http2-flow-control
+  - protocol-buffers
+dependents: []
+brief: A contract-first RPC framework using HTTP/2 for multiplexed streams and Protocol Buffers for compact binary serialization, offering strongly-typed service interfaces and built-in flow control.

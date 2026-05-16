@@ -1,0 +1,15 @@
+id: shadow-dom
+title: Shadow DOM
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - web-components
+brief: An encapsulated DOM subtree where styles and structure are isolated from the main document, preventing CSS inheritance from leaking in or out of a component boundary.

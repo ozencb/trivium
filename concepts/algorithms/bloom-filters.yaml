@@ -1,0 +1,16 @@
+id: bloom-filters
+title: Bloom Filters
+category:
+  - Algorithms
+  - Probabilistic Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - hash-tables
+dependents:
+  - lsm-trees
+brief: A space-efficient probabilistic structure that answers "definitely not present" or "maybe present," trading false positives for dramatic memory savings in membership queries.

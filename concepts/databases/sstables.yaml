@@ -1,0 +1,15 @@
+id: sstables
+title: SSTables
+category:
+  - Databases
+  - Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+prerequisites:
+  - lsm-trees
+dependents:
+  - compaction
+brief: Immutable, sorted on-disk files that are the storage unit of LSM-tree engines; their immutability enables lock-free reads and simple crash recovery via append-only semantics.

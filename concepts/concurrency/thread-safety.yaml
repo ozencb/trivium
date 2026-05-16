@@ -1,0 +1,8 @@
+id: "thread-safety"
+title: "Thread Safety"
+category: ["Concurrency", "Fundamentals"]
+roles: [backend, sre, fullstack]
+lenses: [foundational]
+prerequisites: []
+dependents: ["mutexes-and-locks", "lock-free-data-structures", "race-conditions"]
+brief: "Why shared mutable state breaks under concurrent access and what guarantees code must provide to be safely callable from multiple threads"

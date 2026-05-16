@@ -1,0 +1,15 @@
+id: cors
+title: CORS
+category:
+  - Security
+  - Web
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - tls-handshake
+dependents: []
+brief: Browser-enforced policy restricting cross-origin requests to those explicitly permitted by the server via Access-Control headers; misconfiguration is the most common source of both CORS errors and overly permissive APIs.

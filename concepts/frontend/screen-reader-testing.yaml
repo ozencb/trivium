@@ -1,0 +1,14 @@
+id: screen-reader-testing
+title: Screen Reader Testing
+category:
+  - Frontend
+  - Accessibility
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - accessibility-tree
+dependents: []
+brief: Manually testing with real screen readers (NVDA, VoiceOver, JAWS) to catch semantic and flow errors that automated axe audits and snapshot tests cannot detect.

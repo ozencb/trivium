@@ -1,0 +1,16 @@
+id: es-modules
+title: ES Modules
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+prerequisites: []
+dependents:
+  - tree-shaking
+  - bundler-internals
+  - dynamic-import
+brief: The native static import/export system whose deterministic dependency graph enables bundler optimizations like tree-shaking and enables native browser module loading.

@@ -1,0 +1,14 @@
+id: backoff-jitter
+title: Jitter in Retries
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - retry-with-backoff
+dependents: []
+brief: Adding randomness to retry delays to desynchronize clients that all failed at the same moment, converting synchronized stampedes into smooth arrival distributions at the recovering service.

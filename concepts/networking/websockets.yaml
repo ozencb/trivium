@@ -1,0 +1,16 @@
+id: websockets
+title: WebSockets
+category:
+  - Networking
+  - Protocols
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - tcp-basics
+  - tls-handshake
+dependents: []
+brief: A full-duplex protocol that upgrades an HTTP connection to a persistent bidirectional channel, enabling real-time server push without the overhead of repeated HTTP handshakes.

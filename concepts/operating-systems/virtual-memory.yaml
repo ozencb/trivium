@@ -1,0 +1,8 @@
+id: "virtual-memory"
+title: "Virtual Memory"
+category: ["Operating Systems", "Memory"]
+roles: [backend, sre]
+lenses: [foundational]
+prerequisites: []
+dependents: ["page-caches", "memory-mapped-files", "swap"]
+brief: "How the OS gives each process the illusion of its own contiguous memory space"

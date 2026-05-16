@@ -1,0 +1,15 @@
+id: protocol-buffers
+title: Protocol Buffers
+category:
+  - API Design
+  - Serialization
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - grpc
+brief: A schema-first binary serialization format where field numbers provide backward compatibility; its compact wire format and generated type-safe code make it preferable to JSON for internal service communication.

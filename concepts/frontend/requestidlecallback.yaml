@@ -1,0 +1,15 @@
+id: requestidlecallback
+title: requestIdleCallback
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+  - long-tasks
+dependents: []
+brief: Defers non-critical work to periods when the browser is idle between frames, preventing expensive background tasks from blocking user-visible rendering.

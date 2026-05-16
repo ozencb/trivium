@@ -1,0 +1,17 @@
+id: replication-lag
+title: Replication Lag
+category:
+  - Databases
+  - Durability
+roles:
+  - backend
+  - sre
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - database-replication
+dependents:
+  - read-your-writes
+brief: The delay between a write committing on the primary and that write appearing on replicas, which forces engineers to reason about which queries can tolerate stale reads.

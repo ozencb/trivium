@@ -1,0 +1,15 @@
+id: suspense-boundaries
+title: Suspense Boundaries
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - concurrent-rendering
+  - fiber-architecture
+dependents: []
+brief: Declarative wrappers that catch promise-throwing components during render and display a fallback until async data or lazily-loaded code resolves.

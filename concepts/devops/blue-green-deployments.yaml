@@ -1,0 +1,8 @@
+id: "blue-green-deployments"
+title: "Blue-Green Deployments"
+category: ["DevOps", "Deployment Strategies"]
+roles: [sre, devops, backend]
+lenses: [practical]
+prerequisites: []
+dependents: ["canary-releases", "feature-flags", "rollback-strategies"]
+brief: "How maintaining two identical production environments lets you deploy with zero downtime and instant rollback"

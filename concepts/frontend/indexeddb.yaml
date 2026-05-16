@@ -1,0 +1,14 @@
+id: indexeddb
+title: IndexedDB
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - offline-first
+brief: A transactional, async object store in the browser supporting structured data, indexes, and cursors for large-scale client-side persistence beyond cookies and localStorage.

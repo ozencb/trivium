@@ -1,0 +1,18 @@
+id: database-replication
+title: Database Replication
+category:
+  - Databases
+  - Durability
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - write-ahead-log
+dependents:
+  - replication-lag
+  - read-replicas
+brief: Streaming WAL entries to replica nodes keeps copies in sync while letting reads scale horizontally without overloading the primary.

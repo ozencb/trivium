@@ -1,0 +1,18 @@
+id: lsm-trees
+title: LSM-Trees
+category:
+  - Databases
+  - Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - bloom-filters
+  - b-trees
+dependents:
+  - sstables
+  - compaction
+brief: Log-structured merge trees buffer writes in memory and flush sorted runs to disk, achieving high write throughput by converting random writes to sequential I/O at the cost of read amplification.

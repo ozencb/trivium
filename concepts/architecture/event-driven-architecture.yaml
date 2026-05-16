@@ -1,0 +1,20 @@
+id: event-driven-architecture
+title: Event-Driven Architecture
+category:
+  - Architecture
+  - Messaging
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - backpressure
+dependents:
+  - event-sourcing
+  - cqrs
+  - outbox-pattern
+  - saga-pattern
+brief: Structuring services to communicate via immutable events rather than direct calls, decoupling producers from consumers and creating a durable audit trail as a side effect.

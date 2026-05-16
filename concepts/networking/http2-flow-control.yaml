@@ -1,0 +1,8 @@
+id: "http2-flow-control"
+title: "HTTP/2 Flow Control"
+category: ["Networking", "HTTP"]
+roles: [backend, frontend]
+lenses: [practical]
+prerequisites: ["tcp-congestion-control"]
+dependents: []
+brief: "How HTTP/2 manages data flow between client and server at the application layer"

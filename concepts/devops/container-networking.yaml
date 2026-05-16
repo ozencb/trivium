@@ -1,0 +1,17 @@
+id: container-networking
+title: Container Networking
+category:
+  - DevOps
+  - Networking
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - container-internals
+  - dns-resolution
+dependents:
+  - service-mesh
+brief: Virtual network interfaces and overlay networks that give containers routable IP addresses and DNS names; understanding how kube-proxy and CNI plugins work explains many mysterious connectivity failures.

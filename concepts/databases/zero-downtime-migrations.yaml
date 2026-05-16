@@ -1,0 +1,16 @@
+id: zero-downtime-migrations
+title: Zero-Downtime Migrations
+category:
+  - Databases
+  - Operations
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - career
+prerequisites:
+  - database-migrations
+  - blue-green-deployments
+dependents: []
+brief: Multi-step schema changes (expand-contract) that keep old and new code simultaneously compatible, enabling deployments without taking the database offline.

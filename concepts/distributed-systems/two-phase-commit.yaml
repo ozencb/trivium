@@ -1,0 +1,16 @@
+id: two-phase-commit
+title: Two-Phase Commit
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - consensus-algorithms
+dependents:
+  - distributed-transactions
+brief: A coordinator-cohort protocol that achieves atomic cross-node commits via prepare and commit rounds; blocking on coordinator failure is the fundamental reason modern systems prefer sagas.

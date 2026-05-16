@@ -1,0 +1,15 @@
+id: write-through-vs-write-behind
+title: Write-Through vs Write-Behind Caching
+category:
+  - Performance
+  - Caching
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - cache-invalidation
+dependents: []
+brief: Write-through keeps cache and store synchronously consistent at the cost of write latency; write-behind batches writes asynchronously for throughput at the risk of data loss.

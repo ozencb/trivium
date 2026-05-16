@@ -1,0 +1,14 @@
+id: selector-memoization
+title: Selector Memoization
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - flux-architecture
+dependents: []
+brief: Caching derived-state computations so re-renders triggered by unrelated store changes don't recompute expensive projections from the global state tree.

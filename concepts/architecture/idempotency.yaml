@@ -1,0 +1,18 @@
+id: idempotency
+title: Idempotency
+category:
+  - Architecture
+  - Reliability
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+  - career
+prerequisites:
+  - at-least-once-delivery
+dependents:
+  - exactly-once-semantics
+  - retry-with-backoff
+brief: Designing operations so that applying them multiple times produces the same result as applying them once, which is the enabling property for safe retries and at-least-once delivery.

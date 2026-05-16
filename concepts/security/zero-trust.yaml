@@ -1,0 +1,16 @@
+id: zero-trust
+title: Zero-Trust Networking
+category:
+  - Security
+  - Architecture
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - mtls
+dependents: []
+brief: Eliminating implicit network trust and requiring every service call to authenticate prevents a breached host from pivoting freely across the internal network.

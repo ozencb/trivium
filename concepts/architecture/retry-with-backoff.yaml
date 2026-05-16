@@ -1,0 +1,16 @@
+id: retry-with-backoff
+title: Retry with Exponential Backoff
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - idempotency
+dependents:
+  - circuit-breaker
+brief: Retrying transient failures with exponentially increasing delays plus jitter to prevent synchronized retry storms from amplifying the overload that caused the original failure.

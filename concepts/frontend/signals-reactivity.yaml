@@ -1,0 +1,15 @@
+id: signals-reactivity
+title: Signals-Based Reactivity
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - fine-grained-reactivity
+brief: A reactive primitive that holds a value and tracks which computations read it, so only those subscribers are re-evaluated when the value changes.

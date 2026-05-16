@@ -1,0 +1,18 @@
+id: stateless-processes
+title: Stateless Processes
+category:
+  - Architecture
+  - Cloud Native
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - twelve-factor-app
+dependents:
+  - horizontal-scaling
+  - session-management
+brief: Designing process instances to hold no in-memory session state between requests, so any instance can serve any request and instances scale independently.

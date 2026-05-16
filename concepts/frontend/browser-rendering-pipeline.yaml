@@ -1,0 +1,8 @@
+id: "browser-rendering-pipeline"
+title: "Browser Rendering Pipeline"
+category: ["Frontend", "Browsers"]
+roles: [frontend, fullstack]
+lenses: [foundational]
+prerequisites: []
+dependents: ["layout-thrashing", "compositing-layers", "critical-rendering-path"]
+brief: "How browsers turn HTML/CSS/JS into pixels through parsing, layout, paint, and composite steps — and why each stage is a performance cliff"

@@ -1,0 +1,16 @@
+id: long-polling
+title: Long Polling
+category:
+  - Networking
+  - Real-time
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - tcp-basics
+dependents:
+  - websockets
+brief: Holding an HTTP request open until data is available, simulating server push before WebSockets were widely supported; understanding it explains the connection-per-notification overhead it imposes.

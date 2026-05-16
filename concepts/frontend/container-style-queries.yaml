@@ -1,0 +1,16 @@
+id: container-style-queries
+title: CSS Container Style Queries
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - container-queries
+  - css-custom-properties
+dependents: []
+brief: Apply styles conditionally based on a container's computed custom property values, enabling theme-variant component rendering driven by inherited data tokens rather than modifier class names on ancestors.

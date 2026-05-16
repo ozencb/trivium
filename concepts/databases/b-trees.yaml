@@ -1,0 +1,8 @@
+id: "b-trees"
+title: "B-Trees"
+category: ["Databases", "Data Structures"]
+roles: [backend, data]
+lenses: [foundational]
+prerequisites: []
+dependents: ["database-indexing", "filesystem-internals"]
+brief: "Self-balancing tree structure optimized for systems that read/write large blocks of data"

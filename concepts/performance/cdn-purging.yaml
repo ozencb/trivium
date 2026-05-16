@@ -1,0 +1,16 @@
+id: cdn-purging
+title: CDN Cache Purging
+category:
+  - Performance
+  - CDN
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - cache-invalidation
+  - cdn-routing
+dependents: []
+brief: Invalidating cached assets at edge nodes after a deployment or content update; surrogate keys enable surgical purging of related content without full cache busts.

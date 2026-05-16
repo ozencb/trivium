@@ -1,0 +1,16 @@
+id: openid-connect
+title: OpenID Connect
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - oauth2
+  - jwt-signing
+dependents: []
+brief: An identity layer on top of OAuth 2.0 that adds a standardized ID token with user claims, enabling federated authentication without building a bespoke user identity system.

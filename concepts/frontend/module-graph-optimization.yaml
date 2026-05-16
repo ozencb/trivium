@@ -1,0 +1,16 @@
+id: module-graph-optimization
+title: Module Graph Optimization
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - career
+prerequisites:
+  - monorepo-frontend-tooling
+  - tree-shaking
+  - code-splitting
+dependents: []
+brief: Audit inter-package import graphs to find circular dependencies, shared chunk boundary misalignments, and over-eager barrel imports that inflate initial bundle size in large monorepo applications.

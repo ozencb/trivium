@@ -1,0 +1,14 @@
+id: resource-hints
+title: Resource Hints
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - critical-rendering-path
+dependents: []
+brief: Declarative HTML hints (preload, prefetch, preconnect) that tell the browser to fetch resources before they are discovered in the parse order, reducing latency on the critical path.

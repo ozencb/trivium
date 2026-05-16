@@ -1,0 +1,18 @@
+id: mutexes-and-locks
+title: Mutexes and Locks
+category:
+  - Concurrency
+  - Synchronization
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - thread-safety
+dependents:
+  - deadlocks
+  - two-phase-locking
+  - lock-free-data-structures
+brief: Low-level primitives that serialize access to shared state; understanding acquisition order, granularity, and re-entrancy prevents the deadlocks and contention they can introduce.

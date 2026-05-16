@@ -1,0 +1,18 @@
+id: kubernetes-scheduling
+title: Kubernetes Scheduling
+category:
+  - DevOps
+  - Orchestration
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - container-internals
+  - service-discovery
+dependents:
+  - resource-requests-and-limits
+brief: How kube-scheduler assigns pods to nodes using predicates and priorities; mis-setting resource requests causes OOMKills and evictions that are difficult to diagnose post-hoc.

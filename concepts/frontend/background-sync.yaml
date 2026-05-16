@@ -1,0 +1,15 @@
+id: background-sync
+title: Background Sync API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - service-workers
+dependents:
+  - offline-first
+brief: Lets a service worker queue failed network requests and retry them automatically when connectivity is restored, ensuring offline actions eventually reach the server.

@@ -1,0 +1,15 @@
+id: responsive-images
+title: Responsive Images
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - image-lazy-loading
+brief: Using srcset, sizes, and picture to serve correctly-dimensioned image variants per viewport, eliminating wasted bandwidth and decode cost on small screens.

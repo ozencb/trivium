@@ -1,0 +1,18 @@
+id: eventual-consistency
+title: Eventual Consistency
+category:
+  - Distributed Systems
+  - Consistency Models
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - cap-theorem
+dependents:
+  - conflict-resolution
+  - read-your-writes
+brief: How distributed replicas converge to agreement over time when strong consistency is sacrificed for availability and partition tolerance.

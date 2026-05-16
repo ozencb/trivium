@@ -1,0 +1,15 @@
+id: image-lazy-loading
+title: Image Lazy Loading
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - intersection-observer
+  - responsive-images
+dependents: []
+brief: Deferring off-screen image requests via loading="lazy" or Intersection Observer so initial page load only fetches images in or near the visible viewport.

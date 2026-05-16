@@ -1,0 +1,14 @@
+id: component-composition
+title: Component Composition Patterns
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - career
+prerequisites: []
+dependents: []
+brief: Using render props, compound components, and slots to share behavior between components without inheritance or tightly-coupled prop drilling.

@@ -1,0 +1,15 @@
+id: server-sent-events
+title: Server-Sent Events
+category:
+  - Networking
+  - Real-time
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - http2-flow-control
+dependents: []
+brief: A unidirectional HTTP streaming primitive where the server pushes newline-delimited text events over a persistent connection; simpler than WebSockets for one-way notification streams.

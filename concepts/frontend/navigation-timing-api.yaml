@@ -1,0 +1,16 @@
+id: navigation-timing-api
+title: Navigation Timing API
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - performance-observer
+  - tcp-basics
+dependents: []
+brief: Provides precise timestamps for every phase of a page navigation from DNS through load, letting you diagnose real-user page-load bottlenecks from field data.

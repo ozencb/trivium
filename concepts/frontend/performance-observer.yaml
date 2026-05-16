@@ -1,0 +1,19 @@
+id: performance-observer
+title: Performance Observer API
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - web-vitals
+  - long-tasks
+  - paint-timing
+  - resource-timing-api
+brief: A streaming subscription interface for browser performance entries (navigation, resource, paint, longtask) that avoids polling the performance timeline.

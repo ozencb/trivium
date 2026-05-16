@@ -1,0 +1,15 @@
+id: cache-api
+title: Cache API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - service-workers
+  - cache-invalidation
+dependents: []
+brief: A programmable request/response store available to service workers for storing network responses with explicit, fine-grained invalidation control.

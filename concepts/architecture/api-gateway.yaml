@@ -1,0 +1,17 @@
+id: api-gateway
+title: API Gateway
+category:
+  - Architecture
+  - API Design
+roles:
+  - backend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rate-limiting
+  - service-discovery
+dependents: []
+brief: A reverse proxy that handles cross-cutting concerns (auth, rate limiting, routing, observability) at the edge, giving downstream services a uniform entry point and reducing duplicated logic.

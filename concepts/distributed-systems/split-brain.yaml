@@ -1,0 +1,17 @@
+id: split-brain
+title: Split-Brain
+category:
+  - Distributed Systems
+  - Failure Modes
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - network-partitions
+  - consensus-algorithms
+dependents:
+  - quorum-reads
+brief: When a network partition causes two node groups to each independently elect a leader, risking divergent writes that cannot be automatically reconciled.

@@ -1,0 +1,19 @@
+id: bundler-internals
+title: Bundler Internals
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - es-modules
+dependents:
+  - tree-shaking
+  - code-splitting
+  - source-maps
+  - asset-hashing
+brief: How bundlers resolve dependency graphs, apply transforms, chunk modules, and emit hashed assets determines build correctness, cacheability, and runtime cost.

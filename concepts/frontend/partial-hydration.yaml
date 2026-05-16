@@ -1,0 +1,17 @@
+id: partial-hydration
+title: Partial Hydration
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - hydration
+dependents:
+  - islands-architecture
+  - resumability
+brief: Selectively attaching JavaScript only to interactive components on an SSR page rather than hydrating the entire tree, reducing client-side JavaScript execution.

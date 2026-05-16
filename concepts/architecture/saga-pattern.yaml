@@ -1,0 +1,15 @@
+id: saga-pattern
+title: Saga Pattern
+category:
+  - Architecture
+  - Distributed Systems
+roles:
+  - backend
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - distributed-transactions
+  - event-driven-architecture
+dependents: []
+brief: Sequences long-running business transactions as a chain of local transactions with compensating actions, replacing 2PC with eventual consistency and reversible steps.

@@ -1,0 +1,17 @@
+id: fiber-architecture
+title: React Fiber Architecture
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - reconciliation
+dependents:
+  - concurrent-rendering
+  - suspense-boundaries
+brief: React's reimplemented reconciler that breaks rendering into interruptible units of work, enabling priority-based scheduling and concurrent features.

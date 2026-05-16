@@ -1,0 +1,17 @@
+id: canary-releases
+title: Canary Releases
+category:
+  - DevOps
+  - Deployment Strategies
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - blue-green-deployments
+dependents:
+  - feature-flags
+brief: Gradually shifting a small traffic slice to a new version and measuring error rates before full promotion, limiting blast radius when a release introduces regressions.

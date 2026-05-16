@@ -1,0 +1,13 @@
+id: web-storage-api
+title: Web Storage API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+prerequisites: []
+dependents: []
+brief: localStorage and sessionStorage differ in persistence scope—origin vs session—in ways that drive subtle auth, tab isolation, and SSR serialization bugs when misused.

@@ -1,0 +1,14 @@
+id: error-budgets
+title: Error Budgets
+category:
+  - Observability
+  - Reliability
+roles:
+  - sre
+  - devops
+lenses:
+  - career
+prerequisites:
+  - slo-sli-sla
+dependents: []
+brief: The allowed failure quota derived from an SLO target; when the budget is exhausted, reliability work takes priority over feature development, giving teams a principled trade-off framework.

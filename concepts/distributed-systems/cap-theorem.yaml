@@ -1,0 +1,8 @@
+id: "cap-theorem"
+title: "CAP Theorem"
+category: ["Distributed Systems", "Theory"]
+roles: [backend, sre]
+lenses: [foundational, career]
+prerequisites: ["network-partitions"]
+dependents: ["eventual-consistency", "consensus-algorithms"]
+brief: "Why distributed systems must choose between consistency and availability during network partitions"

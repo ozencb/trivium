@@ -1,0 +1,16 @@
+id: change-data-capture
+title: Change Data Capture
+category:
+  - Databases
+  - Streaming
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - write-ahead-log
+  - outbox-pattern
+dependents: []
+brief: Reading the database replication log to produce a stream of row-level changes, enabling event-driven integrations and cache invalidation without application-level hooks.

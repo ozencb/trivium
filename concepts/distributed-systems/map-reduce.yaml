@@ -1,0 +1,15 @@
+id: map-reduce
+title: MapReduce
+category:
+  - Distributed Systems
+  - Data Processing
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - consistent-hashing
+dependents: []
+brief: A programming model that decomposes large computations into a map phase distributing work over partitions and a reduce phase aggregating results, enabling fault-tolerant parallel data processing.

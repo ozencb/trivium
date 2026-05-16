@@ -1,0 +1,18 @@
+id: consistent-hashing
+title: Consistent Hashing
+category:
+  - Algorithms
+  - Distributed Systems
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - hash-tables
+dependents:
+  - sharding
+  - cache-cluster-rebalancing
+brief: Maps keys to nodes on a virtual ring so that adding or removing nodes minimizes key remapping, enabling elastic scaling of distributed caches and partitioned stores.

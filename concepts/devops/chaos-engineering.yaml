@@ -1,0 +1,17 @@
+id: chaos-engineering
+title: Chaos Engineering
+category:
+  - DevOps
+  - Reliability
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - career
+prerequisites:
+  - circuit-breaker
+  - bulkhead-pattern
+  - blue-green-deployments
+dependents: []
+brief: Deliberately injecting failures in production-like environments to discover systemic weaknesses before they manifest as incidents; requires a steady-state hypothesis and automated rollback.

@@ -1,0 +1,17 @@
+id: concurrent-rendering
+title: Concurrent Rendering
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - fiber-architecture
+dependents:
+  - suspense-boundaries
+  - react-transitions
+brief: A mode where the renderer can pause, interrupt, and resume work in priority order, keeping the UI responsive during expensive tree updates.

@@ -1,0 +1,15 @@
+id: exactly-once-semantics
+title: Exactly-Once Semantics
+category:
+  - Messaging
+  - Reliability
+roles:
+  - backend
+  - data
+lenses:
+  - career
+prerequisites:
+  - at-least-once-delivery
+  - idempotency
+dependents: []
+brief: The guarantee that each message is processed exactly once even in the presence of producer retries and consumer failures; achievable only within a single system's transaction boundary.

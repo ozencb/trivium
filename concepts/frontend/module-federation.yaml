@@ -1,0 +1,17 @@
+id: module-federation
+title: Module Federation
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - code-splitting
+  - micro-frontends
+dependents: []
+brief: A bundler feature that lets separately-deployed applications expose and consume each other's modules at runtime without rebuilding or sharing a monorepo.

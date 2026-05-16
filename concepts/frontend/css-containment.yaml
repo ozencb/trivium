@@ -1,0 +1,14 @@
+id: css-containment
+title: CSS Containment
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents: []
+brief: Isolates a subtree from the rest of the document so the browser can skip style, layout, and paint recalculation outside that boundary on updates.

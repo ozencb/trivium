@@ -1,0 +1,8 @@
+id: "page-caches"
+title: "Page Cache"
+category: ["Operating Systems", "Memory"]
+roles: [backend, sre]
+lenses: [practical, foundational]
+prerequisites: ["virtual-memory"]
+dependents: ["database-buffer-pool", "mmap-performance"]
+brief: "How the OS uses free RAM to cache disk reads, making repeated file access nearly instant"

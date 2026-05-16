@@ -1,0 +1,15 @@
+id: asset-hashing
+title: Asset Hashing and Cache Busting
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - bundler-internals
+  - cache-invalidation
+dependents: []
+brief: Content-derived hashes in filenames let you set infinite Cache-Control max-age while guaranteeing browsers never serve stale assets after a deploy.

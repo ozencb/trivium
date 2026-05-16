@@ -1,0 +1,16 @@
+id: cqrs
+title: CQRS
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - event-driven-architecture
+dependents:
+  - event-sourcing
+brief: Separating command (write) models from query (read) models so each can be optimized independently, at the cost of synchronization complexity between the two sides.

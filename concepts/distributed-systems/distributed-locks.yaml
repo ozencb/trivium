@@ -1,0 +1,16 @@
+id: distributed-locks
+title: Distributed Locks
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - consensus-algorithms
+dependents:
+  - distributed-transactions
+brief: Acquiring a time-bounded lease via a consensus system gives a single node exclusive access to a shared resource across a distributed cluster.

@@ -1,0 +1,17 @@
+id: rbac
+title: Role-Based Access Control
+category:
+  - Security
+  - Authorization
+roles:
+  - backend
+  - fullstack
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - oauth2
+dependents:
+  - attribute-based-access-control
+brief: Associating permissions with roles rather than individual users, so access policy changes apply at the role level; becomes unwieldy at scale where ABAC provides finer-grained control.

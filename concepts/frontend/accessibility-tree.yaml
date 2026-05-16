@@ -1,0 +1,17 @@
+id: accessibility-tree
+title: Accessibility Tree
+category:
+  - Frontend
+  - Accessibility
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - aria-live-regions
+  - screen-reader-testing
+brief: The browser's parallel representation of the DOM that exposes role, name, state, and relationships to assistive technologies—understanding it explains why visual-only UI fails.

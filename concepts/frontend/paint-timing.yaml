@@ -1,0 +1,17 @@
+id: paint-timing
+title: Paint Timing API
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+  - performance-observer
+dependents:
+  - lcp-optimization
+brief: Exposes FP and FCP timestamps so you can measure exactly when the browser first rendered pixels and when it painted meaningful content in the field.

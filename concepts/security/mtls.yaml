@@ -1,0 +1,18 @@
+id: mtls
+title: Mutual TLS
+category:
+  - Security
+  - Transport
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - tls-handshake
+dependents:
+  - service-mesh
+  - zero-trust
+brief: Extends the TLS handshake to require the client to also present a certificate, letting services cryptographically authenticate each other rather than relying on network perimeter trust.

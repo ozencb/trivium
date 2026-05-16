@@ -1,0 +1,14 @@
+id: gossip-protocol
+title: Gossip Protocol
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - sre
+lenses:
+  - career
+prerequisites:
+  - service-discovery
+dependents: []
+brief: An epidemic-style communication pattern where nodes periodically exchange state with random peers, achieving eventually consistent cluster membership and data propagation without centralized coordination.

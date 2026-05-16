@@ -1,0 +1,17 @@
+id: hydration
+title: Client-Side Hydration
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - server-side-rendering
+  - virtual-dom
+dependents:
+  - partial-hydration
+brief: Attaching framework state and event listeners to server-rendered HTML so a static page becomes interactive without re-rendering or replacing existing DOM nodes.

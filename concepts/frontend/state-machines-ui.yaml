@@ -1,0 +1,14 @@
+id: state-machines-ui
+title: State Machines for UI
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents: []
+brief: Modeling UI behavior as explicit states and guarded transitions eliminates impossible states and makes complex interaction flows amenable to automated testing.

@@ -1,0 +1,16 @@
+id: xss-prevention
+title: XSS Prevention
+category:
+  - Frontend
+  - Security
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents:
+  - content-security-policy
+  - trusted-types
+brief: Contextually encoding and sanitizing user-controlled data before it reaches DOM sinks to block injected scripts from executing in a victim's browser session.

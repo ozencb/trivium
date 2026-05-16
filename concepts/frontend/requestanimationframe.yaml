@@ -1,0 +1,15 @@
+id: requestanimationframe
+title: requestAnimationFrame
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - web-animations-api
+brief: Schedules callbacks to fire before the next browser repaint, aligning JS-driven animation with the display refresh cycle to prevent jank.

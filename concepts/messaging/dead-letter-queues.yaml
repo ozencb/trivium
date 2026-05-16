@@ -1,0 +1,15 @@
+id: dead-letter-queues
+title: Dead-Letter Queues
+category:
+  - Messaging
+  - Reliability
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - backpressure
+dependents:
+  - at-least-once-delivery
+brief: Destination queues for messages that repeatedly fail processing, preventing poison pills from blocking healthy consumers while preserving failed events for inspection.

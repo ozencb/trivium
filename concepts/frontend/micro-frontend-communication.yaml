@@ -1,0 +1,16 @@
+id: micro-frontend-communication
+title: Micro-Frontend Communication
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - micro-frontends
+  - module-federation
+dependents: []
+brief: Share state and events between independently deployed micro-frontends using custom DOM events or Broadcast Channel rather than direct imports, keeping teams decoupled at the communication boundary.

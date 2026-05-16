@@ -1,0 +1,8 @@
+id: "dns-resolution"
+title: "DNS Resolution"
+category: ["Networking", "DNS"]
+roles: [backend, sre, frontend, fullstack]
+lenses: [practical, foundational]
+prerequisites: []
+dependents: ["cdn-routing", "service-discovery"]
+brief: "How domain names get translated to IP addresses through a distributed hierarchical system"

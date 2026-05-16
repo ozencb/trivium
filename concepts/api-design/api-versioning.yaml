@@ -1,0 +1,16 @@
+id: api-versioning
+title: API Versioning
+category:
+  - API Design
+  - REST
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rest-constraints
+dependents:
+  - api-deprecation
+brief: Strategies for evolving a public API without breaking existing clients, balancing backward compatibility against the cost of maintaining multiple live versions.

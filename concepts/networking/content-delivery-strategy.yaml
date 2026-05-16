@@ -1,0 +1,16 @@
+id: content-delivery-strategy
+title: Cache-Control and HTTP Caching
+category:
+  - Networking
+  - HTTP
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - cdn-edge-caching
+  - cache-invalidation
+dependents: []
+brief: The Cache-Control directive vocabulary (max-age, stale-while-revalidate, immutable, no-store) that governs behavior at every cache layer; knowing these eliminates most CDN misconfiguration.

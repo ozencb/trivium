@@ -1,0 +1,18 @@
+id: query-optimization
+title: Query Optimization
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - database-indexing
+dependents:
+  - index-selection
+  - execution-plans
+brief: How query planners use statistics, cardinality estimates, and cost models to choose join order, access paths, and parallelism without changing query semantics.

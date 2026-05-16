@@ -1,0 +1,16 @@
+id: quorum-reads
+title: Quorum Reads
+category:
+  - Distributed Systems
+  - Consistency Models
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - split-brain
+  - consensus-algorithms
+dependents: []
+brief: Reading from a majority of replicas detects stale state introduced by split-brain and forces convergence on the latest committed value before returning.

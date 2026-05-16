@@ -1,0 +1,15 @@
+id: hateoas
+title: HATEOAS
+category:
+  - API Design
+  - REST
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - rest-constraints
+dependents: []
+brief: Hypermedia as the Engine of Application State embeds navigable links in responses so clients discover transitions at runtime, decoupling them from hardcoded URL structures.

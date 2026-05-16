@@ -1,0 +1,16 @@
+id: third-party-script-management
+title: Third-Party Script Management
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - script-loading-strategies
+  - long-tasks
+dependents: []
+brief: Audit, defer, and sandbox analytics and ad scripts to prevent them from blocking the main thread, injecting unexpected layout, or exfiltrating user data to external origins outside your CSP.

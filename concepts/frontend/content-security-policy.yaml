@@ -1,0 +1,17 @@
+id: content-security-policy
+title: Content Security Policy
+category:
+  - Frontend
+  - Security
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - xss-prevention
+dependents:
+  - trusted-types
+brief: An HTTP response header that whitelists permitted script, style, and resource origins so browsers refuse to load injected content from unauthorized sources.

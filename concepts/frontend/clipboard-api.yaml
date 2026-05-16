@@ -1,0 +1,13 @@
+id: clipboard-api
+title: Clipboard API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Async read/write access to the system clipboard that replaces the deprecated execCommand approach and supports rich text and arbitrary MIME types with permission gating.

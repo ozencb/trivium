@@ -1,0 +1,14 @@
+id: idempotency-keys
+title: Idempotency Keys
+category:
+  - API Design
+  - Reliability
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - idempotency
+dependents: []
+brief: Client-generated unique identifiers included in mutating requests so the server can detect and de-duplicate retries, enabling safe retry-on-network-failure for payment and other critical operations.

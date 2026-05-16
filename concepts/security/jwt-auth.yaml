@@ -1,0 +1,15 @@
+id: jwt-auth
+title: JWT-Based Authentication
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - jwt-signing
+  - oauth2
+dependents: []
+brief: Stateless authentication where the server encodes user claims in a signed token the client presents on each request, eliminating server-side session storage at the cost of revocation complexity.

@@ -1,0 +1,16 @@
+id: progressive-web-apps
+title: Progressive Web Apps
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - service-workers
+  - web-app-manifest
+dependents: []
+brief: Web applications that use service workers and a manifest to enable home-screen installation, offline support, and push notifications comparable to native platform apps.

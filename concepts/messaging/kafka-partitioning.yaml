@@ -1,0 +1,16 @@
+id: kafka-partitioning
+title: Kafka Partitioning
+category:
+  - Messaging
+  - Kafka
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - consistent-hashing
+dependents:
+  - consumer-groups
+brief: Dividing a topic into ordered, append-only logs that are independently assigned to brokers and consumers, where the partition key determines ordering and parallelism boundaries.

@@ -1,0 +1,15 @@
+id: differential-bundling
+title: Differential Bundling
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - bundler-internals
+  - es-modules
+dependents: []
+brief: Emitting separate modern (ES module) and legacy (transpiled) bundles so capable browsers skip polyfills, reducing parse, compile, and execution cost.

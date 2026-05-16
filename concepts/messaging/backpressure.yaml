@@ -1,0 +1,8 @@
+id: "backpressure"
+title: "Backpressure"
+category: ["Messaging", "Flow Control"]
+roles: [backend, sre, data]
+lenses: [foundational, practical]
+prerequisites: []
+dependents: ["dead-letter-queues", "consumer-groups", "event-driven-architecture"]
+brief: "How systems signal upstream producers to slow down when consumers can't keep up — and why ignoring it leads to cascading failures"

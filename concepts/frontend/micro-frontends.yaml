@@ -1,0 +1,16 @@
+id: micro-frontends
+title: Micro-Frontends
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents:
+  - module-federation
+brief: Decomposing a frontend monolith into independently deployable application slices owned by separate teams, applying microservice autonomy principles to the UI layer.

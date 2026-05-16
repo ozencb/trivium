@@ -1,0 +1,15 @@
+id: bulkhead-pattern
+title: Bulkhead Pattern
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - circuit-breaker
+dependents: []
+brief: Isolating resource pools (thread pools, connection pools) by consumer or criticality so that overload from one downstream dependency cannot exhaust resources needed by others.

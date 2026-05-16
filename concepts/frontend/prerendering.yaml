@@ -1,0 +1,14 @@
+id: prerendering
+title: Prerendering
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - static-site-generation
+dependents: []
+brief: Speculatively rendering a page before navigation—via prefetch, Speculation Rules API, or build-time SSG—to eliminate perceived latency by the time the user arrives.

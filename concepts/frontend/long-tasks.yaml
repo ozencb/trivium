@@ -1,0 +1,17 @@
+id: long-tasks
+title: Long Tasks API
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+  - performance-observer
+dependents:
+  - requestidlecallback
+  - inp-optimization
+brief: Reports any main-thread task exceeding 50ms so you can identify JavaScript that blocks interaction responsiveness before users feel it.

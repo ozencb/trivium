@@ -1,0 +1,17 @@
+id: static-site-generation
+title: Static Site Generation
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - server-side-rendering
+dependents:
+  - incremental-static-regeneration
+  - prerendering
+brief: Pre-rendering all pages to static HTML at build time so responses can be served from CDN edges with zero server compute per request.

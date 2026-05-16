@@ -1,0 +1,8 @@
+id: "distributed-tracing"
+title: "Distributed Tracing"
+category: ["Observability", "Tracing"]
+roles: [backend, sre, devops]
+lenses: [practical]
+prerequisites: ["service-discovery"]
+dependents: ["trace-sampling", "span-propagation"]
+brief: "How trace context propagation across services lets you reconstruct request paths and pinpoint latency bottlenecks"

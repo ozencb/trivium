@@ -1,0 +1,14 @@
+id: web-app-manifest
+title: Web App Manifest
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - progressive-web-apps
+brief: A JSON file declaring app name, icons, start URL, and display mode that browsers use to enable standalone installation and OS-level integration.

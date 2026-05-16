@@ -1,0 +1,18 @@
+id: sharding
+title: Database Sharding
+category:
+  - Databases
+  - Scalability
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - consistent-hashing
+  - database-indexing
+dependents:
+  - cross-shard-queries
+brief: Horizontally partitioning data across independent database instances by a shard key, trading cross-shard query complexity for write scalability that a single node cannot provide.

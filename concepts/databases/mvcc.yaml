@@ -1,0 +1,16 @@
+id: mvcc
+title: MVCC
+category:
+  - Databases
+  - Concurrency
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - race-conditions
+  - two-phase-locking
+dependents: []
+brief: Multi-Version Concurrency Control maintains multiple versions of rows so readers never block writers; understanding snapshot isolation and read skew anomalies prevents subtle data inconsistencies.

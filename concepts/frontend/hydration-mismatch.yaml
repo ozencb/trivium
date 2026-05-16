@@ -1,0 +1,16 @@
+id: hydration-mismatch
+title: Hydration Mismatch Debugging
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - hydration
+  - server-side-rendering
+dependents: []
+brief: Diagnose DOM tree divergence between server-rendered HTML and client-rendered output by understanding which serialization invariants React and other frameworks enforce during the reconciliation pass.

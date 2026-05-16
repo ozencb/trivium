@@ -1,0 +1,15 @@
+id: worklets
+title: CSS and Audio Worklets
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-workers
+  - css-houdini
+dependents: []
+brief: Lightweight dedicated script contexts that run custom paint, layout, or audio processing on browser-internal threads, enabling effects that would block the main thread as regular JS.

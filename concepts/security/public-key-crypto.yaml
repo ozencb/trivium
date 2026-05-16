@@ -1,0 +1,8 @@
+id: "public-key-crypto"
+title: "Public Key Cryptography"
+category: ["Security", "Cryptography"]
+roles: [backend, sre, fullstack]
+lenses: [foundational]
+prerequisites: []
+dependents: ["tls-handshake", "ssh-keys", "jwt-signing"]
+brief: "Using mathematically linked key pairs for encryption and authentication without shared secrets"

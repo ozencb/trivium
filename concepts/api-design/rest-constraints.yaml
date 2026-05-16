@@ -1,0 +1,8 @@
+id: "rest-constraints"
+title: "REST Architectural Constraints"
+category: ["API Design", "REST"]
+roles: [backend, fullstack]
+lenses: [foundational, practical]
+prerequisites: []
+dependents: ["api-versioning", "hateoas", "api-pagination"]
+brief: "The six constraints that define REST and why violating them leads to brittle, hard-to-cache APIs"

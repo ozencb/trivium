@@ -1,0 +1,16 @@
+id: critical-rendering-path
+title: Critical Rendering Path
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - resource-hints
+brief: The sequence of HTML parse → CSSOM build → render tree → layout → paint that blocks first contentful paint; optimizing it means eliminating render-blocking resources.

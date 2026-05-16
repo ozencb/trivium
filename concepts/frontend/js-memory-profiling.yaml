@@ -1,0 +1,15 @@
+id: js-memory-profiling
+title: JavaScript Memory Profiling
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - virtual-memory
+dependents: []
+brief: Use heap snapshots and allocation timelines in browser DevTools to identify detached DOM nodes, retained closures, and accumulated event listeners that cause steady memory growth over a session.

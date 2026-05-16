@@ -1,0 +1,16 @@
+id: react-server-components
+title: React Server Components
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - server-side-rendering
+  - streaming-ssr
+dependents: []
+brief: Components that render exclusively on the server and stream serialized output to the client, keeping server-only data and large dependencies entirely off the client bundle.

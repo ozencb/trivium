@@ -1,0 +1,16 @@
+id: shared-array-buffer
+title: SharedArrayBuffer and Atomics
+category:
+  - Frontend
+  - Concurrency
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - web-workers
+dependents:
+  - wasm-memory-model
+brief: A fixed-length binary buffer multiple workers can access simultaneously, with Atomics providing lock-free compare-and-swap primitives to prevent data races in shared memory.

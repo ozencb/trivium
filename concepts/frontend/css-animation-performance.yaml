@@ -1,0 +1,16 @@
+id: css-animation-performance
+title: CSS Animation Performance
+category:
+  - Frontend
+  - Animation
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - compositing-layers
+  - will-change
+dependents:
+  - web-animations-api
+brief: Restricting animations to transform and opacity keeps them on the compositor thread, avoiding main-thread layout or paint that causes dropped frames.

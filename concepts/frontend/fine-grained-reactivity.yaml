@@ -1,0 +1,14 @@
+id: fine-grained-reactivity
+title: Fine-Grained Reactivity
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - signals-reactivity
+dependents: []
+brief: A rendering model that surgically updates only the exact DOM nodes that depend on changed reactive state, bypassing component-tree re-rendering entirely.

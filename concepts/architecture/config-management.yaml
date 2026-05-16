@@ -1,0 +1,19 @@
+id: config-management
+title: Config Management
+category:
+  - Architecture
+  - Cloud Native
+roles:
+  - backend
+  - sre
+  - devops
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - twelve-factor-app
+dependents:
+  - feature-flags
+  - secrets-management
+brief: Externalizing configuration from code so that the same artifact runs across environments without rebuild, enabling promotion pipelines and reducing configuration drift.

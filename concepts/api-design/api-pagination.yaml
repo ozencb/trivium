@@ -1,0 +1,15 @@
+id: api-pagination
+title: API Pagination
+category:
+  - API Design
+  - REST
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - rest-constraints
+dependents:
+  - cursor-pagination
+brief: Techniques for splitting large result sets across requests; cursor-based pagination avoids the offset drift and lock contention that plague limit/offset approaches.

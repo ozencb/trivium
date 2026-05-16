@@ -1,0 +1,19 @@
+id: filesystem-internals
+title: Filesystem Internals
+category:
+  - Operating Systems
+  - Storage
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - b-trees
+  - virtual-memory
+dependents:
+  - memory-mapped-files
+  - write-ahead-log
+brief: How journaling, extent trees, and block allocation let filesystems survive crashes while balancing write amplification and fragmentation.

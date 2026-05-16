@@ -1,0 +1,17 @@
+id: reconciliation
+title: Reconciliation
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - virtual-dom
+dependents:
+  - fiber-architecture
+  - concurrent-rendering
+brief: The algorithm frameworks use to compare previous and next virtual DOM trees and produce the minimal set of real DOM operations needed.

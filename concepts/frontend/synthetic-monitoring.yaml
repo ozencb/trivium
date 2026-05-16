@@ -1,0 +1,16 @@
+id: synthetic-monitoring
+title: Synthetic Monitoring
+category:
+  - Frontend
+  - Observability
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - performance-budget
+dependents: []
+brief: Run scripted browser sessions on a schedule from controlled lab environments to detect performance regressions and availability issues before real users encounter them in production.

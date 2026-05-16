@@ -1,0 +1,15 @@
+id: event-sourcing
+title: Event Sourcing
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - data
+lenses:
+  - career
+prerequisites:
+  - cqrs
+  - event-driven-architecture
+dependents: []
+brief: Persisting the sequence of domain events rather than current state, making the audit trail the source of truth and enabling time-travel debugging and projections.

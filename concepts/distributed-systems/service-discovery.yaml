@@ -1,0 +1,19 @@
+id: service-discovery
+title: Service Discovery
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - dns-resolution
+  - consensus-algorithms
+dependents:
+  - load-balancing
+  - service-mesh
+brief: How services dynamically register and locate each other in a fleet without hardcoded addresses, using DNS, key-value stores, or sidecar agents to absorb churn.

@@ -1,0 +1,8 @@
+id: "property-based-testing"
+title: "Property-Based Testing"
+category: ["Testing", "Strategies"]
+roles: [backend, fullstack]
+lenses: [practical]
+prerequisites: []
+dependents: ["fuzzing", "shrinking-strategies", "contract-testing"]
+brief: "Why specifying invariants and letting the framework generate inputs catches edge cases that example-based tests miss"

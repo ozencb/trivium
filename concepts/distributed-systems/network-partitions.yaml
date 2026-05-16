@@ -1,0 +1,8 @@
+id: "network-partitions"
+title: "Network Partitions"
+category: ["Distributed Systems", "Failure Modes"]
+roles: [backend, sre]
+lenses: [foundational]
+prerequisites: ["tcp-basics"]
+dependents: ["cap-theorem", "split-brain"]
+brief: "When nodes in a distributed system cannot communicate with each other"

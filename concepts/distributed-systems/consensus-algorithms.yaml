@@ -1,0 +1,19 @@
+id: consensus-algorithms
+title: Consensus Algorithms
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - cap-theorem
+  - network-partitions
+dependents:
+  - split-brain
+  - distributed-locks
+brief: How nodes in a distributed system agree on a single value despite arbitrary failures, underpinning leader election, replication logs, and coordination primitives.

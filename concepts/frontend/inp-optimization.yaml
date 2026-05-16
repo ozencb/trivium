@@ -1,0 +1,15 @@
+id: inp-optimization
+title: Interaction to Next Paint Optimization
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-vitals
+  - long-tasks
+dependents: []
+brief: Shrinking the gap between user input and visual feedback by breaking long tasks, yielding to the browser, and minimizing event-handler execution time.

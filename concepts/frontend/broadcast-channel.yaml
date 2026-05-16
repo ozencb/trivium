@@ -1,0 +1,14 @@
+id: broadcast-channel
+title: Broadcast Channel API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-workers
+dependents: []
+brief: A simple pub/sub mechanism for broadcasting messages between same-origin tabs, windows, and workers without shared memory or a server intermediary.

@@ -1,0 +1,14 @@
+id: tree-shaking
+title: Tree Shaking
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - es-modules
+dependents: []
+brief: Bundler-performed dead-code elimination that traces ES module import/export graphs statically to exclude unreachable exports from the final bundle.

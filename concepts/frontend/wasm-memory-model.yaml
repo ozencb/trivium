@@ -1,0 +1,15 @@
+id: wasm-memory-model
+title: WebAssembly Memory Model
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+prerequisites:
+  - webassembly
+  - shared-array-buffer
+dependents: []
+brief: WASM operates on a contiguous linear memory buffer exposed as a JS ArrayBuffer, making explicit allocation, boundary checks, and JS-WASM data copying the primary performance concerns.

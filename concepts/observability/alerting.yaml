@@ -1,0 +1,17 @@
+id: alerting
+title: Alerting
+category:
+  - Observability
+  - Reliability
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - metrics-collection
+  - slo-sli-sla
+dependents: []
+brief: Defining thresholds and symptom-based conditions on metrics that page humans at the right time; alert on user-visible symptoms rather than causes to reduce noise.

@@ -1,0 +1,18 @@
+id: server-side-rendering
+title: Server-Side Rendering
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+  - career
+prerequisites: []
+dependents:
+  - streaming-ssr
+  - hydration
+  - static-site-generation
+brief: Generating full HTML on the server per request so browsers paint meaningful content before any JavaScript downloads, parses, or executes.

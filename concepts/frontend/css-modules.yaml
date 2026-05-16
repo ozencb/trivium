@@ -1,0 +1,13 @@
+id: css-modules
+title: CSS Modules
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: A build-time transform that locally scopes class names by hashing them, eliminating global CSS collisions without Shadow DOM overhead or BEM discipline.

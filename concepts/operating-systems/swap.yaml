@@ -1,0 +1,14 @@
+id: swap
+title: Swap and Swapping
+category:
+  - Operating Systems
+  - Memory
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - virtual-memory
+dependents: []
+brief: The OS mechanism for evicting cold memory pages to disk when physical RAM is exhausted; latency spikes from swapping are often misdiagnosed as application-level slowdowns.

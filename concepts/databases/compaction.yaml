@@ -1,0 +1,15 @@
+id: compaction
+title: LSM Compaction
+category:
+  - Databases
+  - Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - sstables
+  - lsm-trees
+dependents: []
+brief: Background merging of SSTables to reclaim space from deleted/overwritten keys and bound read amplification; compaction strategy (size-tiered vs leveled) is the primary RocksDB/Cassandra tuning knob.

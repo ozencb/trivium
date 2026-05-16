@@ -1,0 +1,15 @@
+id: conflict-resolution
+title: Conflict Resolution
+category:
+  - Distributed Systems
+  - Consistency Models
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - eventual-consistency
+dependents: []
+brief: When replicas diverge, strategies like last-write-wins, vector clocks, or CRDTs determine which state survives a merge without requiring coordination at write time.

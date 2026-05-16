@@ -1,0 +1,15 @@
+id: dynamic-import
+title: Dynamic Import
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - es-modules
+dependents:
+  - code-splitting
+brief: The import() expression returns a promise for a lazily-loaded module, and is the primitive that enables route-based and interaction-triggered code splitting.

@@ -1,0 +1,17 @@
+id: memory-mapped-files
+title: Memory-Mapped Files
+category:
+  - Operating Systems
+  - Memory
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - virtual-memory
+  - filesystem-internals
+dependents:
+  - mmap-performance
+brief: Maps file contents directly into a process's virtual address space so the OS page cache handles I/O transparently, eliminating explicit read/write syscalls.

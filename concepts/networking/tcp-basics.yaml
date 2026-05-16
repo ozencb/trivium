@@ -1,0 +1,8 @@
+id: "tcp-basics"
+title: "TCP Basics"
+category: ["Networking", "TCP/IP"]
+roles: [backend, sre, fullstack]
+lenses: [foundational]
+prerequisites: []
+dependents: ["tcp-congestion-control", "tcp-keepalive"]
+brief: "How TCP provides reliable, ordered delivery over unreliable networks"

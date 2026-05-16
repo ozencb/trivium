@@ -1,0 +1,15 @@
+id: connection-pooling
+title: Connection Pooling
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - tcp-keepalive
+  - read-replicas
+dependents: []
+brief: Reusing a bounded set of pre-established database connections across requests to amortize TCP and TLS setup cost and prevent thread-per-connection exhaustion under load.

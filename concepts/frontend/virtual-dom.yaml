@@ -1,0 +1,16 @@
+id: virtual-dom
+title: Virtual DOM
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - reconciliation
+  - hydration
+brief: A lightweight in-memory representation of the real DOM that frameworks diff against to minimize expensive browser mutations.

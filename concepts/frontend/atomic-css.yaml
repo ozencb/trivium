@@ -1,0 +1,14 @@
+id: atomic-css
+title: Atomic / Utility-First CSS
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents: []
+brief: Single-purpose utility classes composable at the markup layer ship only the CSS actually used, eliminating dead rules and specificity conflicts that plague semantic CSS at scale.

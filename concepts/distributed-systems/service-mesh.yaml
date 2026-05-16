@@ -1,0 +1,17 @@
+id: service-mesh
+title: Service Mesh
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - load-balancing
+  - mtls
+dependents: []
+brief: Offloading mTLS, retries, and circuit breaking into sidecar proxies lets services communicate securely without embedding that logic in application code.

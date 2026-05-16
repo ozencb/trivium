@@ -1,0 +1,14 @@
+id: source-maps
+title: Source Maps
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - bundler-internals
+dependents: []
+brief: Mapping files that translate minified/transpiled production positions back to original source locations, making error stacks and debugger breakpoints accurate.

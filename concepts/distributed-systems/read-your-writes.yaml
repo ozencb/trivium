@@ -1,0 +1,15 @@
+id: read-your-writes
+title: Read-Your-Writes Consistency
+category:
+  - Distributed Systems
+  - Consistency Models
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - eventual-consistency
+  - replication-lag
+dependents: []
+brief: A session-level guarantee that a client always sees its own writes, implemented by routing reads to the primary or tracking a per-client replication watermark.

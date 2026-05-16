@@ -1,0 +1,15 @@
+id: column-stores
+title: Columnar Storage
+category:
+  - Databases
+  - Analytics
+roles:
+  - data
+  - backend
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - database-indexing
+dependents: []
+brief: Storing rows by column rather than row so analytical queries that touch few columns read far less data, achieving order-of-magnitude speedups for aggregation queries at the cost of inefficient point lookups.

@@ -1,0 +1,13 @@
+id: microtasks-macrotasks
+title: Microtasks vs Macrotasks
+category:
+  - Frontend
+  - JavaScript
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+prerequisites: []
+dependents: []
+brief: Promise callbacks (microtasks) drain completely before the next macrotask (setTimeout, I/O) runs, explaining async ordering surprises that trip up even experienced developers.

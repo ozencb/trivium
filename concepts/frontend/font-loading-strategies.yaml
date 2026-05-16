@@ -1,0 +1,14 @@
+id: font-loading-strategies
+title: Font Loading Strategies
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - critical-rendering-path
+dependents: []
+brief: Controlling FOIT and FOUT through font-display descriptors, preloading, and subsetting so text renders quickly without invisible or flash-of-unstyled states.

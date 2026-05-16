@@ -1,0 +1,19 @@
+id: feature-flags
+title: Feature Flags
+category:
+  - DevOps
+  - Deployment Strategies
+roles:
+  - backend
+  - frontend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - blue-green-deployments
+  - config-management
+dependents:
+  - canary-releases
+brief: Runtime toggles that decouple deployment from release, enabling trunk-based development and controlled rollouts without separate code branches or redeployments.

@@ -1,0 +1,17 @@
+id: database-migrations
+title: Database Migrations
+category:
+  - Databases
+  - Operations
+roles:
+  - backend
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rollback-strategies
+dependents:
+  - zero-downtime-migrations
+brief: Version-controlled schema changes applied in sequence; the migration strategy must account for backward compatibility with the running application version during the deployment window.

@@ -1,0 +1,14 @@
+id: script-loading-strategies
+title: Script Loading Strategies
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - critical-rendering-path
+dependents: []
+brief: Choosing async, defer, type=module, or inline placement controls when scripts fetch, parse, and execute relative to HTML parsing, directly determining time-to-interactive.

@@ -1,0 +1,16 @@
+id: structured-logging
+title: Structured Logging
+category:
+  - Observability
+  - Logging
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents:
+  - log-aggregation
+brief: Emitting logs as machine-parseable key-value records rather than free-form strings, enabling fast filtering, aggregation, and correlation across distributed services.

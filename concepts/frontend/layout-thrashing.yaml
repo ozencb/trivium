@@ -1,0 +1,14 @@
+id: layout-thrashing
+title: Layout Thrashing
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents: []
+brief: Forcing synchronous layout recalculations by interleaving DOM reads and writes in a loop, which kills rendering performance and is fixed by batching reads before writes.

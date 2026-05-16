@@ -1,0 +1,14 @@
+id: focus-management
+title: Focus Management
+category:
+  - Frontend
+  - Accessibility
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - keyboard-navigation
+dependents: []
+brief: Programmatically directing focus during route transitions, modal opens, and dynamic content insertion to maintain a logical, operable keyboard flow.

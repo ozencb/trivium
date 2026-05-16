@@ -1,0 +1,16 @@
+id: cdn-edge-caching
+title: CDN Edge Caching
+category:
+  - Performance
+  - CDN
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - cdn-routing
+  - cache-invalidation
+dependents: []
+brief: Caching HTTP responses at geographically distributed edge nodes to serve content without hitting the origin; Cache-Control headers and surrogate keys are the primary control surface.

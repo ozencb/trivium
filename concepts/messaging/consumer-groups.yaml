@@ -1,0 +1,16 @@
+id: consumer-groups
+title: Consumer Groups
+category:
+  - Messaging
+  - Kafka
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - backpressure
+  - kafka-partitioning
+dependents: []
+brief: Named sets of consumers that coordinate partition ownership so each partition is processed by exactly one member, enabling parallel consumption while preserving per-partition order.

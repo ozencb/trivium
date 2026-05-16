@@ -1,0 +1,13 @@
+id: mutation-observer
+title: Mutation Observer API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Watches DOM tree mutations—attribute changes, child insertions/removals, text changes—asynchronously, replacing synchronous mutation events that caused layout thrashing.

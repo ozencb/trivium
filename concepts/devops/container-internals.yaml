@@ -1,0 +1,19 @@
+id: container-internals
+title: Container Internals
+category:
+  - DevOps
+  - Containers
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - virtual-memory
+  - port-binding
+dependents:
+  - kubernetes-scheduling
+  - container-networking
+brief: Linux namespaces and cgroups are the primitives that give containers their isolation and resource limits; understanding them explains why containers are not VMs and share kernel vulnerabilities.

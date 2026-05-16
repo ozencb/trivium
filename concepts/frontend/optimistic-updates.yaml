@@ -1,0 +1,13 @@
+id: optimistic-updates
+title: Optimistic Updates
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Immediately reflecting mutations in local UI state before server confirmation and then reconciling or rolling back based on the actual response.

@@ -1,0 +1,14 @@
+id: react-transitions
+title: React Transitions API
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - concurrent-rendering
+dependents: []
+brief: Marks state updates as non-urgent so React can interrupt their render to prioritize higher-priority user input, eliminating stutter during heavy UI transitions.

@@ -1,0 +1,15 @@
+id: log-aggregation
+title: Log Aggregation
+category:
+  - Observability
+  - Logging
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - structured-logging
+dependents: []
+brief: Centralizing logs from distributed processes into a queryable store via a shipper pipeline, making cross-service incident investigation possible without SSH-ing into individual boxes.

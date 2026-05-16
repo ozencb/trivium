@@ -1,0 +1,14 @@
+id: resize-observer
+title: Resize Observer API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents: []
+brief: Fires callbacks when an element's content box changes size, enabling component-level responsive behavior without coupling to viewport-based media queries.

@@ -1,0 +1,15 @@
+id: offscreen-canvas
+title: OffscreenCanvas
+category:
+  - Frontend
+  - Graphics
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-workers
+  - canvas-api
+dependents: []
+brief: Transfers canvas rendering context ownership to a worker thread so GPU-intensive drawing runs off the main thread, keeping frame rates independent of JavaScript work.

@@ -1,0 +1,14 @@
+id: webgl-basics
+title: WebGL Fundamentals
+category:
+  - Frontend
+  - Graphics
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - canvas-api
+dependents: []
+brief: The browser's low-level GPU API requiring explicit vertex buffers, shader programs, and draw calls to render hardware-accelerated 2D/3D graphics at the cost of significant setup complexity.

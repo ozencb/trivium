@@ -1,0 +1,17 @@
+id: cdn-routing
+title: CDN Routing
+category:
+  - Networking
+  - CDN
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - dns-resolution
+dependents:
+  - cdn-purging
+  - cdn-edge-caching
+brief: Anycast and DNS-based techniques that direct users to the geographically or topologically nearest edge node, trading consistency complexity for reduced origin load and latency.

@@ -1,0 +1,15 @@
+id: trusted-types
+title: Trusted Types
+category:
+  - Frontend
+  - Security
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - xss-prevention
+  - content-security-policy
+dependents: []
+brief: Requires DOM injection sinks to receive typed wrapper objects rather than raw strings, making it structurally impossible to pass unvetted HTML or URLs to dangerous APIs.

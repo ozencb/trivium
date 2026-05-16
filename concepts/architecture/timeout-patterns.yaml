@@ -1,0 +1,16 @@
+id: timeout-patterns
+title: Timeout Patterns
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - tcp-keepalive
+dependents:
+  - circuit-breaker
+brief: Setting deadlines on outbound calls to bound resource consumption; choosing connect, read, and total timeouts correctly requires understanding where latency comes from in the dependency chain.

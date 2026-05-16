@@ -1,0 +1,16 @@
+id: two-phase-locking
+title: Two-Phase Locking
+category:
+  - Databases
+  - Concurrency
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+prerequisites:
+  - mutexes-and-locks
+dependents:
+  - mvcc
+  - deadlocks
+brief: The isolation protocol where transactions acquire locks in a growing phase and release them in a shrinking phase, providing serializability at the cost of deadlock risk and contention.

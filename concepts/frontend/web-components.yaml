@@ -1,0 +1,15 @@
+id: web-components
+title: Web Components
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - shadow-dom
+dependents: []
+brief: Browser-native Custom Elements, Shadow DOM, and HTML Templates compose into framework-agnostic, encapsulated UI elements that work across any stack.

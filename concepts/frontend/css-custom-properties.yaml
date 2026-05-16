@@ -1,0 +1,14 @@
+id: css-custom-properties
+title: CSS Custom Properties
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - css-houdini
+brief: Variables defined with -- syntax that cascade and inherit like normal properties, enabling runtime theming, component-scoped values, and JS-driven style changes without class toggling.

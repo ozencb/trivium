@@ -1,0 +1,15 @@
+id: will-change
+title: will-change CSS Property
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - compositing-layers
+dependents:
+  - css-animation-performance
+brief: Hints to the browser which properties will animate, triggering early GPU layer promotion so compositor-thread animations start without a main-thread reclassification.

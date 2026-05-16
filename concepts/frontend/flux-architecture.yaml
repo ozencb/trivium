@@ -1,0 +1,15 @@
+id: flux-architecture
+title: Flux Architecture
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - career
+prerequisites: []
+dependents:
+  - selector-memoization
+brief: Unidirectional data flow—action, dispatcher, store, view—that makes state mutations predictable and traceable in applications with complex shared state.

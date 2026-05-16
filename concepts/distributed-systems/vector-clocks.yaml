@@ -1,0 +1,16 @@
+id: vector-clocks
+title: Vector Clocks
+category:
+  - Distributed Systems
+  - Causality
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - eventual-consistency
+dependents:
+  - conflict-resolution
+brief: Per-node logical clocks incremented on send and merged on receive to capture causality in distributed systems, enabling detection of concurrent writes that require conflict resolution.

@@ -1,0 +1,17 @@
+id: read-replicas
+title: Read Replicas
+category:
+  - Databases
+  - Scalability
+roles:
+  - backend
+  - sre
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-replication
+  - replication-lag
+dependents:
+  - connection-pooling
+brief: Read-only database copies that offload query load from the primary, but require application awareness of replication lag to avoid serving inconsistent results.

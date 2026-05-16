@@ -1,0 +1,16 @@
+id: crash-recovery
+title: Crash Recovery
+category:
+  - Databases
+  - Durability
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - write-ahead-log
+  - filesystem-internals
+dependents: []
+brief: Replaying WAL entries from the last checkpoint reconstructs committed state and rolls back partial writes after an unclean shutdown.

@@ -1,0 +1,13 @@
+id: media-session-api
+title: Media Session API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Lets web apps integrate with OS-level media controls—lock screen, notification area, hardware keys—by declaring playback metadata and action handlers the platform can invoke.

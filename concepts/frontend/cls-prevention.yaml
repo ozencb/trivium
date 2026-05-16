@@ -1,0 +1,15 @@
+id: cls-prevention
+title: Cumulative Layout Shift Prevention
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-vitals
+  - layout-thrashing
+dependents: []
+brief: Reserving space for async content via explicit dimensions, aspect-ratio, and avoiding dynamically injected content above the fold to eliminate unexpected shifts.

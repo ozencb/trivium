@@ -1,0 +1,13 @@
+id: file-api
+title: File API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Gives JavaScript synchronous access to file metadata and async access to contents, enabling client-side parsing, preview generation, and chunked upload workflows.

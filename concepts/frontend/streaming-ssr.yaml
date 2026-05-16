@@ -1,0 +1,16 @@
+id: streaming-ssr
+title: Streaming SSR
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - server-side-rendering
+  - http2-flow-control
+dependents: []
+brief: Flushing HTML to the browser in chunks as the server renders, allowing early content to display while later sections are still being generated server-side.

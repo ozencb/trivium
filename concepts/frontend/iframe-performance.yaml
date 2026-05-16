@@ -1,0 +1,16 @@
+id: iframe-performance
+title: iframe Performance Patterns
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - browser-rendering-pipeline
+  - iframe-sandboxing
+dependents: []
+brief: Lazy-load iframes with loading=lazy and use srcdoc for initial placeholder content, exploiting the iframe's isolated browsing context to contain heavy third-party rendering away from main-page layout.

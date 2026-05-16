@@ -1,0 +1,18 @@
+id: real-user-monitoring
+title: Real User Monitoring
+category:
+  - Frontend
+  - Observability
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - web-vitals
+  - performance-observer
+  - navigation-timing-api
+dependents: []
+brief: Collect performance metrics from actual user sessions via Performance Observer and beacon them to an analytics endpoint, measuring field performance across real devices and networks rather than synthetic conditions.

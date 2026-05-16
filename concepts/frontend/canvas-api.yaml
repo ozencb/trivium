@@ -1,0 +1,15 @@
+id: canvas-api
+title: Canvas 2D API
+category:
+  - Frontend
+  - Graphics
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents:
+  - webgl-basics
+  - offscreen-canvas
+brief: An immediate-mode 2D drawing surface where you issue imperative draw commands each frame, requiring explicit dirty tracking since the browser retains no scene graph.

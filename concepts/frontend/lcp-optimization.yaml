@@ -1,0 +1,17 @@
+id: lcp-optimization
+title: Largest Contentful Paint Optimization
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - web-vitals
+  - critical-rendering-path
+  - resource-hints
+  - paint-timing
+dependents: []
+brief: Reducing the time the largest visible element takes to appear by preloading hero images, eliminating render-blocking resources, and improving TTFB.

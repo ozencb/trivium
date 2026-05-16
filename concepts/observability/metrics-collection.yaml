@@ -1,0 +1,18 @@
+id: metrics-collection
+title: Metrics Collection
+category:
+  - Observability
+  - Metrics
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - distributed-tracing
+dependents:
+  - slo-sli-sla
+  - alerting
+brief: Instrumenting services to emit counters, gauges, and histograms that expose system behavior at scale; choosing the right aggregation avoids the cardinality explosions that break TSDB performance.

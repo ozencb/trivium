@@ -1,0 +1,15 @@
+id: contract-testing
+title: Contract Testing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - property-based-testing
+dependents: []
+brief: Verifying that a service produces responses matching its consumers' expectations without deploying both sides together, enabling independent service evolution in distributed systems.

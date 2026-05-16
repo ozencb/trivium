@@ -1,0 +1,15 @@
+id: deadlocks
+title: Deadlocks
+category:
+  - Concurrency
+  - Synchronization
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - mutexes-and-locks
+  - two-phase-locking
+dependents: []
+brief: Circular lock-wait chains where no participant can make progress; databases detect and break them by aborting a victim transaction, but application code must handle the resulting error.

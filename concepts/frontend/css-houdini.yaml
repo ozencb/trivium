@@ -1,0 +1,16 @@
+id: css-houdini
+title: CSS Houdini
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - css-custom-properties
+  - browser-rendering-pipeline
+dependents:
+  - worklets
+brief: Low-level browser APIs that expose the CSS engine's style, layout, and paint stages to JavaScript, enabling custom rendering that runs off the main thread.

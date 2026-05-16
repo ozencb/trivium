@@ -1,0 +1,14 @@
+id: cross-shard-queries
+title: Cross-Shard Queries
+category:
+  - Databases
+  - Scalability
+roles:
+  - backend
+  - data
+lenses:
+  - career
+prerequisites:
+  - sharding
+dependents: []
+brief: Queries that must aggregate data from multiple shards, requiring either scatter-gather fan-out or denormalization to avoid it; the operational complexity drives shard key design decisions.

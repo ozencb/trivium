@@ -1,0 +1,15 @@
+id: intersection-observer
+title: Intersection Observer API
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - browser-rendering-pipeline
+dependents:
+  - image-lazy-loading
+brief: Asynchronously notifies when elements enter or exit the viewport without triggering synchronous layout reads, enabling performant lazy loading and scroll-driven effects.

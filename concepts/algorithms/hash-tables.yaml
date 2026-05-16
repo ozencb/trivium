@@ -1,0 +1,8 @@
+id: "hash-tables"
+title: "Hash Tables"
+category: ["Algorithms", "Data Structures"]
+roles: [backend, frontend, fullstack]
+lenses: [foundational]
+prerequisites: []
+dependents: ["consistent-hashing", "bloom-filters", "database-indexing"]
+brief: "How hash functions enable O(1) average-case lookups and why collision strategies matter for performance"

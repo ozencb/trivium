@@ -1,0 +1,15 @@
+id: fuzzing
+title: Fuzzing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - property-based-testing
+dependents: []
+brief: Automatically generating malformed or random inputs to find crashes and security bugs that humans don't think to test, especially effective at parser and protocol boundaries.

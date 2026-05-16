@@ -1,0 +1,15 @@
+id: incremental-static-regeneration
+title: Incremental Static Regeneration
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - static-site-generation
+  - cache-invalidation
+dependents: []
+brief: Stale-while-revalidate applied to statically generated pages—serving the cached build instantly while regenerating it in the background after a TTL expires.

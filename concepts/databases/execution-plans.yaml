@@ -1,0 +1,15 @@
+id: execution-plans
+title: Query Execution Plans
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - query-optimization
+dependents: []
+brief: The planner's chosen sequence of joins, scans, and sorts reveals exactly why a query is slow and where index changes or rewrites will have the most leverage.

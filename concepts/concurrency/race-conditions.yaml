@@ -1,0 +1,17 @@
+id: race-conditions
+title: Race Conditions
+category:
+  - Concurrency
+  - Fundamentals
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - thread-safety
+dependents:
+  - optimistic-locking
+  - mvcc
+brief: Bugs that arise when outcome depends on non-deterministic thread interleaving; recognizing the read-modify-write pattern is the prerequisite to choosing the right fix.

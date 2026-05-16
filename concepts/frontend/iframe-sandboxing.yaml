@@ -1,0 +1,13 @@
+id: iframe-sandboxing
+title: iframe Sandboxing
+category:
+  - Frontend
+  - Security
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: The sandbox attribute removes iframe capabilities—scripts, forms, same-origin access—on an opt-in basis, limiting the blast radius of untrusted embedded content.

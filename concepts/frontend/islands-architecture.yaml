@@ -1,0 +1,16 @@
+id: islands-architecture
+title: Islands Architecture
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - partial-hydration
+  - server-side-rendering
+dependents: []
+brief: A rendering model where mostly-static server HTML contains isolated interactive islands that hydrate independently, minimizing total JavaScript shipped to the client.

@@ -1,0 +1,16 @@
+id: rate-limiting
+title: Rate Limiting
+category:
+  - API Design
+  - Reliability
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - api-versioning
+dependents:
+  - token-bucket-algorithm
+brief: Enforcing per-client or per-endpoint request ceilings to protect services from overload; token bucket and leaky bucket algorithms trade burst tolerance for smoothness.

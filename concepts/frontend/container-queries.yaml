@@ -1,0 +1,13 @@
+id: container-queries
+title: CSS Container Queries
+category:
+  - Frontend
+  - CSS
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Lets components respond to the size of their containing element instead of the viewport, making truly context-portable responsive components possible for the first time.

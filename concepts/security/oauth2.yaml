@@ -1,0 +1,18 @@
+id: oauth2
+title: OAuth 2.0
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+  - career
+prerequisites:
+  - tls-handshake
+dependents:
+  - openid-connect
+  - jwt-auth
+brief: A delegation protocol where a resource owner grants a third party scoped access to their resources without sharing credentials, using short-lived tokens exchanged via redirect flows.

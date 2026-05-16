@@ -1,0 +1,15 @@
+id: web-animations-api
+title: Web Animations API
+category:
+  - Frontend
+  - Animation
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - requestanimationframe
+  - css-animation-performance
+dependents: []
+brief: A JavaScript API for creating and controlling animations in the browser engine, combining CSS animation's compositor-thread performance with JS-driven programmability.

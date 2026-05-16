@@ -1,0 +1,15 @@
+id: tcp-keepalive
+title: TCP Keepalive
+category:
+  - Networking
+  - TCP/IP
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - tcp-basics
+dependents:
+  - connection-pooling
+brief: Periodic probes sent on idle connections to detect broken paths and evict dead connections, preventing proxies and firewalls from silently dropping long-lived connections.

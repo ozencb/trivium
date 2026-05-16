@@ -1,0 +1,8 @@
+id: "database-indexing"
+title: "Database Indexing"
+category: ["Databases", "Performance"]
+roles: [backend, fullstack, data]
+lenses: [practical, foundational]
+prerequisites: ["b-trees"]
+dependents: ["query-optimization", "index-selection"]
+brief: "How databases use data structures to speed up lookups without scanning every row"

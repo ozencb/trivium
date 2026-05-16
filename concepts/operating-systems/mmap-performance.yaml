@@ -1,0 +1,16 @@
+id: mmap-performance
+title: Memory-Mapped File Performance
+category:
+  - Operating Systems
+  - Memory
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - memory-mapped-files
+  - page-caches
+dependents: []
+brief: When mmap outperforms read/write syscalls by eliminating kernel-to-userspace copies, and when it regresses under random-access patterns due to page fault overhead.

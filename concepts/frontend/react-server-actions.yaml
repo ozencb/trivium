@@ -1,0 +1,16 @@
+id: react-server-actions
+title: React Server Actions
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - react-server-components
+  - server-state-management
+dependents: []
+brief: Define async server-side functions invocable directly from client components to handle mutations and data writes, eliminating a separate API route layer at the cost of tight client-server coupling.

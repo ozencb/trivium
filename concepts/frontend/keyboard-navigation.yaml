@@ -1,0 +1,15 @@
+id: keyboard-navigation
+title: Keyboard Navigation
+category:
+  - Frontend
+  - Accessibility
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites: []
+dependents:
+  - focus-management
+brief: Ensuring all interactive elements are reachable via Tab, operable via Enter/Space, and navigable within composite widgets via arrow keys with visible focus indicators.

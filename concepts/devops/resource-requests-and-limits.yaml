@@ -1,0 +1,15 @@
+id: resource-requests-and-limits
+title: Resource Requests and Limits
+category:
+  - DevOps
+  - Orchestration
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - kubernetes-scheduling
+dependents: []
+brief: Requests are scheduling hints that guarantee a resource floor; limits are enforcement ceilings that can OOMKill or CPU-throttle a container, and conflating them is a common source of production incidents.

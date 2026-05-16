@@ -1,0 +1,19 @@
+id: write-ahead-log
+title: Write-Ahead Log
+category:
+  - Databases
+  - Durability
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - filesystem-internals
+  - database-buffer-pool
+dependents:
+  - database-replication
+  - crash-recovery
+brief: Appending the intent of every change to a sequential log before applying it to data pages, making atomic commits and crash recovery possible without synchronous full-page flushes.

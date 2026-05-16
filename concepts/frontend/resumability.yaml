@@ -1,0 +1,15 @@
+id: resumability
+title: Resumability
+category:
+  - Frontend
+  - Rendering
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - partial-hydration
+dependents: []
+brief: Serializing complete component state and event listener locations on the server so the client can resume execution from where the server stopped, skipping re-execution.

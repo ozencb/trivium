@@ -1,0 +1,13 @@
+id: subresource-integrity
+title: Subresource Integrity
+category:
+  - Frontend
+  - Security
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Embedding a cryptographic hash in script and link tags lets browsers reject resources whose content doesn't match, protecting against CDN or third-party supply chain tampering.

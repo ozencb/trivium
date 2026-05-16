@@ -1,0 +1,18 @@
+id: distributed-transactions
+title: Distributed Transactions
+category:
+  - Distributed Systems
+  - Consistency
+roles:
+  - backend
+  - data
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - distributed-locks
+  - two-phase-commit
+dependents:
+  - saga-pattern
+  - outbox-pattern
+brief: Coordinating atomic commits across multiple independent services or databases; the coordination overhead and failure modes make avoiding them the preferred architectural default.

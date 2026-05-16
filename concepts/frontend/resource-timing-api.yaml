@@ -1,0 +1,15 @@
+id: resource-timing-api
+title: Resource Timing API
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - performance-observer
+dependents: []
+brief: Exposes high-resolution timestamps for every phase of each sub-resource fetch—DNS, TCP, TLS, TTFB, transfer—enabling production waterfall analysis.

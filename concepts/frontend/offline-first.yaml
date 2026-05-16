@@ -1,0 +1,18 @@
+id: offline-first
+title: Offline-First Design
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - service-workers
+  - indexeddb
+  - background-sync
+  - cache-api
+dependents: []
+brief: An architecture that reads from and writes to local storage first and syncs with the server opportunistically, treating network availability as an enhancement rather than a requirement.

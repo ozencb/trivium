@@ -1,0 +1,14 @@
+id: cache-stampede
+title: Cache Stampede
+category:
+  - Performance
+  - Caching
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - cache-invalidation
+dependents: []
+brief: The thundering-herd problem when a hot cache entry expires and simultaneous cache misses flood the origin database; probabilistic early expiration or locking prevents it.

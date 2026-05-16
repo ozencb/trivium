@@ -1,0 +1,16 @@
+id: leader-election
+title: Leader Election
+category:
+  - Distributed Systems
+  - Coordination
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - consensus-algorithms
+dependents:
+  - distributed-locks
+brief: The distributed systems primitive where nodes agree on a single authoritative coordinator, implemented via Raft or Paxos; understanding it explains how distributed databases avoid split-brain.

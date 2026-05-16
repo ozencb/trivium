@@ -1,0 +1,14 @@
+id: n-plus-one-queries
+title: N+1 Query Problem
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - query-optimization
+dependents: []
+brief: The ORM anti-pattern of issuing one query to fetch N records followed by N queries to fetch related data; fixed by eager loading, batching, or a single JOIN.

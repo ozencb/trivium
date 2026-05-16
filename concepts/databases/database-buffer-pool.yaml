@@ -1,0 +1,18 @@
+id: database-buffer-pool
+title: Database Buffer Pool
+category:
+  - Databases
+  - Internals
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - page-caches
+  - b-trees
+dependents:
+  - write-ahead-log
+brief: The database engine's private in-memory page cache that absorbs random I/O, controls dirty-page eviction policy, and pins pages during active transactions.

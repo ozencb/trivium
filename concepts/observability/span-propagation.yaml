@@ -1,0 +1,14 @@
+id: span-propagation
+title: Span Propagation
+category:
+  - Observability
+  - Tracing
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - distributed-tracing
+dependents: []
+brief: Injecting trace context (trace ID, span ID) into outbound requests so downstream services can attach their spans to the same distributed trace without centralized coordination.

@@ -1,0 +1,14 @@
+id: optimistic-locking
+title: Optimistic Locking
+category:
+  - Databases
+  - Concurrency
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - race-conditions
+dependents: []
+brief: Detecting write conflicts at commit time via a version counter rather than holding locks during the transaction, suitable when conflicts are rare and long-held locks are expensive.

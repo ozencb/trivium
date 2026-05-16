@@ -1,0 +1,14 @@
+id: push-notifications-web
+title: Web Push Notifications
+category:
+  - Frontend
+  - Web APIs
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - service-workers
+dependents: []
+brief: Server-initiated messages delivered via the Push API to a service worker even when the browser tab is closed, using VAPID authentication to prevent spoofing.

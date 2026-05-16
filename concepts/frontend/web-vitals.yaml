@@ -1,0 +1,19 @@
+id: web-vitals
+title: Core Web Vitals
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - performance-observer
+dependents:
+  - lcp-optimization
+  - cls-prevention
+  - inp-optimization
+brief: Google's field metrics (LCP, CLS, INP) that measure real-user loading, visual stability, and interactivity as ranking signals and UX health indicators.

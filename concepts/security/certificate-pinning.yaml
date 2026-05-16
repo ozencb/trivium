@@ -1,0 +1,15 @@
+id: certificate-pinning
+title: Certificate Pinning
+category:
+  - Security
+  - Transport
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - tls-handshake
+dependents: []
+brief: Hardcoding expected certificate or public key fingerprints in a client to resist CA compromise, at the cost of painful key rotation and broken updates if pins go stale.
