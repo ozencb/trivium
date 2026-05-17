@@ -11,7 +11,10 @@
     "test:watch": "vitest",
     "generate": "tsx scripts/generate.ts",
     "generate-concepts": "tsx scripts/generate-concepts.ts",
-    "import": "tsx scripts/import-explanations.ts"
+    "import": "tsx scripts/import-explanations.ts",
+    "release:patch": "pnpm version patch && git push && git push --tags",
+    "release:minor": "pnpm version minor && git push && git push --tags",
+    "release:major": "pnpm version major && git push && git push --tags"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -42,6 +45,9 @@
       "sharp",
       "unrs-resolver"
     ]
+  },
+  "engines": {
+    "node": ">=22"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

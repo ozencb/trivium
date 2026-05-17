@@ -1,8 +1,13 @@
-name: Build and Publish Docker Image
+name: Publish Docker Image
 
 on:
   push:
-    branches: ["main"]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
@@ -12,40 +17,33 @@ jobs:
       packages: write
 
     steps:
-      # Checkout the code
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Log in to GHCR using GitHub token
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract version from package.json
-      - name: Extract package version
-        id: package_version
-        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
 
-      # Build and push the Docker image
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/trivium:latest
-            ghcr.io/${{ github.repository_owner }}/trivium:${{ steps.package_version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          file: Dockerfile
-
-      # Optional: Clear Docker cache
-      - name: Clear Docker cache
-        run: |
-          docker builder prune -f
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
