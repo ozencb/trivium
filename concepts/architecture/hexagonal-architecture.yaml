@@ -1,0 +1,17 @@
+id: hexagonal-architecture
+title: Hexagonal Architecture
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - dependency-injection
+  - repository-pattern
+  - domain-driven-design
+dependents: []
+brief: Organizes application logic around ports and adapters so that domain code has no dependencies on infrastructure, making it independently testable and swappable without touching business rules.

@@ -1,0 +1,16 @@
+id: graceful-degradation
+title: Graceful Degradation
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - circuit-breaker
+  - bulkhead-pattern
+dependents: []
+brief: Designing systems to return reduced-functionality responses when dependencies fail—cached data, default values, partial results—maintaining core user value rather than failing completely.

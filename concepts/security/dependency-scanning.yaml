@@ -1,0 +1,15 @@
+id: dependency-scanning
+title: Dependency Scanning
+category:
+  - Security
+  - DevOps
+roles:
+  - devops
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - software-supply-chain-security
+dependents: []
+brief: Automated comparison of project dependencies against CVE databases integrated into CI pipelines, surfacing known vulnerabilities before they reach production with minimal manual effort.

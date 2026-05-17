@@ -1,0 +1,14 @@
+id: tls-session-resumption
+title: TLS Session Resumption
+category:
+  - Security
+  - Transport
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - tls-handshake
+dependents: []
+brief: Mechanisms—session tickets and session IDs—allowing TLS clients to resume prior sessions without a full handshake, reducing connection establishment from two round trips to one or zero for repeat clients.

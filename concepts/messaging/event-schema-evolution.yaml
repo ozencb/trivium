@@ -1,0 +1,16 @@
+id: event-schema-evolution
+title: Event Schema Evolution
+category:
+  - Messaging
+  - Data Governance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - schema-registry
+  - event-driven-architecture
+dependents: []
+brief: Managing schema changes across producers and consumers using forward/backward compatibility rules so existing consumers remain unbroken as event schemas grow and change over time.

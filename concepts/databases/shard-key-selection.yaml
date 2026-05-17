@@ -1,0 +1,16 @@
+id: shard-key-selection
+title: Shard Key Selection
+category:
+  - Databases
+  - Scalability
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - sharding
+  - consistent-hashing
+dependents: []
+brief: The critical schema decision of which field to shard on, balancing write distribution to avoid hot shards, query locality to minimize scatter-gather, and cardinality to permit future rebalancing.

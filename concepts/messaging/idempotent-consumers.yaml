@@ -1,0 +1,14 @@
+id: idempotent-consumers
+title: Idempotent Consumers
+category:
+  - Messaging
+  - Reliability
+roles:
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - idempotency
+  - at-least-once-delivery
+dependents: []
+brief: Message handlers designed to produce the same side effects when processing a message multiple times, required for correctness in any at-least-once delivery system that lacks exactly-once transport guarantees.

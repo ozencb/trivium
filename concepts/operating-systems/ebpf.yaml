@@ -1,0 +1,15 @@
+id: ebpf
+title: eBPF
+category:
+  - Operating Systems
+  - Networking
+roles:
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - linux-namespaces
+  - cgroups
+dependents: []
+brief: A Linux kernel technology enabling sandboxed programs to run in kernel space without kernel modifications, used to build high-performance networking, observability, and security tooling with near-zero overhead.

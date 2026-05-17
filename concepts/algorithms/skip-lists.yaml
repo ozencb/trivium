@@ -1,0 +1,13 @@
+id: skip-lists
+title: Skip Lists
+category:
+  - Algorithms
+  - Data Structures
+roles:
+  - backend
+lenses:
+  - foundational
+prerequisites:
+  - hash-tables
+dependents: []
+brief: A probabilistic layered linked-list achieving O(log n) search, insert, and delete without rebalancing, favored in concurrent implementations over trees because partial structural updates do not corrupt traversal.

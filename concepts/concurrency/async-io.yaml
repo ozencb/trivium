@@ -1,0 +1,18 @@
+id: async-io
+title: Asynchronous I/O
+category:
+  - Concurrency
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - thread-safety
+  - virtual-memory
+dependents:
+  - structured-concurrency
+  - event-loop
+brief: Decouples I/O initiation from completion so a single thread handles thousands of concurrent operations by yielding control while waiting rather than blocking, multiplying throughput without multiplying threads.

@@ -1,0 +1,17 @@
+id: cpu-cache-effects
+title: CPU Cache Effects
+category:
+  - Performance
+  - Hardware
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - numa-architecture
+  - branchless-programming
+  - simd
+brief: Performance phenomena arising from the L1/L2/L3 cache hierarchy where cache misses, false sharing across cache lines, and cache thrashing dominate latency and frequently dwarf algorithmic improvements.

@@ -1,0 +1,15 @@
+id: numa-architecture
+title: NUMA Architecture
+category:
+  - Operating Systems
+  - Hardware
+roles:
+  - sre
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - virtual-memory
+  - cpu-cache-effects
+dependents: []
+brief: A hardware topology where memory access latency depends on which CPU socket allocated the memory, requiring NUMA-aware allocation strategies to avoid cross-node penalties in multi-socket systems.

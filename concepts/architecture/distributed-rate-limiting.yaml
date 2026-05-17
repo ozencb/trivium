@@ -1,0 +1,15 @@
+id: distributed-rate-limiting
+title: Distributed Rate Limiting
+category:
+  - Architecture
+  - Reliability
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - token-bucket-algorithm
+  - consistent-hashing
+dependents: []
+brief: Rate limiting applied across a cluster using shared atomic state so aggregate traffic from all nodes respects per-client limits, typically implemented with Redis atomic increment and expiry operations.

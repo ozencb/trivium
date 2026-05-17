@@ -1,0 +1,14 @@
+id: toil-reduction
+title: Toil Reduction
+category:
+  - Operations
+  - SRE
+roles:
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - slo-sli-sla
+dependents: []
+brief: Systematic identification and elimination of manual, repetitive, automatable operational work that scales with service load, freeing SRE capacity for reliability engineering that compounds over time.

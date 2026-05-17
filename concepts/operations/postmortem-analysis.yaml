@@ -1,0 +1,16 @@
+id: postmortem-analysis
+title: Blameless Postmortem
+category:
+  - Operations
+  - SRE
+roles:
+  - sre
+  - backend
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - incident-response
+dependents: []
+brief: A structured, blameless retrospective after an incident that identifies contributing factors and systemic improvements, treating incidents as learning opportunities to prevent recurrence rather than assigning fault.

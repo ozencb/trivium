@@ -1,0 +1,15 @@
+id: composite-indexes
+title: Composite Indexes
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+dependents:
+  - covering-indexes
+brief: Multi-column indexes where column order determines which query prefix patterns benefit, requiring analysis of access patterns and selectivity to avoid indexes that consume write overhead without aiding any query.

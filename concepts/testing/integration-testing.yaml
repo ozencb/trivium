@@ -1,0 +1,16 @@
+id: integration-testing
+title: Integration Testing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - fullstack
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - end-to-end-testing
+brief: Tests exercising multiple components together against real dependencies—databases, queues, downstream services—to catch integration failures that unit tests with mocks cannot detect.

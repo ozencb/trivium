@@ -1,0 +1,17 @@
+id: domain-driven-design
+title: Domain-Driven Design
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - career
+prerequisites: []
+dependents:
+  - hexagonal-architecture
+  - bounded-context
+  - anti-corruption-layer
+brief: Models software around the core business domain by establishing a shared language between developers and domain experts, using that language to drive every design decision from naming to service boundaries.

@@ -1,0 +1,14 @@
+id: infrastructure-drift
+title: Infrastructure Drift
+category:
+  - DevOps
+  - Operations
+roles:
+  - devops
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - infrastructure-as-code
+dependents: []
+brief: The accumulation of divergence between declared infrastructure configuration and actual running state caused by out-of-band changes, making environments unreproducible and deployments unpredictable over time.

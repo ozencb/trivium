@@ -1,0 +1,16 @@
+id: bounded-context
+title: Bounded Context
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - domain-driven-design
+dependents:
+  - anti-corruption-layer
+brief: Defines the explicit boundary within which a domain model is internally consistent, preventing concepts from leaking across service and team boundaries where they carry different meanings.

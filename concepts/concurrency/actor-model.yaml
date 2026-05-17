@@ -1,0 +1,15 @@
+id: actor-model
+title: Actor Model
+category:
+  - Concurrency
+  - Models
+roles:
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - message-queues
+  - thread-safety
+dependents: []
+brief: Models concurrent computation as isolated actors that communicate exclusively through asynchronous message passing, eliminating shared mutable state and the lock-based synchronization hazards it requires.

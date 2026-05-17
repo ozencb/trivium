@@ -1,0 +1,14 @@
+id: partial-indexes
+title: Partial Indexes
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+dependents: []
+brief: An index built only over rows matching a WHERE predicate, reducing index size and write amplification while accelerating queries that filter on the same condition such as active-only records.

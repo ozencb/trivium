@@ -1,0 +1,15 @@
+id: message-replay
+title: Message Replay
+category:
+  - Messaging
+  - Patterns
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - kafka-partitioning
+  - at-least-once-delivery
+dependents: []
+brief: Re-consuming messages from a committed past offset in a durable log, enabling new consumers to bootstrap from history, bug fixes to be applied retroactively, and event sourcing patterns without re-processing infrastructure.

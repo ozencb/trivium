@@ -1,0 +1,16 @@
+id: repository-pattern
+title: Repository Pattern
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - dependency-injection
+dependents:
+  - hexagonal-architecture
+brief: Abstracts data access behind a collection-like interface so domain logic depends on the abstraction rather than a specific database or ORM, enabling substitution and isolated unit testing.

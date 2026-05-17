@@ -1,0 +1,14 @@
+id: ssrf-prevention
+title: SSRF Prevention
+category:
+  - Security
+  - Web
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - cors
+dependents: []
+brief: Defenses against Server-Side Request Forgery that validate and allowlist outbound request targets, preventing attackers from using the server as a proxy to reach internal services or cloud metadata endpoints.

@@ -1,0 +1,14 @@
+id: sql-injection-prevention
+title: SQL Injection Prevention
+category:
+  - Security
+  - Web
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents: []
+brief: Defending against SQL injection by using parameterized queries and prepared statements so user input is always treated as data, never interpreted as SQL syntax regardless of its content.

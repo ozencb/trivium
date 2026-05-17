@@ -1,0 +1,15 @@
+id: graphql-subscriptions
+title: GraphQL Subscriptions
+category:
+  - API Design
+  - Real-time
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - graphql
+  - websockets
+dependents: []
+brief: GraphQL's real-time push mechanism where clients subscribe to named events and receive server-pushed updates, typically implemented over WebSockets backed by a pub/sub system at the resolver layer.

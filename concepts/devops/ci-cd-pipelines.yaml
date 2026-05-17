@@ -1,0 +1,20 @@
+id: ci-cd-pipelines
+title: CI/CD Pipelines
+category:
+  - DevOps
+  - Automation
+roles:
+  - backend
+  - frontend
+  - devops
+  - fullstack
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - blue-green-deployments
+dependents:
+  - artifact-registries
+  - software-supply-chain-security
+brief: Automated workflows that build, test, and deploy code on every commit, encoding release knowledge as version-controlled configuration and eliminating the manual steps that introduce human error.

@@ -1,0 +1,15 @@
+id: feature-toggles-patterns
+title: Feature Toggle Patterns
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - fullstack
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - feature-flags
+dependents: []
+brief: The taxonomy of toggle types—release, experiment, ops, and permission toggles—each with distinct lifetimes and governance requirements that determine how they should be managed, audited, and retired.

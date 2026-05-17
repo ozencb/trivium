@@ -1,0 +1,17 @@
+id: table-partitioning
+title: Table Partitioning
+category:
+  - Databases
+  - Scalability
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+  - b-trees
+dependents:
+  - partition-pruning
+brief: Splitting a large table into smaller physical segments by range, list, or hash on a key, enabling partition elimination during scans and partition-level maintenance like dropping old time buckets.

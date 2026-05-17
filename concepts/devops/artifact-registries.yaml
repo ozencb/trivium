@@ -1,0 +1,14 @@
+id: artifact-registries
+title: Artifact Registries
+category:
+  - DevOps
+  - Deployment
+roles:
+  - devops
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - ci-cd-pipelines
+dependents: []
+brief: Versioned repositories for build outputs—container images, packages, binaries—that decouple build from deployment and enable promotion workflows where the same artifact moves across environments unchanged.

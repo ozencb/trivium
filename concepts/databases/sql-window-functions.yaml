@@ -1,0 +1,14 @@
+id: sql-window-functions
+title: SQL Window Functions
+category:
+  - Databases
+  - Query
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - query-optimization
+dependents: []
+brief: SQL expressions computing aggregates over a sliding frame of peer rows without collapsing them into groups, enabling running totals, rankings, and lag/lead comparisons in a single scan pass.

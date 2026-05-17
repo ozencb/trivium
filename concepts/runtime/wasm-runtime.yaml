@@ -1,0 +1,14 @@
+id: wasm-runtime
+title: Server-Side WebAssembly Runtime
+category:
+  - Runtime
+  - Environments
+roles:
+  - backend
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - webassembly
+dependents: []
+brief: Standalone WebAssembly runtimes (Wasmtime, WasmEdge) executing Wasm modules outside the browser with sandboxed host capability access, enabling language-agnostic plugin systems and edge compute workloads.

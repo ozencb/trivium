@@ -1,0 +1,17 @@
+id: progressive-delivery
+title: Progressive Delivery
+category:
+  - DevOps
+  - Deployment Strategies
+roles:
+  - devops
+  - sre
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - canary-releases
+  - feature-flags
+dependents: []
+brief: A deployment strategy combining canary releases and feature flags with automated metric analysis to gradually expose changes, automatically rolling back when error rates or latency degrade beyond thresholds.

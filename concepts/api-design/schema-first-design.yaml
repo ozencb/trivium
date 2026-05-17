@@ -1,0 +1,16 @@
+id: schema-first-design
+title: Schema-First API Design
+category:
+  - API Design
+  - Methodology
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - openapi-specification
+  - protocol-buffers
+dependents: []
+brief: An API workflow defining and reviewing the interface contract before writing any implementation, with client and server code generated from it to prevent spec-implementation drift and enable parallel development.

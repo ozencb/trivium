@@ -1,0 +1,17 @@
+id: zero-downtime-deployments
+title: Zero-Downtime Deployments
+category:
+  - Architecture
+  - Reliability
+roles:
+  - devops
+  - sre
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - blue-green-deployments
+  - health-checks
+  - connection-draining
+dependents: []
+brief: Deployment practices ensuring traffic is only routed to healthy instances throughout an update, requiring health checks, graceful shutdown, and enough replica redundancy to absorb the rolling replacement.

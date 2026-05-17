@@ -1,0 +1,16 @@
+id: load-shedding
+title: Load Shedding
+category:
+  - Architecture
+  - Reliability
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rate-limiting
+  - circuit-breaker
+dependents: []
+brief: Deliberately rejects low-priority requests when a system approaches capacity limits to protect throughput for high-priority traffic rather than degrading service uniformly across all callers.

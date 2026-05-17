@@ -1,0 +1,15 @@
+id: pod-disruption-budgets
+title: Pod Disruption Budgets
+category:
+  - DevOps
+  - Orchestration
+roles:
+  - devops
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - kubernetes-scheduling
+  - health-checks
+dependents: []
+brief: Kubernetes policies specifying minimum available or maximum unavailable pod counts during voluntary disruptions, preventing rolling updates and node drains from accidentally taking down all replicas simultaneously.

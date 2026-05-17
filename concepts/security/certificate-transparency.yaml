@@ -1,0 +1,15 @@
+id: certificate-transparency
+title: Certificate Transparency
+category:
+  - Security
+  - PKI
+roles:
+  - sre
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - tls-handshake
+  - public-key-crypto
+dependents: []
+brief: A publicly auditable append-only log of every issued TLS certificate enabling domain owners to detect unauthorized issuance before it enables man-in-the-middle attacks, closing a fundamental gap in the CA trust model.

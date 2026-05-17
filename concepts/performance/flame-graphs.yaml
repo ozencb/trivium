@@ -1,0 +1,15 @@
+id: flame-graphs
+title: Flame Graphs
+category:
+  - Performance
+  - Observability
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - cpu-profiling
+dependents: []
+brief: Visualizations of sampled call stacks where bar width represents CPU time, making hot code paths immediately identifiable without needing to interpret raw profiler output or tabular data.

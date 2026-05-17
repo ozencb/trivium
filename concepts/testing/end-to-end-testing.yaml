@@ -1,0 +1,16 @@
+id: end-to-end-testing
+title: End-to-End Testing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - frontend
+  - fullstack
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - integration-testing
+dependents: []
+brief: Tests exercising complete user workflows through the full deployed system stack, verifying that all services and UI layers collaborate to produce correct outcomes from a user perspective.

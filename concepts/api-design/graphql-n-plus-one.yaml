@@ -1,0 +1,15 @@
+id: graphql-n-plus-one
+title: GraphQL N+1 Problem
+category:
+  - API Design
+  - Performance
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - graphql
+  - n-plus-one-queries
+dependents: []
+brief: The GraphQL-specific N+1 query manifestation where nested resolvers independently fetch related records per parent object, solved with DataLoader batching that coalesces per-request fetches into single bulk queries.

@@ -1,0 +1,16 @@
+id: event-loop
+title: Event Loop
+category:
+  - Runtime
+  - Concurrency
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - async-io
+dependents: []
+brief: Continuously dequeues and dispatches callbacks from an event queue, enabling single-threaded runtimes like Node.js and browsers to handle concurrent I/O without the overhead or complexity of multi-threading.

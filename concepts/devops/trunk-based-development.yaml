@@ -1,0 +1,18 @@
+id: trunk-based-development
+title: Trunk-Based Development
+category:
+  - DevOps
+  - Workflows
+roles:
+  - backend
+  - frontend
+  - devops
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - ci-cd-pipelines
+  - feature-flags
+dependents: []
+brief: Integrates all developer work directly into a single shared branch continuously, relying on feature flags and fast automated testing to ship safely without the merge overhead of long-lived feature branches.

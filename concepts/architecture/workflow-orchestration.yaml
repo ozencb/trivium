@@ -1,0 +1,15 @@
+id: workflow-orchestration
+title: Workflow Orchestration
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - saga-pattern
+  - distributed-task-scheduling
+dependents: []
+brief: Durable execution platforms (Temporal, Conductor) persisting workflow state between steps so long-running multi-step processes survive arbitrary crashes without manual resume logic or idempotency scaffolding.

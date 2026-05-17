@@ -1,0 +1,13 @@
+id: branchless-programming
+title: Branchless Programming
+category:
+  - Algorithms
+  - Performance
+roles:
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - cpu-cache-effects
+dependents: []
+brief: Writing hot-path code using arithmetic and bitwise operations instead of conditionals to eliminate CPU branch misprediction penalties, critical in tight loops processing large volumes of data.

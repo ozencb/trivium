@@ -1,0 +1,15 @@
+id: read-path-write-path-separation
+title: Read/Write Path Separation
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - cqrs
+  - read-replicas
+dependents: []
+brief: An architectural pattern using dedicated infrastructure for reads and writes so each path scales, caches, and optimizes independently without either path's characteristics compromising the other.

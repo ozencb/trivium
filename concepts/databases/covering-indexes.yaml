@@ -1,0 +1,15 @@
+id: covering-indexes
+title: Covering Indexes
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+  - composite-indexes
+dependents: []
+brief: An index containing every column a query needs so the optimizer satisfies the entire request from the index structure without touching heap pages, eliminating the most expensive table I/O.

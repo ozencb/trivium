@@ -1,0 +1,14 @@
+id: backoff-algorithms
+title: Backoff Algorithms
+category:
+  - Architecture
+  - Resilience
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - retry-with-backoff
+dependents: []
+brief: Mathematical functions—linear, exponential, decorrelated jitter—governing inter-retry wait times, with exponential growth preventing coordinated retry storms and added randomness desynchronizing retrying clients.

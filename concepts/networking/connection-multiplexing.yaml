@@ -1,0 +1,14 @@
+id: connection-multiplexing
+title: Connection Multiplexing
+category:
+  - Networking
+  - Performance
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - http2-flow-control
+dependents: []
+brief: Sending multiple independent request/response streams over a single underlying connection, eliminating the per-request TCP connection overhead that dominated HTTP/1.1 performance.

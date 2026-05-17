@@ -1,0 +1,20 @@
+id: observability-pillars
+title: Three Pillars of Observability
+category:
+  - Observability
+  - Fundamentals
+roles:
+  - backend
+  - sre
+  - fullstack
+  - devops
+lenses:
+  - foundational
+  - career
+prerequisites:
+  - structured-logging
+  - metrics-collection
+  - distributed-tracing
+dependents:
+  - opentelemetry
+brief: The three complementary telemetry types—logs, metrics, and traces—that together provide enough signal to understand any system behavior without needing to predict every failure mode in advance.

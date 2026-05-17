@@ -1,0 +1,14 @@
+id: binary-encoding-formats
+title: Binary Encoding Formats
+category:
+  - API Design
+  - Serialization
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - protocol-buffers
+dependents: []
+brief: Binary serialization formats (MessagePack, Avro, Thrift, CBOR) encoding structured data more compactly and faster to parse than JSON, used where wire efficiency or schema enforcement matters.

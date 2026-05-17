@@ -1,0 +1,17 @@
+id: golden-signals
+title: Four Golden Signals
+category:
+  - Observability
+  - Fundamentals
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - metrics-collection
+  - slo-sli-sla
+dependents: []
+brief: Google SRE's four universal service health metrics—latency, traffic, errors, and saturation—that together indicate whether a service is meeting its reliability targets and where to focus investigation when it is not.

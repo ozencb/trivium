@@ -1,0 +1,16 @@
+id: test-doubles
+title: Test Doubles
+category:
+  - Testing
+  - Patterns
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - api-mocking
+brief: Controlled substitutes for real dependencies—stubs return fixed values, mocks verify call patterns, fakes have simplified working implementations—used to isolate the unit under test from external concerns.

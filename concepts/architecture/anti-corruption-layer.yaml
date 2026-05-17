@@ -1,0 +1,14 @@
+id: anti-corruption-layer
+title: Anti-Corruption Layer
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - domain-driven-design
+  - bounded-context
+dependents: []
+brief: Translates between incompatible domain models at integration points so each subsystem evolves independently without absorbing foreign concepts that would corrupt its own model.

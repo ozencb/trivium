@@ -1,0 +1,15 @@
+id: zero-copy
+title: Zero-Copy I/O
+category:
+  - Performance
+  - I/O
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - memory-mapped-files
+  - page-caches
+dependents: []
+brief: Techniques (sendfile, splice, io_uring) transferring data between I/O sources and destinations without copying through userspace buffers, reducing CPU usage and memory bus pressure for high-throughput data paths.

@@ -1,0 +1,16 @@
+id: graphql-federation
+title: GraphQL Federation
+category:
+  - API Design
+  - Distributed
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - graphql
+  - api-gateway
+dependents: []
+brief: A specification for composing multiple independently deployed GraphQL subgraphs into a unified supergraph at a gateway, enabling teams to own schema segments without coordinating on a single monolithic schema.

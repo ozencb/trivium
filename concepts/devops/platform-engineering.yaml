@@ -1,0 +1,16 @@
+id: platform-engineering
+title: Platform Engineering
+category:
+  - DevOps
+  - Platform
+roles:
+  - devops
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - infrastructure-as-code
+  - ci-cd-pipelines
+dependents: []
+brief: Builds and maintains internal developer platforms that expose self-service infrastructure primitives, encoding operational best practices into golden paths so product teams ship faster without owning infrastructure complexity.

@@ -1,0 +1,15 @@
+id: memory-leak-detection
+title: Memory Leak Detection
+category:
+  - Performance
+  - Observability
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - garbage-collection
+  - virtual-memory
+dependents: []
+brief: Identifying objects that remain reachable but are never used again using heap profilers and allocation samplers, isolating sources of unbounded memory growth before they trigger OOM kills.

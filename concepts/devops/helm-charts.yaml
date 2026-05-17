@@ -1,0 +1,15 @@
+id: helm-charts
+title: Helm Charts
+category:
+  - DevOps
+  - Orchestration
+roles:
+  - devops
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - kubernetes-scheduling
+  - infrastructure-as-code
+dependents: []
+brief: Parameterized Kubernetes manifest packages that template environment-specific values into resource definitions, enabling versioned and reproducible application deployments across clusters.

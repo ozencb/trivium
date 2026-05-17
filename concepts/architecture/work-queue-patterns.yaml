@@ -1,0 +1,15 @@
+id: work-queue-patterns
+title: Work Queue Patterns
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - message-queues
+  - idempotency
+dependents:
+  - distributed-task-scheduling
+brief: A pattern decoupling producers from processing capacity by buffering work items in a queue consumed by a scalable pool of workers, enabling horizontal scaling of CPU-intensive operations independently of ingestion rate.

@@ -1,0 +1,16 @@
+id: dependency-injection
+title: Dependency Injection
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - hexagonal-architecture
+brief: A design pattern where components declare dependencies as constructor or method parameters rather than constructing them, inverting control to enable testability and flexible composition without coupling to implementations.

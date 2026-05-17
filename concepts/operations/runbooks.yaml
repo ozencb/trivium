@@ -1,0 +1,18 @@
+id: runbooks
+title: Runbooks
+category:
+  - Operations
+  - SRE
+roles:
+  - sre
+  - devops
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - health-checks
+  - alerting
+dependents:
+  - incident-response
+brief: Documented step-by-step procedures for known operational scenarios that reduce cognitive load during incidents by encoding institutional knowledge into executable checklists co-located with alerts.

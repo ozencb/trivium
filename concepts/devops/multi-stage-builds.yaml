@@ -1,0 +1,14 @@
+id: multi-stage-builds
+title: Multi-Stage Docker Builds
+category:
+  - DevOps
+  - Containers
+roles:
+  - devops
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - container-internals
+dependents: []
+brief: A Dockerfile technique using multiple FROM stages to separate build-time tooling from the runtime image, producing minimal final images without manual artifact extraction steps.

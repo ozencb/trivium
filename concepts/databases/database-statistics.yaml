@@ -1,0 +1,16 @@
+id: database-statistics
+title: Database Statistics
+category:
+  - Databases
+  - Internals
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - query-optimization
+  - database-indexing
+dependents:
+  - execution-plans
+brief: Histograms and cardinality metadata about column value distributions that the query planner uses to estimate selectivity; stale statistics are the leading cause of catastrophic execution plan regressions.

@@ -1,0 +1,16 @@
+id: data-lineage
+title: Data Lineage
+category:
+  - Data Engineering
+  - Governance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - change-data-capture
+  - data-contracts
+dependents: []
+brief: Tracks the origin, transformation, and movement of data across pipelines so teams can audit correctness, debug anomalies at their source, and satisfy regulatory requirements for data provenance.

@@ -1,0 +1,16 @@
+id: distributed-task-scheduling
+title: Distributed Task Scheduling
+category:
+  - Architecture
+  - Distributed Systems
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - distributed-locks
+  - work-queue-patterns
+dependents:
+  - workflow-orchestration
+brief: Systems coordinating task execution across worker pools with scheduling, deduplication, retries, and at-least-once guarantees, handling node failures transparently so application code describes only happy-path logic.

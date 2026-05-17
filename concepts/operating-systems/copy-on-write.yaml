@@ -1,0 +1,16 @@
+id: copy-on-write
+title: Copy-on-Write
+category:
+  - Operating Systems
+  - Memory
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - virtual-memory
+  - page-caches
+dependents: []
+brief: A memory optimization where processes share physical pages until one writes, triggering a private copy only then, making fork() cheap and enabling efficient snapshotting in databases and runtimes.

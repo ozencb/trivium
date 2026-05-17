@@ -1,0 +1,14 @@
+id: sliding-window-log
+title: Sliding Window Log Rate Limiting
+category:
+  - Algorithms
+  - Rate Limiting
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - fixed-window-rate-limiting
+dependents: []
+brief: A rate limiting algorithm maintaining a timestamped request log within a rolling window for exact enforcement, trading O(requests) memory per client for eliminating the boundary burst of fixed windows.

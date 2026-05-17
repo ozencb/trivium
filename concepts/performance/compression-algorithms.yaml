@@ -1,0 +1,14 @@
+id: compression-algorithms
+title: Compression Algorithms
+category:
+  - Performance
+  - Data
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: Algorithms (LZ4, Snappy, Zstd, Brotli, gzip) trading CPU cycles for reduced data size, with LZ4/Snappy optimizing speed, Zstd balancing both, and Brotli/gzip maximizing ratio for network transfer.

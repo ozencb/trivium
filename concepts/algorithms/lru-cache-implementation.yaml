@@ -1,0 +1,15 @@
+id: lru-cache-implementation
+title: LRU Cache
+category:
+  - Algorithms
+  - Data Structures
+roles:
+  - backend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - hash-tables
+dependents: []
+brief: A cache eviction policy implemented as a hash map plus doubly-linked list that evicts the least recently accessed entry in O(1), forming the algorithm underlying most in-process caches and the database buffer pool concept.

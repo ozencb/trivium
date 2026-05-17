@@ -1,0 +1,15 @@
+id: fixed-window-rate-limiting
+title: Fixed Window Rate Limiting
+category:
+  - Algorithms
+  - Rate Limiting
+roles:
+  - backend
+  - sre
+lenses:
+  - foundational
+prerequisites:
+  - rate-limiting
+dependents:
+  - sliding-window-log
+brief: The simplest rate limiting approach counting requests per fixed time window, illustrating the 2x burst vulnerability at window boundaries that motivates sliding window and token bucket alternatives.

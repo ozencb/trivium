@@ -1,0 +1,17 @@
+id: failover
+title: Failover
+category:
+  - Distributed Systems
+  - Reliability
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - health-checks
+  - consensus-algorithms
+dependents: []
+brief: Automatically reroutes traffic from a failed node to a healthy standby using leader election or health-check-driven DNS updates, with the failover mechanism determining the recovery time objective.

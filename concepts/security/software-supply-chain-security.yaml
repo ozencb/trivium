@@ -1,0 +1,17 @@
+id: software-supply-chain-security
+title: Software Supply Chain Security
+category:
+  - Security
+  - DevOps
+roles:
+  - devops
+  - backend
+  - sre
+lenses:
+  - practical
+  - career
+prerequisites:
+  - ci-cd-pipelines
+dependents:
+  - dependency-scanning
+brief: Practices protecting code and dependency integrity before runtime—SBOMs, artifact signing, dependency pinning, and provenance attestation—closing attack vectors introduced before deployment.

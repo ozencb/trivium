@@ -1,0 +1,15 @@
+id: hyperloglog
+title: HyperLogLog
+category:
+  - Algorithms
+  - Probabilistic Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - bloom-filters
+  - hash-tables
+dependents: []
+brief: A probabilistic cardinality estimation algorithm using sub-linear memory that counts distinct elements in a stream within a tunable relative error, enabling billion-scale distinct counts with kilobytes of state.

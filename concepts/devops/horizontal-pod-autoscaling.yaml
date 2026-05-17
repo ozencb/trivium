@@ -1,0 +1,16 @@
+id: horizontal-pod-autoscaling
+title: Horizontal Pod Autoscaling
+category:
+  - DevOps
+  - Orchestration
+roles:
+  - devops
+  - sre
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - resource-requests-and-limits
+  - metrics-collection
+dependents: []
+brief: Kubernetes' mechanism for automatically adjusting replica counts based on CPU, memory, or custom metrics, enabling services to absorb traffic spikes without manual scaling intervention.

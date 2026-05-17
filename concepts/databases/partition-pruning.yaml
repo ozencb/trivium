@@ -1,0 +1,15 @@
+id: partition-pruning
+title: Partition Pruning
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - table-partitioning
+  - query-optimization
+dependents: []
+brief: A query optimizer behavior that eliminates irrelevant table partitions when predicates match the partition key, turning full table scans into targeted reads on time-series or tenant-segmented data.

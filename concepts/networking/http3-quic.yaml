@@ -1,0 +1,16 @@
+id: http3-quic
+title: HTTP/3 and QUIC
+category:
+  - Networking
+  - Protocols
+roles:
+  - backend
+  - frontend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - http2-flow-control
+  - tls-handshake
+dependents: []
+brief: HTTP/3 runs over QUIC—a UDP-based transport embedding TLS that eliminates transport-layer head-of-line blocking and reduces connection establishment to one round trip on first connection.

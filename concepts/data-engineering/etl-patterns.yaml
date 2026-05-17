@@ -1,0 +1,16 @@
+id: etl-patterns
+title: ETL and ELT Patterns
+category:
+  - Data Engineering
+  - Processing
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - stream-processing
+  - message-queues
+dependents: []
+brief: Structures data movement between systems as extract-transform-load or extract-load-transform pipelines, with the topology governing where transformation compute runs and how schema evolution and late-arriving data are handled.

@@ -1,0 +1,15 @@
+id: sidecar-pattern
+title: Sidecar Pattern
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - devops
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - container-internals
+dependents: []
+brief: Co-deploys a helper container alongside the primary application container to inject cross-cutting concerns like proxying, logging, or secrets without modifying application code.

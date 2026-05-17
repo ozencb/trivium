@@ -1,0 +1,16 @@
+id: strangler-fig-pattern
+title: Strangler Fig Pattern
+category:
+  - Architecture
+  - Patterns
+roles:
+  - backend
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - api-gateway
+  - blue-green-deployments
+dependents: []
+brief: Incrementally replaces a legacy system by routing traffic to new implementations alongside the old one until the legacy code is fully surrounded and can be safely removed.

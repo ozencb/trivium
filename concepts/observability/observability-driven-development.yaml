@@ -1,0 +1,18 @@
+id: observability-driven-development
+title: Observability-Driven Development
+category:
+  - Observability
+  - Practices
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - structured-logging
+  - metrics-collection
+  - distributed-tracing
+dependents: []
+brief: A practice treating instrumentation as a first-class deliverable so new code ships with the logs, metrics, and traces needed to understand its behavior before on-call inherits responsibility for it.

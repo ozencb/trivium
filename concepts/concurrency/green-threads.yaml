@@ -1,0 +1,14 @@
+id: green-threads
+title: Green Threads and Coroutines
+category:
+  - Concurrency
+  - Threading
+roles:
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - thread-safety
+  - virtual-memory
+dependents: []
+brief: User-space threads scheduled by the runtime rather than the OS kernel, enabling millions of lightweight concurrent tasks at far lower memory and context-switch overhead than native OS threads.

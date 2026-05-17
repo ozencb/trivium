@@ -1,0 +1,14 @@
+id: memory-allocator
+title: Memory Allocator
+category:
+  - Operating Systems
+  - Memory
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - virtual-memory
+dependents: []
+brief: The subsystem (jemalloc, tcmalloc, ptmalloc2) managing heap allocation and deallocation; allocator choice and fragmentation behavior significantly affect throughput of allocation-heavy services.

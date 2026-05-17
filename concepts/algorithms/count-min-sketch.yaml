@@ -1,0 +1,15 @@
+id: count-min-sketch
+title: Count-Min Sketch
+category:
+  - Algorithms
+  - Probabilistic Data Structures
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - bloom-filters
+  - hash-tables
+dependents: []
+brief: A probabilistic frequency table using a matrix of hash counters that overestimates item occurrence within bounded error, enabling heavy-hitter detection and frequency queries on high-volume streams.

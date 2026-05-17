@@ -1,0 +1,15 @@
+id: service-virtualization
+title: Service Virtualization
+category:
+  - Testing
+  - Patterns
+roles:
+  - backend
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - api-mocking
+  - contract-testing
+dependents: []
+brief: A testing technique simulating downstream service behavior including latency profiles, error rates, and edge-case responses, enabling realistic integration testing without live third-party dependencies.

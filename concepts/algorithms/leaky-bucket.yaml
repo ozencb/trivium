@@ -1,0 +1,14 @@
+id: leaky-bucket
+title: Leaky Bucket Algorithm
+category:
+  - Algorithms
+  - Rate Limiting
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - rate-limiting
+dependents: []
+brief: A rate limiting algorithm processing requests at a constant output rate regardless of burst arrival, smoothing traffic spikes into a uniform stream while discarding requests that overflow the buffer.

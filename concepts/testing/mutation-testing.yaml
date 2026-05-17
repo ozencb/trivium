@@ -1,0 +1,14 @@
+id: mutation-testing
+title: Mutation Testing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - property-based-testing
+dependents: []
+brief: A technique that automatically injects small code mutations—changed operators, swapped constants, removed conditions—to verify the test suite catches them, measuring suite effectiveness beyond coverage metrics.

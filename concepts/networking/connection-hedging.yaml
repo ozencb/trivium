@@ -1,0 +1,15 @@
+id: connection-hedging
+title: Connection Hedging
+category:
+  - Networking
+  - Performance
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - load-balancing
+  - tcp-basics
+dependents: []
+brief: Sends duplicate requests to multiple backends simultaneously and uses the first response, trading increased fanout load for reduced tail latency in scenarios where a small fraction of requests stall disproportionately.

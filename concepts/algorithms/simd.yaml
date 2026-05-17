@@ -1,0 +1,14 @@
+id: simd
+title: SIMD Instructions
+category:
+  - Algorithms
+  - Performance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - cpu-cache-effects
+dependents: []
+brief: CPU instruction set extensions (SSE, AVX, NEON) applying a single operation to multiple data elements simultaneously, enabling vectorized throughput for parsing, hashing, encoding, and numeric workloads.

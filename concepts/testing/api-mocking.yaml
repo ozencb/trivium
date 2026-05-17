@@ -1,0 +1,17 @@
+id: api-mocking
+title: API Mocking
+category:
+  - Testing
+  - Patterns
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - openapi-specification
+  - test-doubles
+dependents:
+  - service-virtualization
+brief: Generating or recording simulated API responses mirroring real service contracts, enabling frontend development and integration tests to proceed without a live backend.

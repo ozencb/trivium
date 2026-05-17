@@ -1,0 +1,14 @@
+id: snapshot-testing
+title: Snapshot Testing
+category:
+  - Testing
+  - Strategies
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites: []
+dependents: []
+brief: A testing approach serializing component or function output to a reference file and failing when subsequent runs differ, efficiently detecting unintended regressions in complex rendered or serialized outputs.

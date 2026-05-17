@@ -1,0 +1,14 @@
+id: content-negotiation
+title: HTTP Content Negotiation
+category:
+  - API Design
+  - REST
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - rest-constraints
+dependents: []
+brief: The HTTP mechanism where clients advertise acceptable formats via Accept headers and servers select and declare the chosen representation via Content-Type, enabling one endpoint to serve multiple formats.

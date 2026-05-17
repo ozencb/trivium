@@ -1,0 +1,15 @@
+id: linux-namespaces
+title: Linux Namespaces
+category:
+  - Operating Systems
+  - Virtualization
+roles:
+  - devops
+  - sre
+lenses:
+  - foundational
+prerequisites:
+  - virtual-memory
+dependents:
+  - container-internals
+brief: A Linux kernel mechanism providing per-process isolated views of system resources—PID trees, network stacks, mount points, and user IDs—forming the other container isolation pillar alongside cgroups.

@@ -1,0 +1,18 @@
+id: reverse-proxy
+title: Reverse Proxy
+category:
+  - Networking
+  - Infrastructure
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - load-balancing
+  - tls-handshake
+dependents:
+  - api-gateway
+brief: A server positioned in front of backends that handles TLS termination, routing, and caching on their behalf, hiding origin topology and enabling transparent backend changes without client reconfiguration.

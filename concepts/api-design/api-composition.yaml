@@ -1,0 +1,15 @@
+id: api-composition
+title: API Composition Pattern
+category:
+  - API Design
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - api-gateway
+  - rest-constraints
+dependents: []
+brief: Aggregates data from multiple downstream services within a single request-response cycle at the API layer, trading server-side fan-out complexity for reduced client round trips and network chattiness.

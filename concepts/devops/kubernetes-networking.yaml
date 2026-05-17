@@ -1,0 +1,16 @@
+id: kubernetes-networking
+title: Kubernetes Networking Model
+category:
+  - DevOps
+  - Networking
+roles:
+  - devops
+  - sre
+  - backend
+lenses:
+  - practical
+prerequisites:
+  - container-networking
+  - service-discovery
+dependents: []
+brief: Kubernetes' requirement that every pod receives a unique routable IP and can reach any other pod directly without NAT, implemented by CNI plugins that program host routes and overlay networks.

@@ -1,0 +1,15 @@
+id: structured-concurrency
+title: Structured Concurrency
+category:
+  - Concurrency
+  - Patterns
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - thread-safety
+  - async-io
+dependents: []
+brief: Scopes concurrent tasks to a lexical block so their lifetimes cannot outlive the block, making cancellation, error propagation, and resource cleanup predictable instead of requiring manual coordination.
