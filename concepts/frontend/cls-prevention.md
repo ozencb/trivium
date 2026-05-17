@@ -1,36 +1,42 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Cumulative Layout Shift (CLS) prevention** is the practice of ensuring elements don't move unexpectedly after initial render — because when they do, users click the wrong thing, lose their scroll position, or just feel the page is broken.
+## Cumulative Layout Shift Prevention
 
-## The Core Mechanism
+CLS measures how much visible content jumps around during page load — and the browser charges you for every unexpected position change of an element. The root cause is almost always the same: the browser paints a layout pass, then something async (an image, font, ad, dynamic component) arrives and forces a reflow that displaces already-rendered content.
 
-CLS happens when the browser doesn't know an element's size before it loads, so it allocates zero space, renders surrounding content, then expands once the element arrives — shoving everything else around. The fix is almost always the same idea: **reserve space before content loads**.
+**The core mechanism**
 
-The browser's layout engine is eager. It paints what it knows, then repaints when it learns more. Your job is to front-load that knowledge.
+The browser's layout engine works in passes. When it encounters an `<img>` with no `width`/`height` or an element whose size depends on content that hasn't loaded, it assigns a provisional zero-height (or content-size) slot. When the real content arrives, the browser recomputes the layout — everything downstream shifts. The CLS score accumulates the sum of these unexpected shifts, weighted by the fraction of the viewport affected and the distance elements moved.
 
-## Concrete Mental Model
+The fix isn't to load things faster; it's to tell the browser the final dimensions *before* the content arrives, so it can reserve space and avoid reflow entirely.
 
-Think of it like a newspaper layout. A print editor knows the photo will be 300×200px before it arrives from the photographer, so they block out that exact space. Web layouts often don't — the `<img>` tag arrives in HTML with no dimensions, the browser renders text around it, then the image loads and everything jumps.
+**Concrete example**
 
-The native fix for images is simple: set `width` and `height` attributes on the `<img>` element. Modern browsers use these to compute aspect ratio and reserve space even while the image is loading. No JavaScript needed.
+A product card grid where each card has a thumbnail. If you render the cards immediately (good for LCP/FID) but the images have no dimensions:
 
 ```html
-<!-- Bad: browser allocates 0px height until image loads -->
-<img src="hero.jpg" />
+<!-- bad: browser doesn't know height until image loads -->
+<img src="/product.jpg" />
 
-<!-- Good: browser reserves 1200x630 aspect ratio immediately -->
-<img src="hero.jpg" width="1200" height="630" />
+<!-- good: browser reserves 300x200 before the request even completes -->
+<img src="/product.jpg" width="300" height="200" style="width:100%;height:auto" />
 ```
 
-## Practical Scenarios
+The `width`/`height` HTML attributes give the browser the *aspect ratio* it needs. Combined with `height:auto` in CSS, the space scales correctly at any viewport width without hardcoding pixels. The `aspect-ratio` CSS property does the same job for non-image elements:
 
-**Frontend:** The most common CLS sources are images without dimensions, web fonts causing FOUT/FOIT that shifts text, and dynamic content injected above the fold (cookie banners, notification bars). For fonts, `font-display: optional` eliminates shift entirely by not swapping at all once the fallback has rendered. For dynamic UI like toasts or banners, always render them at the bottom or absolutely positioned — never inject them into the document flow above existing content.
+```css
+.skeleton { aspect-ratio: 16/9; width: 100%; }
+```
 
-**Fullstack:** Server-rendered apps have an advantage here — you know the content dimensions at render time. If your SSR template emits images from a CMS, pipe the image dimensions through to the template so you can set `width`/`height` statically. For skeleton screens (common in React/Next.js apps where data loads client-side), match the skeleton's dimensions as precisely as possible to the real content — a skeleton that's 10px shorter than the loaded card still causes shift.
+**Where this bites you in practice**
 
-One underappreciated case: **third-party embeds** (ads, iframes, social widgets). These are black boxes. Wrap them in a container with a fixed `aspect-ratio` or explicit height before they load, or you'll get CLS you don't control and can't predict.
+*Frontend:* Dynamic ad slots, cookie banners, and lazy-loaded components injected above the fold are the biggest offenders. A consent banner that pushes the hero down 80px on load is a CLS disaster — it should either render server-side at the right size, or use `position: fixed` so it doesn't participate in document flow.
 
-The unifying principle: **make layout decisions once**. Any element whose size is unknown at paint time is a CLS risk.
+*Fullstack:* SSR helps, but only if the server-rendered HTML already has correct dimensions. If your React component renders a `<Suspense>` fallback with `height: 0` and then hydrates to a real component with `height: 400px`, you get a shift even though you SSR'd. The skeleton/placeholder needs to match the final element's dimensions. If those are data-dependent (a variable-height text block), the only real option is to either clamp the height or accept the trade-off.
+
+**When to reach for this**
+
+Any time you have async content in the top ~2 viewport-heights. Below the fold, CLS doesn't count (shifts only score if the element was in the viewport when it started). The highest-ROI changes are: images without dimensions, font swaps (use `font-display: optional` or `swap` with `size-adjust`), and dynamically injected banners/toasts anchored to the top of the page.

@@ -1,41 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Resize Observer API** lets you react to an element's size changes — not the viewport's — without polling, and it does so at the right point in the browser's rendering pipeline.
+**Resize Observer API** fires callbacks when an element's content box changes size, enabling component-level responsive behavior without coupling to viewport-based media queries. The core problem it solves: viewport width tells you nothing useful when a sidebar collapses and your chart needs to reflow.
 
-## Core Mechanism
+## How it actually works
 
-After layout runs, the browser delivers a batch of `ResizeObserverEntry` objects to your callback. Each entry exposes the element, its new `contentRect`, and (in modern browsers) `contentBoxSize`, `borderBoxSize`, and `devicePixelContentBoxSize` as separate measurements.
-
-The critical distinction from `window.resize`: a viewport resize is one cause among many. Flexbox redistribution, CSS transitions, dynamic content injection, font loading — all can change an element's dimensions with no viewport event firing. Resize Observer captures all of them.
-
-Callbacks run after layout but before paint, so you can read layout properties without forcing a reflow. If your callback *writes* layout-affecting properties, the browser re-runs layout — but Resize Observer prevents infinite loops by suppressing re-notification within the same frame when the change originates from a deeper DOM descendant.
-
-## Mental Model
-
-Instead of `setInterval(() => checkDimensions(el), 100)`, think of it as a database trigger: register "notify me when this element's box dimensions change," and the browser handles the diffing. You get delivered results, not a polling burden.
+The browser already computes layout continuously. ResizeObserver hooks into the post-layout phase — after the DOM has been reflowed but before paint — and delivers size entries for any observed elements whose dimensions changed. This means it fires for *any* cause of resize: parent flex changes, sibling insertions, font-size changes, scrollbar appearance, not just window resize.
 
 ```js
-const ro = new ResizeObserver(entries => {
+const observer = new ResizeObserver((entries) => {
   for (const entry of entries) {
     const { inlineSize, blockSize } = entry.contentBoxSize[0];
-    redrawChart(entry.target, inlineSize, blockSize);
+    // inlineSize = width in horizontal writing modes
   }
 });
-ro.observe(chartContainer);
+observer.observe(myElement);
 ```
 
-## Practical Scenarios
+It fires once immediately on `observe()` with current dimensions — useful for initialization. Entries are batched per frame, so if 10 elements resize in one frame you get one callback with 10 entries.
 
-**Frontend:**
-- Canvas-based charts (D3, Chart.js) need container dimensions to recompute axes and scales. If the chart lives in a collapsible sidebar or a CSS Grid cell, window resize won't fire when the layout redistributes space — Resize Observer will.
-- Virtual scroll lists need accurate container height. Browser zoom and font size changes don't trigger `window.resize` but do trigger Resize Observer, so your row measurements stay correct.
-- Component-level breakpoints: apply `data-size="compact"` to a widget based on its own width, not the viewport's — this is the JS-based precursor to CSS container queries, and still useful for behavior (not just styling).
+The loop guard matters: if your callback itself causes a resize (e.g., you write to a style that changes the element's size), the browser detects the cycle and defers the next notification to avoid infinite loops. You'll see entries stop arriving if you're unknowingly creating one.
 
-**Fullstack:**
-- SSR'd dashboards with user-resizable panels: when a drag handle moves, downstream components (Monaco editor, preview panes, embedded maps) need to reflow. Resize Observer gives each component a clean, decoupled hook without prop-drilling or global event buses.
-- Embedded widgets in CMS or third-party contexts where you don't control the host layout — observe your own root element and adapt internally.
+## Mental model
 
-**One gotcha:** the default observed box is `content-box`. If you need to track including padding/border (common for positioned elements), pass `{ box: 'border-box' }` to `observe()`. Mixing box types across entries in the same callback is valid but requires checking which type each entry reports.
+Think of it as `MutationObserver` for layout dimensions. The browser tracks structure changes via MutationObserver; ResizeObserver tracks computed size changes. Both are async, batched, and element-scoped rather than global.
+
+## When to reach for it
+
+**Frontend:** Component-level breakpoints are the canonical use case. A `<DataCard>` that switches from a 2-column to 1-column layout at 380px wide should respond to its *own* width, not `@media (max-width: 768px)`. ResizeObserver makes this trivial and decouples the component from its container assumptions. Also essential for anything that needs exact pixel dimensions: canvas elements, SVG charts, virtualized lists calculating visible row count.
+
+**Fullstack:** If you're rendering server-side components that embed a client-side widget (a chart, a table, a rich text editor), ResizeObserver is how the widget knows its allocated space without a round-trip. Particularly relevant in microfrontend architectures where a shell application controls layout and embedded widgets have no knowledge of the outer grid.
+
+## Common pitfalls
+
+- `contentRect` is deprecated in favor of `contentBoxSize` / `borderBoxSize` arrays (plural because of multi-column fragments), but both still work
+- Observing dozens of elements is fine — ResizeObserver is designed for this and coalesces work per frame
+- Don't use it as a replacement for CSS where CSS will do — if a static `width: 100%` works, use it

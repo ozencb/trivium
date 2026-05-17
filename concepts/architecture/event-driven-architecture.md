@@ -1,39 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Event-Driven Architecture
 
-Instead of services calling each other directly, they communicate by emitting and reacting to events — decoupling who produces state changes from who cares about them.
+Services usually communicate by calling each other — REST, gRPC, whatever. EDA flips this: instead of Service A telling Service B to do something, A emits a fact ("order placed") and B independently decides what to do with it. The producer has no knowledge of consumers, and consumers have no dependency on the producer's availability.
 
-### The Core Idea
+**The core mechanism**
 
-In a request-driven system, Service A calls Service B synchronously: A waits, B responds, both are coupled in time and in knowledge of each other. EDA flips this. When something meaningful happens, a service emits an event ("order placed", "payment failed") onto a bus or log. Any service that cares subscribes and reacts independently. The producer doesn't know or care who's listening.
+The unit of communication is an *event* — an immutable, timestamped record of something that happened. "Order placed" not "place order." This distinction matters: commands imply intent and expectation of a receiver; events are statements of fact that stand alone. Because events are immutable records, a log of them is automatically a durable history. Consumers don't just react — they *replay* state from the log.
 
-The critical mechanism is the **event log** (Kafka, Kinesis, Pulsar). Unlike a message queue that deletes messages after consumption, a log retains events in order. Consumers track their own offset — how far they've read. This means you can add a new consumer and replay from the beginning, or a crashed consumer can pick up exactly where it left off. You already understand backpressure: the offset model is precisely how consumers apply it — they read at their own pace without telling producers to slow down.
+This is where the real power sits: the event log is the source of truth, not any service's database. Consumers derive their own materialized views from the same underlying stream.
 
-Events are immutable facts about the past. "UserEmailChanged" is not an instruction; it's a record of what happened. This distinction matters because it shifts the model from imperative ("go do X") to declarative ("X happened, figure out what to do").
+**Concrete model**
 
-### Concrete Example
+Think of a Kafka topic like a database write-ahead log that's been promoted to a first-class interface. Producer appends. Consumers maintain their own offsets and read at their own pace — which is why backpressure is solvable here in a way it isn't with synchronous RPC. A slow consumer doesn't block the producer; it just falls behind, and the log retains messages until it catches up.
 
-An e-commerce checkout:
+**Where it shows up**
 
-- **Order Service** emits `OrderPlaced { orderId, items, userId }`
-- **Inventory Service** listens → reserves stock
-- **Notification Service** listens → sends confirmation email
-- **Analytics Service** listens → updates conversion funnel
+*Backend:* Order service emits `OrderPlaced`. Inventory, billing, and notification services each consume it independently. Adding a fraud-detection service requires zero changes to the order service — it subscribes to the same event. This is the open/closed principle applied at the system level.
 
-None of these services know each other exist. Adding a "Fraud Detection Service" means subscribing to the same event — zero changes to the Order Service.
+*Fullstack:* Real-time features (live dashboards, collaborative editing, activity feeds) are naturally modeled as event streams. The frontend subscribes to a stream and applies updates rather than polling. WebSockets or SSE become the consumer interface for the same underlying event log.
 
-### Where This Matters in Practice
+*Data engineering:* ETL pipelines collapse into stream consumers. CDC (change data capture) exposes database mutations as events. Downstream analytics, ML feature stores, and data warehouses all consume from the same stream, eliminating bespoke integration code between systems.
 
-**Backend:** Long-running workflows (order fulfillment, provisioning pipelines) where synchronous chaining creates fragility. If Inventory is down, Order Service still completes — Inventory catches up when it recovers.
+**What this unlocks in design discussions**
 
-**Fullstack:** Real-time UI updates without polling. The frontend subscribes to a WebSocket or SSE stream that's driven by the same event log. "Order status changed" flows from backend event to browser UI without a request/response cycle.
+EDA forces a precision most engineers avoid: you have to name things as facts, not intentions. That discipline surfaces coupling you'd otherwise paper over with a direct call. The senior-level insight is knowing the tradeoff: eventual consistency is the default, not the exception. A consumer processing `OrderPlaced` may lag. Your system must handle that — which leads directly to Event Sourcing (storing state as the event sequence itself), CQRS (separate read/write models derived from the stream), and Sagas (coordinating multi-step workflows without distributed transactions).
 
-**Data:** ETL pipelines and analytics become event consumers. Rather than scheduled batch jobs querying databases, your data warehouse subscribes to change events (CDC — change data capture — essentially treats the database's write-ahead log as an event stream). Lower latency, less load on the source system.
-
-### The Tradeoff to Internalize
-
-You gain temporal decoupling and scalability. You lose easy traceability and transactional guarantees. Debugging a failure now means correlating events across services with a shared `correlationId`. And "what's the current state?" requires either querying downstream projections or replaying events — which is exactly where Event Sourcing and CQRS come in.
+The invariant to remember: in EDA, the past is immutable and shared. The present is a consumer's local projection of it.

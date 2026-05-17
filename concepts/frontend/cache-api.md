@@ -1,46 +1,49 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-The Cache API is a programmatic interface for storing and retrieving `Request`/`Response` pairs in the browser's persistent cache — separate from the HTTP cache and fully under your control. It exists because Service Workers need a way to intercept network requests and serve responses offline, and the browser's automatic HTTP cache offers no JavaScript API to do that.
+## Cache API
 
-## Core mechanism
+The Cache API is a programmable request/response store — a persistent key-value map where `Request` objects are keys and `Response` objects are values. It exists because service workers intercept network traffic but need somewhere to store what they've already fetched; the Cache API is that storage layer, scoped to your origin and surviving across page loads and browser restarts.
 
-The Cache API exposes named cache stores, each holding a map of `Request` → `Response` entries. Unlike `localStorage`, it's async and designed for HTTP semantics — you store actual `Response` objects (with headers, status codes, bodies), not serialized strings.
+### Core mechanism
 
-```js
-const cache = await caches.open('v1');
-await cache.put('/api/data', new Response(JSON.stringify({ok: true})));
-
-const match = await cache.match('/api/data');
-const body = await match.json(); // {ok: true}
-```
-
-`caches.open()` creates the named cache if it doesn't exist. Keys are `Request` objects (or URLs coerced into them); matching is done by URL and optionally method/headers via `CacheQueryOptions`.
-
-The API lives on both `window` and inside Service Workers. That's the point — a Service Worker intercepts a `fetch` event, checks the cache first, falls back to the network, and optionally stores the response for next time:
+Unlike the browser's implicit HTTP cache (governed by `Cache-Control` headers and ETags), the Cache API gives you explicit control. You decide what to store, when to invalidate it, and what cache-busting logic looks like. The API is straightforward:
 
 ```js
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(cached => 
-      cached ?? fetch(event.request).then(res => {
-        const clone = res.clone(); // Response body is a stream, can only be consumed once
-        caches.open('v1').then(cache => cache.put(event.request, clone));
-        return res;
-      })
-    )
-  );
-});
+const cache = await caches.open('app-v2');
+await cache.put(request, response);
+const cached = await cache.match(request);
+await cache.delete(request);
+await caches.delete('app-v1');
 ```
 
-The `clone()` call is the non-obvious part: `Response` bodies are streams that can only be read once. You cache the clone and return the original (or vice versa).
+One non-obvious detail: `Response` bodies are streams and can only be consumed once. If you `cache.put(req, res)` and then try to read `res.json()`, you'll get nothing. Clone before storing:
 
-## Practical scenarios
+```js
+cache.put(request, response.clone());
+return response;
+```
 
-**Frontend:** PWA offline support is the canonical use case. Cache shell assets (`index.html`, JS bundles, CSS) during install, serve them from cache-first, update them in the background. Users get instant loads and an offline fallback. You control cache versioning by naming caches (`v1`, `v2`) and deleting old ones during the `activate` event.
+### Mental model
 
-**Fullstack:** Useful when you're generating expensive API responses that don't change often — e.g., a product catalog. The Service Worker can serve stale content immediately while revalidating in the background (stale-while-revalidate pattern). This removes the cold-start latency penalty for authenticated SPAs where HTTP cache headers aren't set or where the response must not be shared across users.
+Think of it as a programmable CDN edge cache that runs in the browser — you write the caching logic that a CDN's config language would otherwise express. You're the one implementing TTLs, versioning, and eviction.
 
-The main footgun is cache invalidation (which you already know is hard). The Cache API gives you no TTL mechanism — you own expiration logic entirely. Every cache entry you write stays until you explicitly delete it or the browser evicts under storage pressure.
+### Practical patterns
+
+**Cache versioning on deploy**: Name caches with a version string (`app-v2`). In the service worker's `install` event, pre-populate the new cache. In `activate`, delete all caches that don't match the current version. This gives you atomic cache rollover — old tabs keep using `app-v1` until they reload.
+
+**Stale-while-revalidate for assets**: Serve immediately from cache, kick off a network fetch in parallel, and update the cache when it resolves. Users get instant loads; assets stay fresh without blocking.
+
+**Network-first with cache fallback for APIs**: Try the network, fall back to cache if offline. Useful for dashboards where slightly stale data beats an error page.
+
+### Where it fits in your stack
+
+For **frontend work**, the Cache API is the engine behind offline-first PWAs and fast repeat loads. The high-level Workbox library wraps it with pre-built strategies, but understanding the API directly is worth it when you need to cache authenticated responses, handle partial updates, or debug why something is serving stale data.
+
+For **fullstack**, it's relevant when your backend-controlled caching (Redis, CDN) doesn't extend to the client — the Cache API fills that gap for assets and read-heavy API routes, reducing origin load without a CDN contract.
+
+### Common pitfall
+
+The biggest one: forgetting that `cache.match()` is an exact URL match by default. Query parameters, trailing slashes, and fragment identifiers all count. If your app adds cache-busting params dynamically, `match()` will miss the cached entry every time unless you normalize keys explicitly.

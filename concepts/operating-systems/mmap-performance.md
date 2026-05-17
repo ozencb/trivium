@@ -1,36 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Memory-Mapped File Performance
 
-`mmap()` maps a file's bytes directly into your process's virtual address space, letting you read and write file data as if it were RAM — and the performance story is more nuanced than "it's faster."
+`mmap` wins by eliminating the kernel-to-userspace copy that `read()` incurs: instead of copying page cache data into a userspace buffer, it maps those cache pages directly into your process's address space. But page faults aren't free, and random access patterns can make mmap slower than plain `read()`.
 
 ### The Mechanism
 
-With `read()`, touching file data costs you two copies: one from disk into the kernel's page cache, then another from the page cache into your user-space buffer. Two copies, at least one syscall per call, plus the overhead of managing that buffer yourself.
+With `read()`: kernel copies data from the page cache into your buffer on every call. Two memory copies (DMA into page cache, then page cache into your buffer), plus a syscall boundary crossing each time.
 
-With `mmap()`, there's only one "copy" — the page cache frame itself is mapped into your address space. First access triggers a page fault; the kernel resolves it by mapping the relevant page cache frame directly. After that, subsequent reads are just memory accesses. No syscall per read, no second buffer.
+With `mmap`: on first access to a page, a page fault fires, the OS loads the page into the page cache, and updates your process's page table to point directly at it. After that, accessing that memory is just a memory read—no syscall, no copy. The page cache *is* your buffer.
 
-The kernel's page eviction and prefetch machinery also works in your favor: sequential access patterns get detected and pages are prefetched ahead of your reads automatically.
+The win is real when your access pattern is warm (repeated) or sequential (prefetcher and OS readahead work). The loss is real when you're scattering accesses across a cold, large file—each miss is a page fault, which is a kernel trap. At scale, TLB pressure from many VMAs adds another tax.
 
 ### Mental Model
 
-Think of `read()` as ordering food for delivery — you wait, it gets copied from the kitchen into a container, then handed to you. `mmap()` is a seat at the kitchen counter. You access the food directly where it's prepared; no intermediate handoff.
+Think of `read()` as room service—reliable, controlled, but you pay per order. `mmap` is a fridge stocked by someone else; grabbing something already inside is instant, but if it's not there yet, you wait for delivery anyway, and the delivery cost is higher than room service's because it involves the kernel's page fault machinery.
 
-### Where It Wins
+### Where This Shows Up
 
-**Large files you read repeatedly, especially with random access patterns.** Because you're skipping the syscall overhead on each read, workloads that touch many small regions scattered across a large file (think B-tree traversal) perform significantly better.
+**Backend / databases:** LMDB uses mmap for its data file precisely because reads during a transaction access recently-used pages that are hot in the page cache. RocksDB, by contrast, defaults to `pread()` because SST file access during compaction and reads is mixed sequential/random; page fault overhead at high concurrency outweighed the copy savings. Knowing why they made opposite choices is exactly the kind of thing that surfaces in system design conversations.
 
-**Backend:** Database engines exploit this heavily. SQLite and RocksDB have mmap modes precisely because B-tree page reads via `read()` would mean thousands of syscalls per query. Serving large static files or memory-mapped config stores benefit similarly.
+**Data pipelines / analytics:** NumPy's `mmap_mode='r'` and Apache Arrow's memory-mapped files work because columnar scans are sequential—you're reading column A start-to-finish, so the OS readahead keeps faults cheap. If you were doing row-oriented random lookups on the same file, you'd be paying fault overhead on every row.
 
-**Data:** NumPy's `memmap`, Apache Arrow's IPC format, and memory-mapped Parquet readers all lean on this. When you're training an ML model on a 50GB dataset that doesn't fit in RAM, `mmap()` lets the OS page in only what's needed and evict the rest — your code never manages that explicitly.
+### The Differentiating Question
 
-### Where It Doesn't Win (or Loses)
-
-- **Write-heavy random access**: dirty page tracking adds overhead; `write()` can be more predictable.
-- **Very small files**: the setup cost (VMA allocation, TLB pressure) outweighs the savings.
-- **Memory pressure**: under contention, the kernel can evict your mapped pages mid-loop, turning predictable latency into spiky page faults. `read()` into a buffer you control is more predictable in those cases.
-
-The real leverage of `mmap()` isn't zero-copy magic — it's collapsing file I/O and memory access into the same operation, letting the OS's virtual memory subsystem handle caching and prefetch instead of you managing it manually.
+Most engineers know mmap avoids copies. Senior-level reasoning is asking: *what's my access pattern, and what's my working set relative to available RAM?* Sequential + large file + repeated access = mmap wins clearly. Random + cold + high concurrency = `read()` or `pread()` with explicit buffering often wins. That conditional framing—not the rule of thumb—is what makes the difference in a design review.

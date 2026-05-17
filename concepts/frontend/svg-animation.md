@@ -1,45 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-SVG animation lets you bring scalable vector graphics to life using the same DOM, CSS, and JS tools you already know — it's the backbone of icon micro-animations, data viz transitions, and animated logos that stay crisp at any resolution.
+SVG animation lets you animate vector graphics using CSS transitions/animations or the Web Animations API (WAAPI), keeping output resolution-independent and DOM-queryable — unlike canvas, which is a pixel buffer you can't inspect or style.
 
-## Core mechanism
+**Core mechanism**
 
-SVGs are XML embedded in HTML. Every shape (`<circle>`, `<rect>`, `<path>`) is a real DOM element with attributes like `cx`, `fill`, `stroke-dashoffset`, and `d`. Animation is just changing those attributes over time via three approaches:
+SVG elements are DOM nodes, so the same animation primitives that work on `<div>` also work on `<circle>`, `<path>`, `<rect>`, etc. CSS `transform`, `opacity`, `fill`, `stroke-dasharray` — all animatable. WAAPI (`element.animate(...)`) gives you programmatic control with keyframes and timing options without managing `requestAnimationFrame` loops manually.
 
-1. **CSS** — `transition` and `@keyframes` work on SVG properties (`fill`, `opacity`, `transform`). But CSS can't animate the `d` attribute (path shape) in all browsers.
-2. **JS / Web Animations API** — `element.animate()` or GSAP drive any attribute imperatively. Use this for sequenced or complex animations.
-3. **SMIL** — declarative `<animate>` tags inside SVG markup. Chrome deprecated it; skip it.
-
-## The canonical trick worth knowing
-
-The "self-drawing path" effect powers most SVG animations you've seen on landing pages:
+The interesting bit is `stroke-dasharray` / `stroke-dashoffset`. A stroked path has a measurable length (`path.getTotalLength()`). Set `stroke-dasharray` to that length and animate `stroke-dashoffset` from that length to 0, and the stroke appears to draw itself. This is the "line drawing" effect you see everywhere on landing pages.
 
 ```js
 const path = document.querySelector('path');
-const length = path.getTotalLength();
-
-path.style.strokeDasharray = length;
-path.style.strokeDashoffset = length;
-
-// Animate to 0 → path draws itself
-path.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], {
-  duration: 1000, fill: 'forwards'
-});
+const len = path.getTotalLength();
+path.style.strokeDasharray = len;
+path.animate(
+  [{ strokeDashoffset: len }, { strokeDashoffset: 0 }],
+  { duration: 1200, easing: 'ease-in-out', fill: 'forwards' }
+);
 ```
 
-`stroke-dasharray` defines a dashed pattern; setting it equal to path length makes the whole path one "dash." `stroke-dashoffset` shifts that dash out of view. Animating offset to 0 reveals it.
+**Path morphing** (animating `d` between two shapes) is where it gets painful. CSS can't tween paths natively in most browsers. You either need matching node counts between shapes, use a library like GSAP's MorphSVG, or reach for Lottie (which pre-bakes animation from After Effects). Don't assume `d` is animatable cross-browser without testing.
 
-## The `transform-origin` gotcha
+**Practical scenarios**
 
-SVG elements use the SVG coordinate system for `transform-origin`, not the element's own bounding box. `transform-origin: center` on an SVG `<rect>` doesn't mean what you think — it means center of the entire SVG viewport. GSAP corrects this automatically; vanilla CSS will surprise you.
+*Frontend:* Icon micro-interactions (hamburger → close, play → pause), progress rings using `stroke-dashoffset`, animated illustrations on scroll via `IntersectionObserver`. These are cases where CSS animation suffices — no JS overhead, GPU-composited transforms.
 
-For performance, same rules as HTML: only animate `transform` and `opacity` to stay compositor-only. Animating `fill` or `d` triggers repaint.
+*Fullstack:* Data visualization dashboards where SVG is already your rendering layer (D3, Recharts). Animating bars, arcs, or line paths on data update is natural here — enter/update/exit transitions are well-established D3 patterns. The SVG is server-agnostic; just update the DOM and let WAAPI handle the visual transition.
 
-## Practical scenarios
+**When to reach for this vs. alternatives**
 
-**Frontend**: Checkmark/success animations (e-commerce, form validation), animated progress rings, skeleton loaders, D3 chart transitions (D3 operates directly on SVG attributes), interactive infographics.
+- Use SVG animation when you already have vector assets or icon systems, or when you need crisp scaling at any DPI.
+- Use CSS-only when animations are simple transforms/opacity — composited, no JS required.
+- Use WAAPI when you need playback control (pause, reverse, seek).
+- Reach for Lottie when designers are producing animations in After Effects.
+- Reach for canvas/WebGL when you need thousands of animated elements — SVG DOM doesn't scale past a few hundred animated nodes without perf hits.
 
-**Fullstack**: SVG is just an XML string, so you can generate it server-side — useful for dynamic charts in transactional emails or PDF exports where canvas isn't available. Server-rendered SVG with client-side animation hydration is a common pattern in dashboard products.
+The main gotcha beyond path morphing: `transform-origin` behavior on SVG elements differs from HTML elements across browsers, and `clip-path` animations have edge cases especially on Safari. Test those early.

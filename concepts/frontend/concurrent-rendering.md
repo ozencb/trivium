@@ -1,30 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Concurrent Rendering
 
-React can now pause, discard, and reprioritize in-progress renders instead of executing them as a single uninterruptible synchronous block — which means expensive renders no longer freeze the UI.
+Concurrent rendering lets React treat its render work as interruptible rather than synchronous and blocking. The motivation is straightforward: a slow render (large list, complex tree) previously locked the main thread until it finished — concurrent mode breaks that guarantee to keep the UI responsive.
 
-### The Core Mechanism
+**The core mechanism**
 
-React Fiber already broke rendering into a tree of small units of work. Concurrent rendering makes that work **interruptible**. Before each fiber unit is processed, React can yield back to the browser's event loop, check whether higher-priority work has arrived (e.g., a keypress), and decide: continue the current render, or throw it away and start fresh with the new state.
+You already know Fiber represents the render tree as a linked list of units of work. Concurrent rendering layers a *scheduler* and a *lane-based priority system* on top of that. Each update is tagged with a priority lane — user input lands in a sync/high-priority lane, a transition or deferred update in a lower one.
 
-This is the critical shift: in legacy sync mode, once `setState` triggers a render, React owns the thread until the commit phase finishes. Nothing else runs — not animations, not input handlers, nothing. Concurrent mode treats the work-in-progress tree as **speculative and disposable**. React maintains the current committed tree (what's on screen) separately, so a half-finished render can be abandoned without corrupting the UI.
+During rendering, React works through fibers incrementally. Between units of work, the scheduler checks: *is there higher-priority work pending?* If yes, React abandons the current in-progress work-in-progress tree and starts fresh on the urgent update. This is safe because React never mutates the *current* tree until the commit phase — the work-in-progress tree is disposable.
 
-### Mental Model
+This is cooperative multitasking, not preemptive. React voluntarily yields to the event loop (via `MessageChannel` / `postMessage`) rather than being forcibly interrupted. The invariant is: the *current* (committed) tree is always consistent and visible; the in-progress tree can be thrown away at any point.
 
-Imagine two whiteboards. React draws the updated UI on the second board while the user is still looking at the first. If the requirements change mid-draw, React can erase the second board and start over — the user never sees the mess because the first board hasn't changed. In sync mode, there's only one board and React erases and redraws it live.
+**Mental model**
 
-### Practical Scenarios
+Think of it as React checking its inbox between each task. If a high-priority message (keypress, click) arrives while it's processing a low-priority re-render, it sets the work-in-progress aside and handles the urgent message first. The expensive render restarts from scratch afterward — it doesn't resume mid-tree.
 
-**Frontend:** A search-as-you-type input. Every keystroke triggers a filter over thousands of items. In sync mode, each keystroke causes a blocking render — the input feels sluggish. With concurrent rendering, you mark the results update as a low-priority transition (`startTransition`). React keeps the input responsive by interrupting the results render whenever a new keystroke arrives, only committing when the user pauses.
+**Frontend**
 
-**Fullstack:** Streaming SSR + Suspense. The server starts sending HTML before all data is ready, wrapping pending sections in Suspense boundaries. The client receives and hydrates chunks progressively. Concurrent rendering is what makes selective hydration work — React can hydrate high-priority parts of the page (say, the nav the user just clicked) before lower-priority off-screen sections, rather than hydrating the whole tree left to right.
+This is why wrapping a heavy state update in `startTransition` actually works: you're explicitly telling React "this update is low-priority; if something urgent comes in, preempt it." Without this, typing in an input field while filtering a 10k-row list would stutter because both updates competed in the same sync lane.
 
-### Why This Unlocks Suspense and Transitions
+**Fullstack**
 
-**Suspense Boundaries** become genuinely useful for data fetching only under concurrent rendering. When a component suspends (throws a Promise), React can pause that subtree, show the nearest fallback, and continue rendering the rest of the tree — possible only because renders are interruptible and partial commits are fine.
+Server components stream their payload in chunks; concurrent rendering lets the client progressively render those chunks as they arrive without blocking interaction. A suspending boundary in a streamed page doesn't freeze the shell — React keeps the committed tree visible while work-in-progress resolves.
 
-**React Transitions API** is the explicit surface for controlling this. `startTransition` is you telling React: "this state update is non-urgent — feel free to interrupt it." Without concurrent rendering underneath, that hint would be meaningless.
+**The practical implication**
+
+Your components must be *pure* during render. Because React may render a component multiple times before committing (abandoned work-in-progress trees), side effects in the render path will fire unpredictably. This is the real-world invariant concurrent mode enforces that strict mode surfaces in development.
+
+Understanding this makes Suspense and the Transitions API readable as deliberate priority controls over the scheduler, rather than magic.

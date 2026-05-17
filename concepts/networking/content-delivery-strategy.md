@@ -1,36 +1,35 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Cache-Control and HTTP Caching
+Cache-Control is an HTTP response header that instructs every cache layer — browser, CDN, reverse proxy — on what to cache, for how long, and under what conditions to revalidate. Getting these directives right is the difference between a fast app and stale data at scale.
 
-HTTP caching is a protocol-level mechanism where responses carry instructions that tell browsers, proxies, and CDNs how to store and reuse them. `Cache-Control` is the header that carries those instructions — it's the contract between your server and every cache layer in the request path.
+## The core mechanism
 
-### Core Mechanism
+Every HTTP response passes through a chain of caches. Each cache reads Cache-Control and decides: store this? serve it fresh? check origin? Directives apply to all caches unless you scope them — `private` means browser only, `s-maxage` overrides `max-age` for shared caches (CDNs) only.
 
-When a response includes `Cache-Control`, every intermediary (browser, CDN edge node, reverse proxy) uses it to decide three things: *can I store this*, *how long is it fresh*, and *must I revalidate before serving it*. The directives compose:
+The directives that actually matter:
 
-- `max-age=N` — treat this response as fresh for N seconds after receipt
-- `s-maxage=N` — same, but only for shared caches (CDNs, proxies); overrides `max-age` for them
-- `no-store` — don't cache at all, ever
-- `no-cache` — store it, but always revalidate with the origin before serving (despite the misleading name)
-- `private` — only browser-local caches may store this; CDNs must not
-- `must-revalidate` — once stale, don't serve stale under any circumstances (no "best-effort" staleness)
-- `stale-while-revalidate=N` — serve stale while fetching fresh in the background for N seconds
+- **`max-age=N`** — treat this response as fresh for N seconds. Both browser and CDN respect it.
+- **`s-maxage=N`** — overrides max-age for shared caches only. Cache aggressively at the edge while keeping browser TTL shorter.
+- **`stale-while-revalidate=N`** — serve the stale response immediately, fetch fresh in the background within N seconds. Eliminates the revalidation latency spike.
+- **`stale-if-error=N`** — if origin returns 5xx, serve stale for up to N seconds. Your CDN becomes a buffer against origin failures.
+- **`immutable`** — tells the browser this response will never change; skip revalidation even on hard reload. Only valid with content-addressed URLs (`main.abc123.js`).
+- **`no-cache`** — does *not* mean "don't cache." It means revalidate with origin before serving. `no-store` is the actual "don't cache" directive.
 
-Revalidation works via conditional requests: the browser sends `If-None-Match` (with the stored `ETag`) or `If-Modified-Since`, and the server replies `304 Not Modified` if nothing changed — no body transmitted.
+## Mental model
 
-### Mental Model
+Cache-Control is a trust contract. `max-age=0, no-cache` says "ask me every time." `max-age=31536000, immutable` says "this will never change." Most bugs come from either trusting too much (stale data) or too little (unnecessary origin load).
 
-Think of `Cache-Control` as a TTL + policy label on a physical document. `max-age` is the expiry date. `no-cache` is a sticky note saying "check with HQ before you hand this out." `private` is a stamp saying "not for the public filing room." The document still travels to the filing room (CDN), but the stamp tells it to be discarded immediately.
+## Practical scenarios
 
-### Practical Scenarios
+**Backend:** For user-specific API responses, use `private, max-age=0, no-cache`. For a public pricing page updated every 5 minutes: `public, max-age=300, stale-while-revalidate=60` — CDN serves fast while background-refreshing near expiry.
 
-**Backend**: API responses that are user-specific should carry `Cache-Control: private, max-age=0` to prevent CDNs from serving one user's data to another. For public, slow-changing data (product catalog, config), `Cache-Control: public, s-maxage=3600, stale-while-revalidate=60` lets CDNs serve stale instantly while refreshing asynchronously.
+**Frontend:** Bundled JS/CSS gets `public, max-age=31536000, immutable` — the content hash in the filename handles invalidation. The HTML entry point (`index.html`) needs `no-cache` so it always fetches fresh chunk references after a deploy.
 
-**Frontend**: Static assets built with content-hashed filenames (e.g., `app.3f2a1b.js`) can use `Cache-Control: public, max-age=31536000, immutable` — the hash changes when content changes, so an infinite TTL is safe. HTML entry points, which reference those assets, should use `no-cache` so browsers always revalidate them.
+**Fullstack:** The classic trap is setting a long CDN TTL on an API response, deploying, then wondering why the CDN still serves old data. The correct pattern is `s-maxage` with a CDN purge on deploy — you decouple CDN TTL from browser TTL and control invalidation explicitly.
 
-**Fullstack**: A Next.js or Remix app serving SSR pages needs careful differentiation — the HTML might need `private, no-cache` while the JS chunks it references get `immutable`. Getting this wrong causes either stale UIs or unnecessary origin load.
+---
 
-The most common mistake is conflating `no-cache` (revalidate always) with `no-store` (never store). The former enables conditional requests and saves bandwidth; the latter eliminates caching entirely.
+The `no-cache` vs `no-store` confusion causes more misconfigured endpoints than anything else. To disable caching entirely, you need both: `Cache-Control: no-store, no-cache`.

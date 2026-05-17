@@ -1,30 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Streaming SSR sends HTML to the browser incrementally as it's generated on the server, rather than waiting for the full page to be ready. This matters because it decouples time-to-first-byte from time-to-full-render — the browser can start parsing, load subresources, and display content while the server is still working.
+## Streaming SSR
 
-## The Core Mechanism
+Traditional SSR sends one complete HTML response — the server waits until the full page is rendered, then flushes everything at once. Streaming SSR breaks that into a pipeline: the server writes HTML to the response in chunks as each piece becomes ready, so the browser can start parsing, painting, and even executing scripts before the server finishes generating the rest.
 
-Traditional SSR is synchronous: the server renders the entire component tree, produces a complete HTML string, then ships it. If a component deep in the tree awaits a slow database query, everything waits.
+### The core mechanism
 
-Streaming SSR works by breaking the response into chunks, using HTTP's chunked transfer encoding (or HTTP/2 streams). The server flushes HTML as soon as parts of the tree are ready. React 18's implementation uses Suspense boundaries as the unit of deferral — everything outside a `<Suspense>` boundary renders immediately; everything inside waits for its data, then streams the resolved HTML (plus a small inline `<script>` that tells the browser where to slot it in the DOM).
+HTTP supports chunked transfer encoding, which lets a server send a response body in pieces without declaring `Content-Length` upfront. The browser treats each chunk as it arrives — it doesn't wait for the closing tag. This means you can flush `<head>` and your above-the-fold shell immediately, letting the browser fetch critical CSS and JS in parallel with the server still resolving data for the rest of the page.
 
-The key insight: the browser receives a `<template>` placeholder first, then the real content arrives later and is swapped in client-side via that script — all without a client-side data fetch or a second round-trip.
+React 18's `renderToPipeableStream` (Node.js) and `renderToReadableStream` (edge runtimes) expose this directly. You stream a shell with `<Suspense>` boundaries as placeholders, then flush each boundary's resolved content as an inline `<script>` that swaps it in via client-side reconciliation. The HTML stays semantically valid throughout.
 
-## Mental Model
+### Mental model
 
-Think of a restaurant that seats you and immediately brings bread while your entrée is being prepared, rather than making you wait outside until everything is plated. You're in your seat earlier, bread is on the table, and the main course arrives when it's ready — same total kitchen time, better perceived experience.
+Think of a restaurant sending dishes as they're ready rather than holding the entire order until the last plate is plated. The customer (browser) starts eating immediately; the kitchen (server) keeps working.
 
-## Practical Scenarios
+### Where it matters in practice
 
-**Frontend engineer building a product page:** The header, nav, and above-the-fold content stream immediately. The reviews section, which hits a slow recommendations service, is wrapped in `<Suspense>` with a skeleton fallback. LCP improves because the hero image loads sooner — the browser received that HTML before reviews finished.
+**Frontend/fullstack:** The canonical win is TTFB and LCP. If your page has a slow data dependency (e.g., a personalized feed behind auth), you can stream the chrome — nav, layout, static sections — immediately, then stream the feed content once the DB query resolves. Without streaming, the user stares at a blank screen for the duration of your slowest query.
 
-**Fullstack engineer building a dashboard:** You can prioritize critical data (user identity, permissions) to render first, stream it, and defer expensive aggregations (analytics charts, activity feeds). Each deferred section resolves independently — a slow analytics query doesn't block the permission-gated sidebar from rendering. This also means you can start hydration on already-streamed portions while the rest arrives, which is what React 18's selective hydration enables.
+**Common pitfall: headers must be set before the first flush.** Once you've started streaming, you can't set a `Set-Cookie` or redirect. This catches engineers who try to handle auth redirects mid-render — you need to resolve auth *before* opening the stream, not inline with component rendering.
 
-## What Changes in Practice
+**Another pitfall: error handling is harder.** With a single response, an unhandled exception means a 500 before the client sees anything. With streaming, you may have already flushed a 200 and partial HTML — you can't change the status code. You need explicit error UI within Suspense boundaries rather than relying on HTTP status for error signaling.
 
-- Error boundaries matter more — a thrown error mid-stream, after headers are sent, can't change the HTTP status code. You need `<Suspense>` + error boundaries to handle component-level failures gracefully.
-- CDN/edge caching gets more complex — streaming responses are harder to cache fully; you typically cache the outer shell and stream dynamic inner content.
-- The waterfall problem shifts rather than disappears — you still need to think carefully about what data is fetched where, since a `<Suspense>` boundary only helps if the data fetch starts early enough.
+### Why this differentiates senior engineers
+
+Most engineers understand SSR vs CSR. Fewer can speak to *why* streaming changes the performance model (it parallelizes server work with browser parsing and asset fetching), or *where* it breaks down (header immutability, error semantics, CDN edge caching of partial responses). In design discussions, knowing when *not* to stream — e.g., short latency APIs where chunking overhead outweighs benefit — is the signal that separates someone who's used the abstraction from someone who understands it.

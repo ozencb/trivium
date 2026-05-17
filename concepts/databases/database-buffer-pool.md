@@ -1,38 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Database Buffer Pool**
+## Database Buffer Pool
 
-The buffer pool is a chunk of memory the database engine manages itself to cache disk pages — separate from and more powerful than the OS page cache because the database controls exactly when and how data moves in and out.
-
----
+The buffer pool is the database engine's own managed page cache—distinct from the OS page cache—giving the engine full authority over eviction ordering, dirty-page flushing, and transactional pinning. Without this control, the engine can't enforce the write ordering invariants that durability depends on.
 
 **Core mechanism**
 
-Database files are divided into fixed-size pages (8KB in MySQL InnoDB, 8KB default in Postgres). The buffer pool holds a subset of these pages in memory as *frames*. When a query needs a page, the engine checks the pool first (buffer hit); on a miss, it reads from disk and loads the page into an available frame.
+The buffer pool is a fixed region of memory divided into frames, each the same size as a disk page (commonly 8 KB or 16 KB). A page table maps `(tablespace_id, page_id) → frame`. Each frame carries two critical bits of metadata: a **pin count** and a **dirty flag**.
 
-The key distinction from a dumb cache: the buffer pool tracks *dirty pages* — pages modified in memory but not yet written back to disk. The engine decides when to flush them, not the OS. This is non-negotiable for correctness: the database must control flush order to maintain durability guarantees (which is exactly why this is a prerequisite for understanding WAL).
+When a thread needs a page, it checks the page table. On a miss, it selects a victim frame via the replacement policy (InnoDB uses a two-sublist LRU variant—"young" and "old" zones—to prevent large scans from evicting hot pages), evicts it after flushing if dirty, then loads the target page. The frame's pin count is incremented before the caller touches it and decremented on release. The eviction path cannot select a pinned frame.
 
-Eviction uses LRU or a clock-sweep variant, but with a twist: sequential full-table scans get special treatment. Without scan resistance, a single `SELECT *` on a large table would evict every hot OLTP page. Databases handle this by putting scan pages at the tail of the LRU list immediately, so they're evicted first.
-
----
+The dirty flag means: the in-memory copy diverges from disk. Dirty pages are flushed either at checkpoint or under eviction pressure—but never arbitrarily. The engine controls exactly when and in what order pages hit disk, which is what makes durability possible.
 
 **Mental model**
 
-Imagine the buffer pool as a whiteboard. Disk is a filing cabinet. When you need a document, you photocopy it onto the whiteboard. When the whiteboard fills up, you erase the least recently used section — but if you scribbled on it (dirty page), you copy those changes back to the filing cabinet first. The critical part: *you* decide when to copy back, not whoever cleans the room.
+Think of it as a hash map of `page_id → frame` with an LRU eviction queue and a write queue for dirty frames. A B-Tree traversal pins the root, fetches a child (possibly evicting something else), unpins the root, pins the child, and so on down. The leaf write marks a frame dirty—that mutation lives only in memory until something forces a flush.
 
----
+**In practice**
 
-**Practical scenarios**
+- **Backend**: Buffer pool hit rate (`Innodb_buffer_pool_reads` vs. `read_requests`) should be >99% under normal load. A drop signals either pool starvation or a scan polluting hot pages. Increasing `innodb_buffer_pool_size` is often the highest-ROI tuning action.
 
-**Backend**: That slow query after a deployment or failover? Cold buffer pool — every page is a disk read. InnoDB can persist the buffer pool across restarts (`innodb_buffer_pool_dump_at_shutdown`); Postgres can't natively. This is why some teams artificially warm the pool post-restart.
+- **SRE**: After a crash or restart, the buffer pool is cold. Query latency spikes until the working set is reloaded—this is why warm-up scripts and slow traffic ramp-ups exist post-deploy. MySQL 5.7+ can persist the LRU list across restarts to accelerate recovery.
 
-**Data**: Running heavy analytical queries on an OLTP primary will trash its buffer pool by flooding it with scan pages, causing latency spikes on concurrent transactional queries. This is the mechanistic reason to route analytics to a replica, not just "don't stress the primary."
+- **Data**: Analytical workloads do large sequential scans that churn through frames. InnoDB's old-sublist mechanism limits this, but on OLTP systems running ad-hoc analytical queries, buffer pool thrash is a real incident cause.
 
-**SRE**: `innodb_buffer_pool_size` (MySQL) and `shared_buffers` (Postgres) are the highest-leverage tuning knobs in the database. Buffer hit ratio (hits / total reads) should be above 99% for OLTP workloads. If it's not, you're I/O-bound not CPU-bound, and adding memory will help more than query tuning.
+**Connection to WAL**
 
----
-
-The reason this unlocks WAL: before the buffer manager can flush a dirty page, it must guarantee the WAL record for that change is already on disk. That ordering constraint — log before data — is the WAL protocol, and the buffer pool is where it's enforced.
+The buffer pool enforces the WAL invariant at eviction time: before a dirty frame can be written to its data file, the log records covering those changes must already be durable. This is the steal/no-force policy—the engine *can* evict dirty pages (steal) and *doesn't* have to flush them on commit (no-force)—but log-before-data ordering is never violated. That's why WAL only makes sense once you understand the buffer pool's eviction path.

@@ -1,53 +1,48 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Background Sync API
 
-The Background Sync API lets a service worker defer a network operation until connectivity is available — even after the user has closed the tab. It's the piece that makes "works offline" actually mean "syncs offline changes," not just "reads cached data."
+Background Sync lets a service worker defer network requests until connectivity is reliable, so user actions taken offline don't silently disappear. It solves the gap between "the user did something" and "the server knows about it" — without making the user wait or retry manually.
 
----
+### Core Mechanism
 
-### Core mechanism
-
-When you register a sync event, you're telling the browser: *"next time you have a stable connection, wake up my service worker and fire this event."* The browser owns retry logic, handles exponential backoff, and survives tab closure. You register in the page, but execution happens in the service worker — potentially long after the page is gone.
-
-This is the key distinction from rolling your own reconnect logic: a `navigator.onLine` listener or a retry loop dies when the page closes. The browser's sync queue doesn't.
+You register a sync tag from your page, and the browser guarantees the service worker's `sync` event fires at least once when the device has connectivity — even if the tab is closed by then. The key word is *guarantees*: the browser owns the retry schedule, handles exponential backoff, and persists the registration across browser restarts (on supporting platforms).
 
 ```js
-// In the page
+// In your page
 await navigator.serviceWorker.ready;
 await registration.sync.register('submit-form');
 
-// In the service worker
-self.addEventListener('sync', event => {
+// In your service worker
+self.addEventListener('sync', (event) => {
   if (event.tag === 'submit-form') {
-    event.waitUntil(flushPendingSubmissions());
+    event.waitUntil(flushQueuedRequests());
   }
 });
 ```
 
-Two flavors exist: **one-off sync** (fires once on next connectivity) and **periodic sync** (fires on a schedule, requires explicit user permission — appropriate for background news fetching or feed refreshes).
+The contract: if `flushQueuedRequests()` rejects, the browser retries. If it resolves, the sync is done. You're responsible for storing the pending payload (IndexedDB is the right tool) and replaying it when the sync fires.
 
----
+### Mental Model
 
-### Mental model
+Think of it as a post office drop box. You put mail in when you want (offline, poor signal, mid-tunnel). The post office decides when to actually send it. You don't poll; you just trust delivery will happen.
 
-Think of it as a message queue where the browser is the queue manager. You drop a sync request in. The browser decides when conditions are right — online, not metered, battery sufficient — then invokes your service worker to process it. You don't poll, you don't manage timers, you just handle the event.
+### Practical Scenarios
 
----
+**Frontend:** A note-taking app where the user edits offline. Instead of blocking on a failed `fetch`, you save the diff to IndexedDB and register a sync tag. When connectivity returns, the service worker replays the diff. The user never saw a spinner or an error.
 
-### Practical scenarios
+**Fullstack:** A form submission in a Progressive Web App. The server needs to receive exactly one copy — so your `flushQueuedRequests` must be idempotent (include a client-generated request ID). The server deduplicates; Background Sync handles the retry transport.
 
-**Frontend:** User submits a form on a shaky mobile connection. Instead of showing an error, you write the payload to IndexedDB and call `sync.register('form-submit')`. The browser fires the sync event when connectivity recovers — even if they've locked their phone and walked away. No retry UI, no lost submissions.
+### Common Pitfalls
 
-**Fullstack:** An event-tracking pipeline where losing a single flush is acceptable but you still want best-effort delivery. Register a sync per batch; the service worker sends it when the browser decides it's safe. Your backend should be idempotent on ingestion — the same sync tag can fire multiple times if the handler throws and the browser retries.
+- **No IndexedDB, no sync.** If you don't persist the payload before registering the tag, a page reload before the sync fires loses the data entirely.
+- **Idempotency is your problem.** Background Sync may fire multiple times if the service worker crashes mid-flight. Design your endpoints accordingly.
+- **Limited browser support.** As of 2026, it's Chromium-only. Safari and Firefox don't support it, which makes it a progressive enhancement rather than a baseline. Always have a fallback (optimistic UI + retry on next load).
+- **Not for periodic background work.** That's Periodic Background Sync, a separate API with stricter permission requirements.
 
----
+### When to Reach For It
 
-### Why this unlocks offline-first design
-
-Without Background Sync, "offline-first" usually means read-only resilience. Cached data loads, but writes silently fail or require the user to be online. Background Sync makes the write path durable — local mutations queue up and propagate automatically, without the app managing that lifecycle.
-
-**Caveat worth knowing:** support is solid in Chrome/Edge but still limited in Safari (as of 2025). Treat it as progressive enhancement — use it when available, fall back to a visible retry mechanism otherwise.
+Reach for it when user actions must eventually reach the server and the user shouldn't have to think about connectivity. Skip it when your app is purely online, or when you need cross-browser reliability today — in that case, a simpler `online` event listener with a request queue gets you most of the way there.

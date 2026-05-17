@@ -1,34 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Distributed Locks** enforce mutual exclusion across processes running on separate machines — the same guarantee a mutex gives you in-process, but without shared memory to coordinate through.
+**Distributed locks let a single node claim exclusive access to a shared resource across a cluster, where a local mutex is useless because the competing processes don't share memory.** The fundamental challenge isn't acquiring the lock—it's handling what happens when the holder dies, stalls, or gets partitioned away.
 
-## The Core Problem
+## Core Mechanism
 
-A single-process mutex works because memory is shared and operations are atomic at the hardware level. Distributed systems have neither. Two services on different hosts can both believe they hold the lock simultaneously — either because of network partitions, clock drift, or a GC pause that caused one holder to stop responding without releasing.
+The lock is a key written to a consensus-backed store (etcd, Zookeeper, or Redis in specific configurations). Two invariants make it work:
 
-The naive solution (write a "locked" flag to a database) fails because the write itself isn't atomic with the check. You need something that can atomically "set if not set" and automatically expire stale locks.
+1. **Linearizable writes**: The consensus system guarantees only one writer "wins" when multiple nodes race to create the same key. This is where consensus algorithms do the heavy lifting—you're delegating the hard problem of mutual exclusion to a system already solving it.
 
-## The Mechanism That Actually Matters: Fencing Tokens
+2. **Time-bounded leases (TTL)**: The lock key has an expiry. The holder must periodically send heartbeats to renew it, or complete the critical section before it lapses. This ensures the lock releases even if the holder crashes—liveness without requiring explicit unlock.
 
-When you acquire a lock from a system like etcd or ZooKeeper, you get back a **fencing token** — a monotonically increasing integer. Every write to shared state must include this token. The storage layer rejects any write whose token is lower than the highest it's seen.
+The subtle danger: a process can *believe* it holds a lock after the TTL has expired. A GC pause, kernel scheduling delay, or network hiccup long enough to miss heartbeats means another node already acquired the lock before your process woke up. Both nodes now think they hold it.
 
-This matters because lock expiry alone isn't enough. Imagine: you hold the lock, then a long GC pause hits. Your lease expires, another process acquires the lock and gets token 34, starts writing. Then your GC pause ends — you still think you hold the lock and try to write with token 33. Without fencing, you'd corrupt state. With fencing, the storage layer rejects you.
-
-Redis-based locking (Redlock) skips fencing tokens, which is why Martin Kleppmann argued it's unsafe for anything where correctness is critical. For "best effort" coordination it's fine; for financial operations it isn't.
+The solution is **fencing tokens**—a monotonically increasing number issued with each lock grant. Pass it to downstream systems; they reject any request with a stale token. This moves the safety guarantee from "the lock holder knows it holds the lock" (unreliable) to "the resource itself enforces exclusivity" (reliable).
 
 ## Mental Model
 
-Think of it like a library checkout card with an expiry date stamped on it, where the librarian only accepts the card with the highest serial number they've seen. Even if you're still walking around with card #33, card #34 being issued invalidates you.
+Hotel key cards with an expiry. Check in → get a card valid for 24h. If you vanish, the room becomes available after 24h without staff intervention. If the hotel issues a new card to someone else, your old card stops working at the door—even if you think you're still a guest.
 
 ## Practical Scenarios
 
-**Backend:** The canonical use case is preventing double-execution — only one instance should process a payment, run a migration, or consume a scheduled job. You acquire a lock keyed on the resource ID (e.g., `payment:{id}`) before processing, and release on completion. Combined with idempotency keys, this handles the "at-least-once delivery but exactly-once processing" problem.
+**Backend**: Singleton job scheduling—you have 10 instances running but only one should run the nightly data export. Each instance races to acquire a lock at startup; the winner runs the job, others skip. Also useful for cache stampede prevention: one instance acquires a lock to rebuild an expired cache entry while others wait rather than all hitting the DB simultaneously.
 
-**SRE:** Coordinating rolling restarts across a fleet — a lock ensures only N nodes drain at a time. Also useful during cache stampedes: when a cache key expires under high load, a lock lets one process rebuild it while others wait, rather than all hitting the database simultaneously.
+**SRE**: Coordinating rolling deployments or auto-scaling decisions. You want exactly one automation script to be scaling out your fleet at a time, not three overlapping reactions to the same spike. A distributed lock with a short TTL (30–60s) and a fencing token prevents competing scripts from issuing conflicting resize commands.
 
-## Connection to Consensus
+## Common Pitfalls
 
-Since you know consensus algorithms: a correct distributed lock *is* a consensus problem — all nodes must agree on one holder. etcd and ZooKeeper solve this properly using Raft/Paxos. Redis trades that correctness guarantee for lower latency and simpler ops. Choose based on whether you need the lock for coordination (Redis is fine) or for correctness guarantees in the presence of failures (use etcd).
+- **Too-short TTL**: High lock churn under GC pressure; the lock lapses mid-operation.
+- **Too-long TTL**: Slow recovery when the holder crashes.
+- **Missing fencing tokens**: Creates only the *illusion* of mutual exclusion under failure.
+- **Redlock skepticism**: Martin Kleppmann's critique is worth reading—Redlock's safety properties are weaker than etcd/Zookeeper-backed locks under certain failure modes.
+
+When you need true mutual exclusion across nodes, reach for a consensus-backed system and always implement fencing on the resource side.

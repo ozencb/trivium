@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CDN Routing
 
-CDN routing is the set of mechanisms that determine *which edge node* handles a given user's request. Getting this wrong means users hit a server 8,000 miles away instead of one 30 miles away, defeating the entire point of a CDN.
+CDN routing is the infrastructure that decides *which* edge node answers a user's request before any content is even considered. Getting this selection wrong means all the caching in the world doesn't help—users in Singapore are hitting a node in Frankfurt.
 
-### Core Mechanism
+### The Two Core Mechanisms
 
-There are two dominant approaches, and most CDNs blend them:
+**Anycast** is the cleaner approach: dozens of edge nodes worldwide advertise the *same* IP address via BGP. The internet's routing layer does the work—packets naturally flow toward the topologically nearest node based on AS path lengths. No application involvement. The tradeoff is that "nearest" means nearest *by BGP hops*, not geography. A user 200km away might route through a longer AS path than one 800km away depending on peering agreements.
 
-**Anycast routing**: Multiple edge nodes are assigned the *same IP address*. When a user's packet hits the internet, BGP—the protocol that routes traffic between autonomous systems—naturally steers it toward the "closest" node in terms of network hops and peering agreements. No application-level logic required; the network fabric does the work. This is how Cloudflare and Google's CDN operate.
+**DNS-based routing** is more explicit: the CDN's authoritative nameserver inspects the resolver IP on each query and returns an A record pointing to the nearest cluster. The critical nuance here is that it sees your *resolver's* IP, not your client's. A user in Tokyo using `8.8.8.8` might get routed to a U.S. cluster because Google's resolver is resolving from a U.S. datacenter. This is why "why am I hitting the wrong POP?" is such a common CDN debugging headache—check what resolver the client is using first.
 
-**DNS-based (GeoDNS) routing**: The CDN's authoritative nameserver returns *different A records* depending on where the DNS query originates. When your resolver asks "what's the IP for cdn.example.com?", the CDN's DNS sees the resolver's IP, maps it to a geographic region, and returns the IP of the nearest PoP. Akamai and AWS CloudFront lean heavily on this.
-
-A critical subtlety with GeoDNS: the CDN sees the *resolver's* IP, not the user's. A user in Tokyo using Google's 8.8.8.8 resolver (which may resolve from a US data center) can get routed to a US edge node. This is why CDNs also look at EDNS Client Subnet (ECS)—a DNS extension that includes a prefix of the *client's* actual IP—when resolvers send it.
+Most production CDNs layer both: anycast steers traffic to the right regional cluster at the IP level, then DNS fine-tunes within it.
 
 ### Mental Model
 
-Think of anycast like a post office network where every branch has the same address. Mail gets delivered to whichever branch your carrier can reach fastest. GeoDNS is more like a smart receptionist who answers the phone, hears your area code, and transfers you to the nearest branch—but she's guessing your location from your phone number, not your actual GPS.
+Think of anycast like taxi dispatch where every cab has the same phone number—you always connect to whoever's closest. DNS routing is like a dispatcher who asks your zip code before assigning a driver. One is implicit and automatic; the other gives you more control but adds a lookup step.
 
-### Practical Scenarios
+### Where This Actually Matters
 
-**Backend**: If you're building an API with global users, you're essentially choosing between Anycast (simpler, more reliable routing, no TTL games) and GeoDNS (more control, easier to implement health-check-based failover per region). When a PoP goes down, Anycast failover is implicit via BGP withdrawal; GeoDNS failover requires your CDN's health check system to update DNS records quickly—during which the TTL governs how stale routes persist.
+**Backend:** Your origin sees requests from a small set of edge POP IPs, not the full internet. This means connection pooling to origin is bounded and predictable—but it also means a single misbehaving POP can hammer your origin in ways that look like a traffic spike from one IP block.
 
-**SRE**: Routing directly affects incident blast radius. A misconfigured BGP announcement or a bad GeoDNS health-check can silently drain traffic away from healthy nodes or flood an overloaded one. Understanding which routing method your CDN uses tells you *where to look* when traffic distribution looks wrong in your dashboards.
+**SRE:** Failover behavior differs sharply between the two mechanisms. Anycast failover is fast—BGP withdraws the route and traffic shifts in seconds. DNS-based failover is TTL-bounded; if you set a 5-minute TTL for performance, you have a 5-minute blast radius when a node goes down. The common pattern is short TTLs (30–60s) on CDN DNS records specifically to keep failover windows small.
 
-**Fullstack**: Cache hit rates are routing-dependent. If your users in Southeast Asia get routed to a US edge due to a GeoDNS misconfiguration, they'll also miss the warm cache on the correct regional PoP—you'll see latency spikes *and* elevated origin load simultaneously, which is confusing until you trace it to routing.
+**Fullstack:** When investigating latency regressions or cache miss spikes, the first question is "which POP is this user hitting and why?" Tools like `dig +short` against the CDN's nameserver, or checking `X-Cache` / `CF-Ray` response headers, tell you immediately. A sudden reroute to a cold POP after a network event explains a lot of "the site is slow in region X" tickets.
 
-Once you understand how requests reach an edge node, CDN cache invalidation (purging) and edge cache behavior make much more sense—they're all scoped per-PoP.
+The consistency complexity—handling cache state across nodes after routing shifts—is why cache purging and edge caching are downstream problems from routing.

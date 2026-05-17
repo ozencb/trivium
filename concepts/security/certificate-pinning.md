@@ -1,38 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Certificate Pinning
 
-Certificate pinning is a defense against CA compromise: instead of trusting any certificate signed by any trusted CA, a client hardcodes the specific certificate (or public key) it expects from a server and rejects anything else.
+Normal TLS trusts any certificate signed by any CA in the system trust store — which means a compromised or rogue CA can issue a valid certificate for your domain that clients will happily accept. Certificate pinning sidesteps this by hardcoding the expected fingerprint directly in the client, so even a legitimately-signed cert gets rejected if it doesn't match what you expected.
 
-### Why the normal TLS model isn't enough
+### The Core Mechanism
 
-After a TLS handshake, you know the connection is encrypted and the server's cert was signed by *some* trusted CA. But your OS and browser trust hundreds of CAs. A compromised or rogue CA can issue a legitimate-looking cert for `api.yourcompany.com` — and a MITM attacker using that cert passes normal validation just fine. This has happened: DigiNotar (2011), Comodo (2011), Symantec (2017).
+During the TLS handshake, after the server presents its certificate chain, the client performs an additional check: it computes a hash of the certificate (or its public key) and compares it against a hardcoded set of pins. If nothing matches, the connection is aborted — regardless of whether the cert is otherwise valid.
 
-Pinning sidesteps this entirely. The client says: "I don't care what any CA says — I only accept this specific cert or public key."
+There are two levels you can pin at:
 
-### The mechanism
+- **Leaf certificate pinning**: pin the exact certificate. Simple, but breaks as soon as the cert rotates.
+- **Public key pinning (SPKI)**: pin the public key's hash (Subject Public Key Info). More practical — you can renew the cert with the same key pair and the pin stays valid. This is what most production implementations use.
 
-Two variants:
+You typically ship a primary pin plus one or two backup pins (for a different key you hold in reserve), giving yourself a rotation path without an outage.
 
-**Certificate pinning** — store the exact DER-encoded cert (or its SHA-256 hash). Reject anything that doesn't match.
+### Concrete Mental Model
 
-**Public key pinning (SPKI pinning)** — store just the hash of the `SubjectPublicKeyInfo` from the cert. This is almost always preferred because the public key survives cert renewals as long as you keep the same key pair. Full cert pinning breaks on every renewal.
+Imagine your mobile banking app talks to `api.bank.com`. A corporate proxy intercepts the connection and presents a cert signed by the company's internal CA — which the OS trusts. Without pinning, the connection succeeds and traffic is readable by the proxy. With pinning, the app checks the public key hash, finds it doesn't match the bank's actual key, and drops the connection. The app doesn't care that the cert is technically valid; it only cares that it came from the right key.
 
-At connection time the client extracts the public key from the server's presented leaf cert (or sometimes an intermediate/root), hashes it, and compares against the stored pin. No match → connection refused, no fallback.
+### Where This Matters in Practice
 
-Most implementations also define backup pins — hashes of keys you *haven't* issued yet but control, so you have a rotation path if your primary is compromised.
+**Backend:** Most relevant for high-value internal service-to-service calls or integrations with third-party financial/payment APIs where MITM is a meaningful threat model. If you're building an internal SDK that wraps an external API, pinning in that SDK hardens it against CA compromises you can't control.
 
-### Mental model
+**SRE:** This is where pinning becomes a liability. Key rotation turns into a coordinated deployment — the client binary must ship with new pins before the server rotates, or clients break. Let's Encrypt's 90-day cert cycles are incompatible with naive cert pinning unless you're using SPKI pinning with the same key. Stale pins cause silent outages; apps that can't be force-updated are especially risky. HPKP (the HTTP header-based version) was deprecated in Chrome in 2018 specifically because sites pinned incorrectly and locked themselves out.
 
-Think of it like SSH's `known_hosts`. The first time you SSH into a server, it stores the host's public key fingerprint. Next time, if the fingerprint changes, SSH screams at you. Pinning is the same idea, applied to TLS server certs in application code rather than interactively.
+### What Seniors Know That Juniors Don't
 
-### Practical scenarios
-
-**Backend (service-to-service):** Internal microservices calling each other — or your service calling a critical third-party API (payment processor, identity provider) — can pin the remote's cert. Even if someone poisons DNS or intercepts traffic inside your infrastructure, a forged cert gets rejected. Combine with mTLS for mutual verification.
-
-**SRE:** Pinning is a deployment and rotation minefield. A cert rotation that doesn't update pins simultaneously breaks clients hard — no graceful degradation, just connection failures. You need coordinated rollouts: push new pins *before* rotating the cert, keep the old pin valid during the window, then remove it after. Monitoring pin validation failures separately from TLS errors is essential — otherwise you won't know you're broken until users complain. Mobile apps that ship pins in binaries are especially dangerous: you may have a 6-week window before a forced cert rotation bricks an unupdated app version in the wild.
-
-The tradeoff is real: pinning raises your MITM attack floor significantly, but operational complexity and rotation risk are non-trivial costs.
+The question isn't whether pinning is secure — it clearly is. It's whether the operational overhead is justified for your threat model. Most services are better served by Certificate Transparency monitoring (which detects rogue certs after issuance) combined with short-lived certs, rather than pinning. Reserve pinning for mobile apps or native clients with controlled update cycles, where you genuinely can't tolerate CA-level compromise and can manage the rotation discipline it demands.

@@ -1,62 +1,58 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CSS Cascade Layers
 
-CSS Cascade Layers (`@layer`) give you explicit control over the order in which style rules win conflicts — independent of specificity. Before layers, the only tools you had for resolving conflicts were specificity and source order, both of which scale poorly as codebases grow.
+CSS has always resolved style conflicts through specificity, source order, and `!important` — a system that breaks down the moment you're combining a reset, a component library, and your own utilities. Cascade layers give you an explicit priority stack declared upfront, so specificity only matters *within* a layer, not across them.
 
-### The Core Mechanism
+### Core mechanism
 
-The cascade has always had a priority stack: origin (browser/user/author), then importance (`!important`), then specificity, then source order. Layers insert a new tier *between* origin and specificity. Rules in a higher-priority layer beat rules in lower-priority layers **regardless of selector specificity**.
-
-You declare layers and their order explicitly:
+You declare layers at the top of your stylesheet in the order you want them applied (lowest to highest priority):
 
 ```css
-@layer base, components, utilities;
+@layer reset, base, components, utilities;
 
-@layer base {
-  .button { color: gray; padding: 8px 16px; }
+@layer reset {
+  * { box-sizing: border-box; margin: 0; }
 }
 
 @layer components {
-  .button { color: blue; }  /* wins over base, even with same specificity */
+  .btn { padding: 0.5rem 1rem; background: blue; }
 }
 
 @layer utilities {
-  .text-red { color: red; }  /* wins over both */
+  .p-0 { padding: 0; }
 }
 ```
 
-The declaration `@layer base, components, utilities;` establishes priority — last declared wins. Anything *outside* any layer beats everything in a layer (unlayered styles sit above all layers).
+Here `.p-0` beats `.btn`'s padding *regardless of specificity*, because `utilities` was declared after `components`. A utility with zero specificity wins over a component selector with high specificity. That's the inversion: **layer order beats specificity**.
 
-### Mental Model
+Styles outside any `@layer` declaration sit above all layers automatically, which matters when mixing layered third-party code with unlayered legacy styles.
 
-Think of it like z-index, but for style precedence. You define a stack of named layers, and everything in a higher layer wins. Within a layer, normal specificity rules still apply. But a `.button` in `utilities` beats `#sidebar .nav .button` in `base`, because layer order dominates specificity.
+### Mental model
 
-### Why This Matters in Practice
+Think of layers as named buckets stacked in a tower. CSS normally resolves conflicts by measuring selector weight inside each bucket, then comparing across buckets by position. Without layers, all styles are in one implicit bucket, so specificity wars play out globally. Layers partition the tower so bucket position determines the winner before specificity even enters the picture.
 
-**The real problem layers solve:** third-party CSS. If you import a component library, its highly-specific selectors can fight your own styles in unpredictable ways. With layers, you put the third-party code in a low-priority layer:
+### Practical scenarios
+
+**Frontend (component libraries):** You import Tailwind or Bootstrap, which ships with high-specificity component styles. Historically you'd fight them with `!important` or artificially inflated selectors. With layers, wrap the library import in a low-priority layer:
 
 ```css
-@layer third-party, app;
+@layer reset, third-party, components, utilities;
 
-@import "some-ui-lib.css" layer(third-party);
-
-@layer app {
-  /* your styles always win, no specificity wars */
+@layer third-party {
+  @import url("bootstrap.css");
 }
 ```
 
-**For frontend engineers:** design system work becomes much cleaner. Base tokens go in a `base` layer, component styles in `components`, one-off overrides in `utilities`. You stop reaching for `!important` or artificially inflating specificity.
+Now any of your component styles — even low-specificity ones — override Bootstrap without a specificity fight.
 
-**For fullstack engineers:** if you're generating or injecting CSS dynamically (SSR, CSS-in-JS, scoped styles), layers give you a reliable hook to control where injected styles land in the priority stack — so runtime-injected styles don't accidentally override layout-critical rules.
+**Fullstack (design systems):** When a team ships a shared design system as an npm package, consumers historically had to know the system's internal specificity to safely override it. With layers, the design system can document its layer name (`@layer ds.components`) and consumers simply declare their overrides in a higher-priority layer. No digging through selectors to craft a winning override.
 
-### Caveats
+### When to reach for it
 
-- Browser support is broad (all modern browsers since 2022), but worth verifying for any legacy targets.
-- Unlayered styles beat layered ones — easy to forget when mixing legacy CSS with layered code.
-- `!important` reverses layer order within its own cascade context, which is counterintuitive.
+Reach for layers when you're composing styles from multiple origins: a reset, a third-party library, local components, and utilities. If you're ever writing `!important` to beat a library or using `.parent .parent .element` to win a specificity battle, layers would eliminate the problem structurally rather than tactically.
 
-The feature is essentially an escape hatch from specificity hell that scales — something CSS had needed for a long time.
+Browser support is now universal (all major browsers since 2022). The one gotcha: unlayered styles always win over layered ones, so audit third-party imports to ensure they're wrapped in a layer before relying on this for overrides.

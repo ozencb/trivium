@@ -1,36 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Database migrations are versioned, incremental changes to a schema (or data) that can be applied and — critically — reversed in a controlled way. They exist because production databases can't be wiped and recreated; changes must be surgical and auditable.
+## Database Migrations
 
-## The Core Mechanism
+Schema changes in production are irreversible in one critical way: your running app and your database can briefly be on different versions simultaneously. Migrations are the discipline of managing that gap — expressing schema evolution as ordered, version-controlled scripts that can be applied (and ideally reversed) deterministically.
 
-A migration is a unit of work with two halves: `up` (apply the change) and `down` (reverse it). Your migration tool tracks which have run in a metadata table (`schema_migrations`, `flyway_schema_history`, etc.). On deploy, it runs all pending `up` functions in order. On rollback — which you already know about — it runs `down` in reverse order.
+**The core mechanism**
 
-The important insight is that **migrations are append-only history**. You never edit a migration once it's been committed and run anywhere. If you made a mistake, you write a *new* migration to fix it. This preserves the invariant that every environment (dev, staging, prod) can reach the same state by replaying the same sequence.
+A migration runner (Flyway, Liquibase, Alembic, ActiveRecord, etc.) maintains a `schema_migrations` table tracking which scripts have been applied. On deploy, it runs any unapplied migrations in sequence. The files themselves live in source control, so schema history is auditable and reproducible across environments.
 
-## Concrete Mental Model
+The hard part isn't *applying* migrations — it's the deployment window. Rolling deploys mean v1 and v2 of your app run *concurrently* while the migration runs. This forces a constraint: migrations must be backward-compatible with the previous application version.
 
-Think of migrations like Git commits for your schema. Each commit is immutable. `git log` shows your history; your migrations table is the same thing. You can't rewrite history without breaking everyone downstream.
+**Concrete mental model**
 
-```sql
--- 0042_add_user_preferences.sql (up)
-ALTER TABLE users ADD COLUMN preferences JSONB DEFAULT '{}';
+Say you want to rename `users.full_name` to `users.display_name`. The naive path (rename it, deploy app) breaks the old pods still reading `full_name`. The safe path spans three deploys:
 
--- down
-ALTER TABLE users DROP COLUMN preferences;
-```
+1. Add `display_name`, backfill it, dual-write in app code
+2. Migrate reads to `display_name`, keep writing both
+3. Drop `full_name` once old version is gone
 
-## Practical Scenarios
+This "expand/contract" pattern is the standard answer in interviews when someone asks how you rename a column without downtime. Most engineers know *that* you need it; fewer can articulate *why* (the concurrent-version window) or walk through the three phases unprompted.
 
-**Backend**: You're adding a `status` column with a `NOT NULL` constraint. The naive `ALTER TABLE` will fail on a live table with rows — you need a migration sequence: add nullable, backfill, add constraint. That multi-step coordination is exactly what migrations codify.
+**Backend** — ORMs like Django or Rails auto-generate migration files from model diffs, but auto-generated doesn't mean safe. The index creation problem is classic: `CREATE INDEX` locks the table in Postgres unless you use `CREATE INDEX CONCURRENTLY`, which most ORMs don't emit by default. Knowing to override this is a common production incident waiting to happen.
 
-**Fullstack**: Your frontend is deploying slightly ahead of or behind your backend. The migration has to be compatible with *both* the old and new app version during the transition window. This is why destructive changes (dropping columns, renaming) require multi-phase migrations across deploys, not a single ALTER.
+**Fullstack** — If your API version and schema version are out of sync, clients hitting the old endpoint while the new column exists (but isn't backfilled yet) get NULLs or errors. You need to think about API versioning and migration timing together.
 
-**DevOps**: In a CI/CD pipeline, migrations run as part of the deploy job — often before traffic shifts to new pods. The pipeline needs to handle the case where the migration succeeds but the app deploy fails (the DB is already migrated, so rollback means running `down`, which you've already thought through). This is also why migration tooling integrates with deployment orchestrators: Kubernetes init containers, Helm hooks, Flyway/Liquibase in your pipeline YAML.
+**DevOps** — Migration failures mid-deploy are among the trickiest rollback scenarios. Some teams run migrations as a separate pre-deploy step with an explicit go/no-go gate; others run them at container startup. The latter couples migration failures to pod restarts, which can cause cascading crashes. Separating them gives you cleaner rollback control.
 
-## The Connection to What's Next
-
-Once you accept that migrations run *while traffic is live*, you hit the real constraint: large or locking operations (full-table rewrites, index builds without `CONCURRENTLY`, column type changes) cause downtime. That's the problem zero-downtime migrations solve — it's the same mechanism, but with additional constraints on *how* each migration must be structured.
+**What separates senior engineers here**: they think about migrations as a *coordination problem between code versions*, not just SQL files. They write additive migrations by default, flag destructive ones for manual review, and treat the three-phase expand/contract as standard practice rather than an edge case.

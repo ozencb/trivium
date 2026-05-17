@@ -1,37 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Shrinking Strategies
 
-When property-based testing finds a failing input, shrinking automatically reduces it to the *minimal* counterexample — the smallest input that still triggers the failure. Without it, you'd be handed a 500-element list to debug when a 2-element list would expose the same bug.
+When property-based testing finds a failing input, that input is usually a sprawling mess — a list of 847 elements, a string with random unicode, an integer in the millions. Shrinking is the engine's second job after finding the failure: systematically reduce that input to the smallest version that still breaks your property, so you can actually reason about the bug.
 
-### The Mechanism
+### The Core Mechanism
 
-After a failure, the framework doesn't just stop. It enters a shrink loop:
+Shrinking isn't bisection or random guessing — it's guided search through an implicit "simpler" ordering defined per type. For integers, smaller means closer to zero. For lists, shorter and then element-wise simpler. For strings, fewer characters, then lower ASCII values. The engine takes the failing input, generates candidates "one step simpler," runs each against your property, and keeps the simplest one that still fails. It repeats this until no simpler candidate fails. The result is a local minimum — the smallest input the shrinker could find, not necessarily the globally smallest, but almost always illuminating.
 
-1. Generate "smaller" candidates from the failing input
-2. Run the property against each candidate
-3. If a candidate still fails, it becomes the new baseline
-4. Repeat until no further reduction fails
-
-What "smaller" means depends on the *shrink strategy* for each type. Integers shrink toward zero. Lists shrink by dropping elements or shrinking individual elements. Strings shrink toward the empty string, then toward simpler characters.
-
-For a custom type — say, a `Request` record — you define the strategy yourself: try removing optional fields, reduce numeric ranges, substitute enum variants with simpler ones first.
+The critical insight: this only works correctly if your property is *deterministic and pure*. If your test has side effects or depends on external state, shrinking will produce garbage — it'll simplify toward an input that fails for the wrong reason, or stop early because the state machine is now in a different position.
 
 ### Concrete Example
 
-You're testing a custom sort comparator with the property `sort(sort(xs)) == sort(xs)`. The framework generates `[42, -3, 17, 8, 0, -1, 5, 99]` as the first failing input. Shrinking progressively removes elements and simplifies values until it lands on `[-1, 0]` — the minimal case that exposes your off-by-one in the negative-number branch. You get a signal in 2 numbers instead of 8.
+Say you're testing a serialization roundtrip: `deserialize(serialize(x)) == x`. Property-based testing finds a failure with a deeply nested object, 40 fields, several with null values, one with a 200-character string. Shrinking runs automatically and hands you: `{id: 0, name: ""}`. That's your bug — empty string serializes to something that deserializes differently. Without shrinking, you're staring at 40 fields and wondering where to start.
 
-### Where Strategies Actually Matter
+### Real-World Patterns
 
-**Backend (API / data processing):** When testing a JSON parser or request validator, the first failure might be a deeply nested 40-field object. A well-defined shrink strategy on your input type will reduce it to the exact field combination that breaks validation. Without a custom shrinker, you might get a minimal *size* but not a minimal *structure* — still too noisy to reason about.
+**Backend:** Invaluable when testing business logic that operates on complex domain objects — order processing, permission resolution, financial calculations. The failure case is almost never the full random object; shrinking exposes the one field or combination of fields that triggers the edge case. If you're testing a parser or state machine, shrinking will find the minimum token sequence that breaks invariants.
 
-**Fullstack (DB query builders, ORMs):** Testing filter combinations against a query builder benefits enormously from shrinking. If your ORM generates bad SQL for some filter predicate combination, the shrinker can reduce `[createdAt, status, userId, tags, limit]` down to `[status, tags]` — isolating the join logic that's broken.
+**Fullstack:** When testing API contracts or request/response consistency, shrinking cuts through the noise of randomized payloads. A property like "any valid request body produces a 2xx or 4xx, never 5xx" — when it fails, shrinking tells you exactly which field or combination is causing the server error, not a 50-field JSON blob you have to manually bisect.
 
-### The Strategy Part
+### Common Pitfall
 
-The "strategy" isn't magic — it's a function you write (or the framework infers) that, given a failing value, produces a list of "simpler" candidates to try. The key insight: **the order of candidates matters**. Prioritize structurally simpler values (empty containers, zero, null) before numerically smaller ones. A shrinker that tries `[]` before `[1]` before `[1, 2]` converges faster than one shrinking element-by-element.
-
-Frameworks like Hypothesis and fast-check have built-in shrinkers that handle most cases automatically. When you're defining custom generators, defining the paired shrinker is what separates "found a weird test case" from "found the exact bug."
+Custom types often need custom shrinkers. Most frameworks provide sensible defaults, but if you define a generator for a constrained domain (e.g., "a valid IBAN"), the default shrinker may produce values that violate your constraints, making shrinking terminate early or produce confusing results. When writing custom generators, always pair them with a shrinker that stays within the valid domain.

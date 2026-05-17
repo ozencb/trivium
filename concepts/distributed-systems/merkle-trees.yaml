@@ -1,0 +1,16 @@
+id: merkle-trees
+title: Merkle Trees
+category:
+  - Distributed Systems
+  - Data Structures
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - hash-tables
+dependents: []
+brief: Hash trees where each node contains the hash of its children, enabling efficient tamper-evident verification and diff-detection of large data structures used in distributed storage and version control.

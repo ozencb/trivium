@@ -1,0 +1,17 @@
+id: load-testing
+title: Load Testing
+category:
+  - Testing
+  - Performance
+roles:
+  - backend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - performance-budget
+  - slo-sli-sla
+dependents:
+  - capacity-planning
+brief: Simulating realistic or spike traffic volumes against a system to locate throughput ceilings, latency degradation points, and failure modes before they surface in production.

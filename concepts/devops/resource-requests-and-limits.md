@@ -1,35 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Resource Requests and Limits
 
-Kubernetes needs to place pods on nodes without overcommitting hardware — requests and limits are how you tell the scheduler what a container needs and how much it's allowed to consume.
+Kubernetes needs two separate answers to the question "how much CPU/memory does this container use?": what it needs to *start* (requests) and what it's *allowed to consume* at peak (limits). Treating them as the same value is one of the most reliable ways to create subtle production problems.
 
-**The core mechanism**
+### The Mechanism
 
-These are two separate numbers on a container spec, and they do different things:
+**Requests** are consumed by the scheduler before the pod ever runs. The scheduler sums all requests across pods on a node and compares against node capacity — if a node is "full" by requests, no new pods land there, even if actual utilization is 20%. Once scheduled, requests act as a guaranteed floor: your container won't be starved below that amount under normal conditions.
 
-- **Request**: what the scheduler *reserves* on a node before placing the pod. A node with 4 CPU cores and three pods each requesting 1 CPU is considered 75% allocated — even if those pods are idling at 0.1 CPU. The scheduler won't place a new pod that requests 1.5 CPU on that node.
-- **Limit**: a runtime enforcement ceiling. The kubelet and container runtime enforce this via cgroups. For CPU, a container hitting its limit gets *throttled* (slowed down, not killed). For memory, hitting the limit causes an OOM kill.
+**Limits** are enforced at runtime by the kubelet via cgroups. This is where the two resources diverge sharply:
 
-The key insight: requests affect *scheduling*, limits affect *runtime behavior*. They're orthogonal levers.
+- **CPU** is compressible. Exceeding your limit doesn't kill the process — the kernel throttles it via CFS quota. The container keeps running but gets slower. This is silent and often missed until p99 latency spikes show up in traces.
+- **Memory** is incompressible. Exceeding your limit triggers the OOM killer immediately. The container dies with exit code 137, restarts, and if the underlying pressure is continuous, you get a crash loop.
 
-**Mental model**
+### QoS Classes
 
-Think of a node as a hotel. Requests are reservations — the hotel considers a room booked even if the guest hasn't arrived. Limits are the physical room size — you can't bring more people than the room holds. You can overbook in theory (set limits higher than requests), but the hotel can evict guests (OOM kill) if the building hits capacity.
+The ratio between requests and limits determines your pod's eviction priority when a node is under pressure:
 
-**Why the split matters**
+- `requests == limits` → **Guaranteed** (last to be evicted)
+- `requests < limits` → **Burstable**
+- Neither set → **BestEffort** (first to die)
 
-A container might need 256Mi memory to start reliably (request), but could spike to 512Mi under load (limit). Setting them equal is safe but wasteful — nodes fill up faster with fewer pods scheduled. Setting limits much higher than requests lets you pack more pods onto a node, but you risk a "noisy neighbor" situation where one container's memory spike triggers OOM kills on co-located pods.
+### Where This Bites People
 
-**Practical scenarios**
+**For backend engineers:** An app that does fine in staging starts OOMKilling in prod under load. The usual cause: limits were set based on idle memory, not peak (GC pressure, connection pools warming up, caches filling). Set limits based on profiled peak usage, not average.
 
-*SRE*: When investigating a pod OOMKilled in production, check if the memory limit is undersized relative to actual usage. `kubectl top pods` vs. the configured limit tells you immediately whether you're chronically under-provisioned. CPU throttling is subtler — it shows up as latency spikes, not crashes. Check `container_cpu_throttled_seconds_total` in your metrics.
+**For SREs:** CPU throttling is the silent killer. A service can be "healthy" by CPU utilization metrics while being heavily throttled — `container_cpu_cfs_throttled_seconds_total` is the metric you actually want. Some teams drop CPU limits entirely and rely on requests + node autoscaling to handle burst, accepting that a runaway container costs money instead of latency.
 
-*DevOps*: Setting `LimitRange` objects at the namespace level gives you safe defaults so developers don't accidentally deploy containers with no limits (which can starve other workloads on the same node).
+**For DevOps/platform teams:** Namespace resource quotas are enforced against requests, not limits. A team can set absurdly high limits and still fit under quota while over-committing the node. If you're running a multi-tenant cluster, enforce LimitRanges to bound the requests/limits ratio.
 
-*Backend*: For a Java service, the JVM's heap doesn't map cleanly to container memory — the JVM also uses off-heap memory for metaspace, direct buffers, etc. A common footgun is setting the limit equal to `-Xmx`, then getting OOM kills because the total process RSS exceeds that limit. You typically need 20-30% headroom above `-Xmx` in your memory limit.
+### The Practical Rule
 
-**QoS classes** fall out of this naturally: Guaranteed (request == limit), Burstable (request < limit), and BestEffort (neither set). The kubelet evicts BestEffort pods first under node pressure, so this isn't just accounting — it affects your pod's survival during resource contention.
+Set requests to your container's steady-state usage with a small buffer. Set memory limits to your realistic peak (profile under load). For CPU limits, consider whether you'd rather have throttle-induced latency or no ceiling — both are valid positions, but make the choice deliberately rather than copying a number from a tutorial.

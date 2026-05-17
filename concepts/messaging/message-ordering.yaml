@@ -1,0 +1,15 @@
+id: message-ordering
+title: Message Ordering Guarantees
+category:
+  - Messaging
+  - Reliability
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - kafka-partitioning
+  - consumer-groups
+dependents: []
+brief: The constraint that strict ordering is achievable only within a single partition, forcing architects to co-locate related events by partition key when sequence matters.

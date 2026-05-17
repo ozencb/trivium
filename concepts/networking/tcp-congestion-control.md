@@ -1,32 +1,26 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-TCP Congestion Control is the mechanism by which a TCP sender self-regulates how much data it pushes into the network — not to protect the receiver (that's flow control), but to avoid collapsing shared network infrastructure when buffers overflow.
+## TCP Congestion Control
 
-## The Core Mechanism
+TCP has no out-of-band channel to ask the network "how congested are you?" — so it infers congestion from packet loss and uses that signal to regulate how fast it sends. Without this, senders would blast data until routers dropped everything, causing *congestion collapse* (a real event that nearly brought down the early internet in 1986).
 
-The sender maintains a **congestion window** (`cwnd`) — a cap on how many unacknowledged bytes can be in flight at once. The actual send rate is `min(cwnd, receiver_window) / RTT`. The sender never explicitly learns about network capacity; it *infers* congestion from packet loss and ACK timing, then adjusts `cwnd` accordingly.
+**The core mechanism: AIMD**
 
-The algorithm has two phases:
+The invariant is *Additive Increase, Multiplicative Decrease* (AIMD). TCP maintains a **congestion window** (`cwnd`) — a cap on how many bytes can be in-flight before waiting for an ACK. Each round-trip without loss, `cwnd` grows by one segment (additive increase). When loss is detected, `cwnd` is cut in half (multiplicative decrease). This asymmetry is intentional: probing for capacity gently, retreating aggressively.
 
-**Slow Start** — on connection open (or after timeout), `cwnd` starts at ~10 segments and *doubles* every RTT as ACKs arrive. This sounds aggressive but the "slow" refers to starting from 1 in the original spec. Exponential growth continues until `cwnd` hits `ssthresh` (slow-start threshold).
+On top of AIMD, there's **slow start**: a new connection doesn't start at a modest `cwnd`, it starts at ~10 segments and *doubles* each RTT until it hits a threshold (`ssthresh`) or sees loss. "Slow" is relative to the old 1-segment start, not to what it actually does. After the first loss event sets `ssthresh`, the connection enters congestion avoidance (the linear growth phase).
 
-**Congestion Avoidance** — above `ssthresh`, growth becomes linear: +1 MSS per RTT. When loss is detected (either a timeout or three duplicate ACKs), the sender treats it as a signal that it's overrun a bottleneck. On timeout: `ssthresh = cwnd/2`, `cwnd = 1` — brutal restart. On triple-dup-ACK (Fast Recovery): `ssthresh = cwnd/2`, `cwnd = ssthresh` — less catastrophic because some packets are still getting through.
+**Mental model: the sawtooth**
 
-This **AIMD** pattern (Additive Increase, Multiplicative Decrease) is what makes TCP behave fairly across multiple flows sharing a link.
+Plot `cwnd` over time and you get a sawtooth wave — steady growth, sharp drop on loss, repeat. The sender is continuously probing the network's capacity and retreating when it overshoots. This is what makes TCP "fair" across flows: all TCP connections on a bottleneck link converge toward equal bandwidth share, because they all respond to the same loss signals.
 
-## Mental Model
+**Practical implications**
 
-Think of it as a driver merging onto a highway in fog. You can't see how congested it is, so you accelerate until you nearly rear-end someone (packet drop), then back off hard, then cautiously speed up again. The whole network converges on fair-ish sharing through everyone doing this simultaneously.
+*Backend:* Long-lived connections (DB connections, gRPC streams) benefit from warm `cwnd`. A connection pool that reuses connections avoids slow start on every request. For short-lived HTTP/1.1 connections (or anything over a cold socket), the first few RTTs are artificially throttled — this is one reason HTTP/2 multiplexing matters, and why TCP Fast Open was invented.
 
-Modern Linux uses **CUBIC** by default, which recovers more aggressively after loss based on time elapsed rather than pure ACK counting. Google's **BBR** takes a different approach entirely — it models bandwidth and RTT directly rather than inferring congestion from loss, which matters a lot on high-bandwidth, lossy links (e.g., cross-continental fiber or cellular).
+*SRE:* When you see retransmission spikes in your metrics, that's `cwnd` getting hammered — often a sign of buffer bloat or a flapping link, not application-layer timeouts you can simply increase your way out of. Kernel tuning (`tcp_init_cwnd`, `tcp_slow_start_after_idle`) and BBR (a newer congestion control algorithm that estimates bandwidth directly rather than inferring from loss) are levers worth knowing. BBR is particularly useful for high-latency or lossy links where CUBIC's loss-based heuristics underperform.
 
-## Practical Relevance
-
-**Backend**: If your service calls a slow upstream over TCP (database, external API), and that connection's `cwnd` is still in slow start (new connection per request, or connection reset), you're artificially throttled even when bandwidth is available. Connection pooling and keep-alives matter here — they let `cwnd` grow and stabilize.
-
-**SRE**: Sudden latency spikes that correlate with high retransmit rates (`netstat -s`, or `ss -ti`) often point to congestion on a path, not server-side slowness. A node showing high `TCPLostRetransmit` or `TCPSackFailures` is fighting congestion somewhere in the network path. Also: tuning `tcp_congestion_control`, `initcwnd`, and buffer sizes (`rmem`/`wmem`) can meaningfully affect throughput for latency-sensitive or bulk-transfer workloads.
-
-This is the foundation for why HTTP/2 multiplexing interacts awkwardly with TCP — all streams share one `cwnd`, so a single loss event stalls everything.
+The deeper invariant: TCP congestion control is a distributed algorithm running across millions of endpoints with no coordinator, converging on fair bandwidth allocation through a shared signal (packet loss). HTTP/2 flow control operates at the application layer but was designed with similar logic — understanding AIMD makes its window management immediately intuitive.

@@ -1,32 +1,31 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Connection pooling keeps a set of pre-established database connections alive and reuses them across requests, instead of paying the TCP handshake + auth cost on every query.
+## Connection Pooling
 
-## The Core Mechanism
+Opening a database connection is expensive: TCP handshake, TLS negotiation, authentication, and session setup can cost 10–100ms. Connection pooling amortizes that cost by maintaining a fixed set of live connections that requests borrow and return rather than open and close.
 
-Opening a database connection is expensive: TCP handshake, TLS negotiation, authentication, session setup. On Postgres this can cost 20–50ms. For an app handling 500 req/s, that overhead becomes the bottleneck, not the queries themselves.
+### How it actually works
 
-A pool solves this by maintaining N open connections. When your app needs to query, it **checks out** a connection from the pool, runs the query, then **returns** it. The connection stays open and authenticated. The next request grabs the same connection without paying setup costs.
+The pool initializes N connections at startup. When your code requests a connection, the pool hands one over from the available set. When you're done, it goes back into the pool — the socket stays open. If all connections are checked out, new requests queue up to a configurable timeout before failing. The pool also runs background health checks, enforces idle timeouts, and rotates connections past their max lifetime (important for surviving DB failovers).
 
-The pool also acts as a concurrency governor. If all connections are checked out, new requests wait in a queue rather than hammering the database with unlimited parallelism. Databases have their own connection limits (Postgres defaults to 100) and degrade under too many concurrent connections due to lock contention and memory pressure.
+The key parameters you'll tune: `min`/`max` pool size, `max_lifetime` (prevents stale connections), `idle_timeout`, and `checkout_timeout` (how long to wait before giving up).
 
-**Key pool parameters:**
-- `min` / `initial`: connections kept alive even at idle
-- `max`: hard cap; requests queue or fail beyond this
-- `idle timeout`: how long an idle connection stays open before being closed
-- `acquire timeout`: how long a request waits for a connection before erroring
+Mental model: a car rental fleet. You don't manufacture a new car per customer — you maintain a fixed fleet, hand out keys, and take them back. The fleet manager periodically retires old cars.
 
-## Mental Model
+### Backend
 
-Think of it like a taxi stand. A single taxi (connection) can only take one passenger (query) at a time. Without pooling, every passenger calls a taxi from scratch — waits for it to arrive from the depot. With pooling, taxis sit at the stand ready to go. If all taxis are occupied, passengers queue. The stand size is your `max` pool size.
+In a Node.js/PostgreSQL service, `pg-pool` with `max: 20` means 200 concurrent requests compete for 20 slots rather than each spawning a raw connection. Without pooling, you'd hit PostgreSQL's `max_connections` (default: 100) fast — and PostgreSQL forks a process per connection, so this isn't just a soft limit.
 
-## Practical Scenarios
+### Fullstack
 
-**Backend service (e.g., Node/Go API):** Your pool is typically per-process. With a max of 10 and 4 replicas, you're holding 40 connections open against Postgres. When you scale to 20 replicas, you hit 200 connections — close to the default limit. This is where tools like **PgBouncer** (a connection pooler that sits in front of Postgres) become necessary. It multiplexes thousands of app-side connections into a smaller set of real database connections.
+Next.js server actions are stateless — each invocation is ephemeral. If you instantiate a new Prisma/Drizzle client per request, you're opening a new connection every time. The fix is a module-level singleton pool. In serverless environments (Lambda, Vercel), it's worse: you potentially have thousands of short-lived instances each holding connections. That's where an external pooler like **PgBouncer in transaction mode** becomes necessary — it sits between your app and DB, multiplexing thousands of app-side connections onto tens of real DB connections.
 
-**Fullstack (e.g., Next.js + Prisma/Drizzle):** Serverless and edge functions are the painful case. Each cold-started function creates its own pool. With 50 concurrent Lambda invocations, you get 50 × pool_size connections — pools that are mostly idle. Prisma's `connection_limit=1` recommendation for serverless exists for exactly this reason. PgBouncer or Supabase's connection pooler (which uses PgBouncer under the hood) solves this by sitting in front of the database and doing the real multiplexing.
+### Common pitfalls
 
-The underlying lesson: pool size isn't "bigger = better." It's a dial that balances connection overhead against database concurrency limits. Getting it wrong in either direction degrades throughput.
+- **Connection leaks**: forgetting to release connections (always use `try/finally` or a scoped helper). A leaked pool silently starves all other requests.
+- **Pool too large**: you can exhaust the DB's own connection limit; PostgreSQL degrades badly above a few hundred connections.
+- **Not setting `max_lifetime`**: connections survive DB restarts or failovers in a broken state, causing cryptic errors on the next borrower.
+- **Transaction mode vs. session mode** in PgBouncer: transaction mode doesn't support session-level features (prepared statements, advisory locks) — know which you're using.

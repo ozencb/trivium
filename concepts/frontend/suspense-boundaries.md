@@ -1,30 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Suspense Boundaries
 
-Suspense boundaries let you declaratively define where a loading fallback renders while part of the component tree isn't ready yet — they're the structural contract between React's scheduler and async work happening in your component subtree.
+Suspense lets you treat async operations as a first-class part of your render tree rather than imperative state you manage yourself. Instead of `isLoading` flags scattered through components, you declare *where* loading states live structurally — the same way error boundaries declare where errors are caught.
 
-### The core mechanism
+**The core mechanism**
 
-When a component suspends, it throws a Promise (a "thenable"). Since you know Fiber, you can picture what happens next: React's reconciler walks up the fiber tree and finds the nearest `<Suspense>` ancestor. That boundary catches the thrown promise, renders its `fallback` prop instead of its children, and subscribes to the promise's resolution. When it resolves, React re-renders the subtree from that boundary downward.
+React Fiber's concurrent rendering made this possible: when a component "suspends" — throws a Promise during render — React walks up the tree looking for the nearest `<Suspense>` boundary. It renders that boundary's `fallback` instead, then retries the suspended subtree once the promise resolves. The component itself doesn't know it suspended; it just re-renders and this time the data is there.
 
-This works cleanly with Concurrent Rendering because React can abandon and retry in-progress renders without the user seeing inconsistent UI. The boundary is the rollback point.
+Data-fetching libraries (React Query, SWR, Relay) integrate by throwing a promise on cache miss and resolving it when the fetch completes. Lazy-loaded code via `React.lazy()` does the same — throws a promise that resolves to the module.
 
-The critical insight: Suspense is a protocol, not just a component. A data library opts into it by throwing a promise when data isn't cached yet. React doesn't know or care whether the promise represents a network request, a lazy-loaded bundle, or a server component stream — it just catches and waits.
+```jsx
+<Suspense fallback={<Spinner />}>
+  <UserProfile userId={id} />   {/* suspends on cache miss */}
+  <UserPosts userId={id} />     {/* suspends independently */}
+</Suspense>
+```
 
-### Mental model
+Both components suspend independently and resolve independently — React doesn't wait for one before retrying the other.
 
-Treat it like an async analog to error boundaries. Error boundaries catch thrown errors and show error UI. Suspense boundaries catch thrown promises and show loading UI. The same tree-walking, nearest-ancestor resolution logic applies.
+**Where it actually matters**
 
-### Practical scenarios
+*Frontend:* Route-level code splitting is the obvious win — wrap each lazy route in Suspense and you get loading states for free without boilerplate. The more nuanced use is nesting boundaries to tune granularity. A coarse boundary at the page level hides everything until ready; finer boundaries let above-the-fold content appear while a sidebar still loads. Getting that hierarchy wrong is the most common pitfall — either too coarse (bad perceived performance) or too fine (spinner hell).
 
-**Frontend:** The canonical case is `React.lazy` for code splitting. Wrap a lazily imported component in `<Suspense fallback={<Spinner />}>` and React shows the spinner while the bundle chunk fetches. Placement is the real design decision — a boundary at the route level shows one spinner for the whole page; at the widget level you get independent loading states that can feel more responsive but visually chaotic if overdone.
+*Fullstack (Next.js App Router, Remix):* Server Components stream into the client, and Suspense boundaries determine *when* each chunk flushes. A `<Suspense>` around a slow DB query means the shell HTML ships immediately, then the component streams in when the data is ready — no client-side fetch needed. The boundary placement directly controls your TTFB vs. full-page render tradeoff.
 
-**Fullstack:** With Next.js App Router (React Server Components), Suspense boundaries control *streaming SSR*. The server renders the shell immediately and streams it; sections wrapped in Suspense boundaries stream in as their async server components resolve. You can wrap a slow database-backed component in a Suspense boundary and let the rest of the page render without waiting for it — the browser progressively patches in the content. This is meaningfully different from the old `getServerSideProps` model where one slow query blocked the entire response.
+**Pitfalls worth knowing**
 
-### One thing to watch
+- Suspense doesn't catch async functions in event handlers or effects — only during render. If you're awaiting inside a `useEffect`, you're outside its reach.
+- Waterfalls: if a suspended component only *starts* its fetch after it first renders, you've serialized requests. Libraries like Relay solve this by hoisting data requirements; otherwise, parallel fetching at the route level matters.
+- `startTransition` integrates tightly here — wrapping navigation in a transition keeps the current UI visible instead of immediately showing the fallback, which usually feels better.
 
-Boundaries compose, so you can nest them — but the nearest boundary wins. If you have a global Suspense at the app root and nothing else, every async component in your app shares one fallback. Intentional placement is what separates a good loading UX from an accidental full-page spinner.
+Think of Suspense boundaries as async bulkheads: they define failure (loading) containment zones so the rest of the tree keeps working.

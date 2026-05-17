@@ -1,35 +1,26 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-WebAssembly (Wasm) is a binary instruction format that runs in the browser at near-native speed — it exists because JavaScript's dynamic typing and JIT compilation ceiling make it unsuitable for computationally heavy work.
+**WebAssembly (Wasm)** is a binary compilation target — not a language you write, but a format that languages like C, Rust, and Go compile *to*. The browser treats it as a sandboxed virtual ISA: typed, validated at load time, then JIT-compiled to native machine code.
 
-## Core Mechanism
+**The core mechanism**
 
-The browser has always had one guest language: JavaScript. WebAssembly adds a second guest — a low-level, stack-based virtual machine that executes binary-encoded instructions directly, bypassing most of the overhead that slows JS down (parsing, type inference, deoptimization cycles).
+JavaScript is dynamic: types are resolved at runtime, the JIT must speculate and deoptimize, and the GC can pause execution unpredictably. Wasm sidesteps all of that. The binary format encodes explicit types, a structured control flow graph (no arbitrary jumps), and a stack-based execution model. Because the runtime can *prove* invariants from the binary itself, it skips the speculative phases and compiles directly to tight machine code. You get throughput that sits within ~10-20% of native — not because browsers gave Wasm special privileges, but because there's simply less uncertainty to handle.
 
-Critically, Wasm doesn't replace JS — it runs alongside it. The browser exposes a JS API to load, instantiate, and call into Wasm modules. Wasm itself has no DOM access; it operates on linear memory (a typed ArrayBuffer) and communicates with the outside world through function imports/exports you wire up in JS.
+Wasm runs in a linear memory model: a contiguous, resizable byte array (`WebAssembly.Memory`) that the module reads and writes directly. There's no GC, no object heap — just a flat address space. This is what unlocks the WebAssembly Memory Model and OffscreenCanvas integration: you can pass raw pixel buffers or typed array views across without copying.
 
-Source languages compile to Wasm: C, C++, Rust are first-class. AssemblyScript (TypeScript-like syntax) and Go also target it. The toolchain (e.g., `wasm-pack` for Rust, `emcc` for C++) produces a `.wasm` binary and usually a JS glue file.
+**Mental model**
 
-## Mental Model
+Think of it like shipping a `.o` object file to the browser instead of source code. The browser links it, verifies it can't escape its sandbox, and runs it. The sandbox is enforced structurally — Wasm can't access DOM APIs or arbitrary memory outside its linear buffer. To talk to JS, you define explicit imports/exports at the module boundary.
 
-Think of it like a native `.dll` or `.so` that the browser can load. You call into it from JS the same way you'd call a C library from Python via FFI — you hand it data through a shared memory region, it crunches numbers, you read results back. The boundary crossing has some cost, so you want to minimize calls and maximize the work done per call.
+**Practical scenarios**
 
-```js
-const { instance } = await WebAssembly.instantiateStreaming(fetch('image_proc.wasm'));
-const result = instance.exports.blur(imageDataPtr, width, height, radius);
-```
+*Frontend:* CPU-bound work that makes JS stutter — image/video processing, physics engines, codecs, cryptography. Figma's canvas renderer, Squoosh's codec pipeline, and DuckDB-Wasm are canonical examples. If you have a tight loop running millions of iterations with numeric operations, Wasm will outperform optimized JS and do so *consistently* (no GC jank).
 
-## Practical Scenarios
+*Fullstack:* Wasm is increasingly used outside browsers via WASI (WebAssembly System Interface) — a POSIX-like syscall layer. This lets you run the same Wasm binary on the server (Cloudflare Workers, Fastly Compute) and in the browser, which is compelling for shared business logic written in Rust or C.
 
-**Frontend:** Image/video processing (filters, transcoding), physics simulations, games, PDF rendering, cryptography. Figma uses Wasm for its rendering engine. Squoosh uses it for codec work. The pattern is: JS handles UI and orchestration, Wasm handles the inner loop that would otherwise drop frames.
+**When to reach for it**
 
-**Fullstack:** Wasm isn't browser-only. WASI (WebAssembly System Interface) extends it to server runtimes — Cloudflare Workers, Fastly Compute, and others use Wasm as a portable, sandboxed unit of compute. You can compile a Rust function once and run it at the edge, in the browser, or in Node via the WASI API. This makes Wasm interesting as a universal binary format, not just a browser trick.
-
-## The Real Constraint
-
-Wasm shines when the bottleneck is CPU-bound computation. It won't help with network latency, rendering pipeline costs, or poorly structured async code. And the JS↔Wasm boundary has serialization overhead — passing complex objects requires encoding them into the shared linear memory manually (or via tools like `wasm-bindgen`), which is the friction point most engineers hit first.
-
-Understanding Wasm's linear memory model is the natural next step — that's where most of the gotchas live.
+Wasm is not a general JS replacement. The JS↔Wasm boundary has overhead — calling across it in a tight loop can negate the gains. It shines when you have a computational kernel (encode this frame, run this simulation, compress this buffer) that you can invoke infrequently with large payloads. If you're considering it for string manipulation, DOM work, or anything I/O-bound, the JS runtime will likely beat it on practical throughput.

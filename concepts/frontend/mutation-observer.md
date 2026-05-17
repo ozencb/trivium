@@ -1,52 +1,53 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Mutation Observer API
 
-The MutationObserver API lets you watch for changes to the DOM tree and react to them asynchronously. It's the answer to "how do I know when something outside my code modifies the DOM?"
+`MutationObserver` lets you watch a DOM node for structural changes—child additions/removals, attribute mutations, text content edits—and react asynchronously after the browser has finished its current work. It replaced the old `MutationEvent` system, which fired synchronously mid-layout and could cause cascading reflows that tanked performance.
 
-### Core mechanism
+### The core mechanism
 
-You create an observer with a callback, then tell it which node to watch and what kinds of changes to care about. The browser batches all DOM mutations that happen within a single microtask checkpoint and delivers them together as an array of `MutationRecord` objects.
+You create an observer, hand it a callback and a target node, and declare *what* you want to watch via a config object. The browser queues mutations and delivers them to your callback as a batch of `MutationRecord` objects in a microtask—after the current JS task completes but before the next frame. This batching is the key: you're not paying per-mutation, you're paying once per flush.
 
 ```js
 const observer = new MutationObserver((records) => {
   for (const record of records) {
-    console.log(record.type);       // 'childList' | 'attributes' | 'characterData'
-    console.log(record.target);     // the node that changed
-    console.log(record.addedNodes); // NodeList of added nodes
-    console.log(record.oldValue);   // previous value (if configured)
+    console.log(record.type, record.target, record.addedNodes);
   }
 });
 
 observer.observe(document.body, {
-  childList: true,   // watch for added/removed children
-  subtree: true,     // watch entire subtree, not just direct children
+  childList: true,   // watch for node additions/removals
+  subtree: true,     // recurse into descendants
   attributes: true,  // watch attribute changes
-  attributeOldValue: true,
+  characterData: false,
 });
-
-observer.disconnect(); // stop observing
 ```
 
-The batching is the key design insight. The old `MutationEvents` API fired synchronously on every single change — catastrophic for performance when you're doing bulk DOM work. MutationObserver fires once per microtask boundary with everything that happened, so inserting 500 nodes triggers one callback with 500 records, not 500 callbacks.
+Call `observer.disconnect()` when done—observers hold a reference to the target, so skipping this leaks memory.
 
-### Mental model
+### The mental model
 
-Think of it like a git commit: you make many file changes, then git records them all at once when you commit. MutationObserver collects DOM changes within an execution window, then hands you the diff.
+Think of it like `addEventListener` but for DOM structure rather than user events. The browser is the emitter; you're subscribing to a structural event stream that gets debounced into microtask batches.
 
-### Practical scenarios
+### When you actually reach for this
 
-**Frontend**
+**Frontend:**  
+- Third-party script injecting nodes you need to respond to (ads, chat widgets, analytics iframes)
+- Watching for when a library renders something into a container you don't control
+- Implementing "lazy enhancement"—waiting for a component to appear before attaching behavior (common in micro-frontend setups)
+- Custom `data-*` attribute-driven behavior without a framework
 
-The classic use case is integrating with third-party scripts that manipulate the DOM directly — chat widgets, A/B testing tools, ad scripts. You can't hook into their code, but you can watch what they do. Another common pattern: waiting for lazy content to appear before running logic, without polling. Instead of `setInterval(() => document.querySelector('.thing'), 100)`, observe the parent and react when the element is added.
+**Fullstack:**  
+- Server-rendered HTML hydration: detecting when the server-injected markup is in the DOM before client JS initializes
+- CMS or headless setups where content blocks are injected dynamically and you need to wire up interactivity after injection
 
-Custom rich text editors use it extensively — watching `contenteditable` nodes for `characterData` and `childList` mutations to implement undo stacks or sync state to a model.
+### The pitfalls
 
-**Fullstack**
+`subtree: true` on `document.body` is cheap when mutations are rare, expensive when something is thrashing the DOM (animations, virtualized lists). Your callback fires once per batch, but a batch can contain thousands of records—iterate defensively.
 
-In SSR frameworks (Next.js, Nuxt), hydration adds event listeners and reconciles server-rendered HTML with client state. Observing the document during hydration lets you detect when framework-injected attributes (like `data-hydrated`) appear, useful for timing-sensitive initialization that must run after the framework takes over the DOM. Also useful for building lightweight analytics SDKs that need to track dynamic content without access to the app's router.
+Also: MutationObserver doesn't fire for CSS changes or computed style shifts. It only sees structural/attribute mutations. If you're trying to detect layout changes, you want `ResizeObserver` instead.
 
-**Disconnect when done.** Observers hold a reference to the target node and its subtree — forgetting to call `observer.disconnect()` is a common memory leak source, especially in single-page apps where components mount and unmount frequently.
+One subtle trap: if your callback *causes* mutations to the observed node, you can create infinite loops. Disconnect before mutating, or use a flag to guard re-entrant calls.

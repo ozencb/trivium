@@ -1,37 +1,46 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## ARIA Live Regions
 
-The browser's accessibility tree is static by default — screen readers only announce content when focus moves to it. ARIA live regions solve the problem of dynamic content: they tell assistive technologies to watch a DOM subtree and announce changes without requiring the user to navigate there.
+The accessibility tree is a static snapshot of your DOM that assistive technologies navigate. The problem is that modern UIs are anything but static—you get toast notifications, form validation errors, loading states, chat messages. ARIA live regions are the mechanism that tells screen readers "watch this part of the tree and announce changes as they happen."
 
-### The core mechanism
+### The Core Mechanism
 
-You mark a container with `aria-live`, and the browser's accessibility API sets up a mutation observer-like watch on that subtree. When content changes, the AT interrupts (or queues, depending on the setting) to read the new text aloud.
+Three attributes do most of the work:
 
-The key attribute values:
+- **`aria-live="polite"`** — queues the announcement until the user finishes what they're doing (reading, typing). Use this for non-critical updates.
+- **`aria-live="assertive"`** — interrupts immediately. Use sparingly; it's disruptive.
+- **`role="status"` / `role="alert"`** — semantic shortcuts. `status` implies polite, `alert` implies assertive.
 
-- `aria-live="polite"` — waits for the user to finish their current task, then announces
-- `aria-live="assertive"` — interrupts immediately (use sparingly; it's disruptive)
-- `role="status"` and `role="alert"` are shorthand for `polite` and `assertive` respectively, with some additional implied semantics
+The browser monitors the live region's subtree. When text content changes inside it, the accessibility API fires a notification. Screen readers pick that up and either queue or immediately speak the new content.
 
-Two supporting attributes matter:
+**Critical pitfall:** the element must exist in the DOM *before* content is injected into it. If you create the container and inject text simultaneously (e.g., `innerHTML = '<div role="alert">Error!</div>'`), many screen readers won't announce it. The region needs to be "registered" first, even if empty.
 
-- `aria-atomic="true"` — reads the entire region's content on any change, not just the changed node. Critical when partial reads would be confusing ("3 results" vs "Showing 1–3 of 3 results for 'keyboard'")
-- `aria-relevant` — controls *what kind* of mutations trigger announcements (additions, removals, text). Default is `additions text`, which covers most cases
+### Concrete Example
 
-### Mental model
+```html
+<!-- Mount this empty on page load -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+```
 
-Think of a live region as a dedicated broadcast channel. You're not pushing focus there — you're saying "whenever this zone updates, pipe the content to the accessibility audio stream." The DOM change triggers the announcement, not user navigation.
+```js
+// Later, on form submission success:
+statusRegion.textContent = "Profile saved successfully.";
+```
 
-### Practical scenarios
+`aria-atomic="true"` tells the reader to announce the entire region's content as one unit rather than just the changed node—useful when you're replacing a complete message.
 
-**Frontend (React/Vue/etc.):** Toast notifications, form validation errors that appear inline, autocomplete suggestion counts ("5 suggestions available"), loading state changes ("Results loaded"). A common mistake: injecting elements into an unannounced container, then adding `aria-live` afterward. The live region must exist in the DOM *before* content is injected — the browser registers the watch on parse, not on mutation.
+### Practical Scenarios
 
-**Fullstack:** Any server-streamed or polling-updated UI — think chat messages, real-time dashboards, async job status ("Your export is ready"). If you're rendering partial HTML updates (HTMX, Turbo Streams, or similar), make sure the live region wrapper is part of the base layout, not the fragment being swapped in. Otherwise the AT never registers the watch.
+**Frontend (React/Vue/etc.):** Form validation is the canonical case. Inline error messages that appear below fields need live regions, otherwise a screen reader user submitting a form has no idea validation failed unless they manually navigate back through the inputs. A single `role="alert"` container at the top of the form that gets populated with a summary works well.
 
-### What goes wrong in practice
+**Fullstack / data-heavy UIs:** Dashboard widgets that poll for updates, real-time collaboration indicators ("Sarah is editing this document"), background job status ("Export ready—download now")—all of these require live regions. Without them, sighted users see the update immediately; screen reader users never know it happened.
 
-Overusing `assertive` is the most common issue — it creates a terrible UX for screen reader users, analogous to `alert()` spam for sighted users. Most UI feedback should be `polite`. The second issue is announcing too much: injecting entire re-rendered components into a live region when only one field changed. Keep live regions tightly scoped or use `aria-atomic` deliberately.
+### When to Reach For It
+
+Any time you'd visually flash, badge, toast, or otherwise draw attention to a change that happened outside the user's current focus. If you'd animate it to catch the eye, you probably need a live region to catch the ear.
+
+The `role="log"` variant is worth knowing too—it's for append-only streams like chat or activity feeds, where the reader announces new entries as they arrive without re-reading the whole list.

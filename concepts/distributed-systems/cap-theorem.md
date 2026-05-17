@@ -1,39 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-CAP Theorem says a distributed system can guarantee at most two of three properties: Consistency, Availability, and Partition Tolerance. Since network partitions are unavoidable in any real distributed system, the theorem collapses into a practical choice between C and A under partition.
+**CAP Theorem** states that a distributed system can guarantee at most two of three properties: Consistency, Availability, and Partition Tolerance. The critical insight is that network partitions are not optional — they *will* happen — so the real choice is between consistency and availability when they do.
 
 ## The Core Mechanism
 
-The three properties:
+When a network partition occurs, nodes in your system can no longer communicate. At this point, you face a forced choice:
 
-- **Consistency (C):** Every read sees the most recent write, or gets an error. All nodes agree on the current state.
-- **Availability (A):** Every request gets a response. No timeouts, no errors — though the data might be stale.
-- **Partition Tolerance (P):** The system keeps operating when nodes can't communicate.
+**Choose consistency:** Refuse to serve requests on the isolated side until the partition heals. Every read reflects the latest write, but some nodes return errors or block.
 
-You can't opt out of P. Networks split. Nodes crash. So the real question is: *when a partition occurs, what do you sacrifice?*
+**Choose availability:** Keep serving requests on all nodes, but accept that nodes may diverge — reads may return stale data, writes may conflict.
 
-## The Mental Model
+There's no third option. If you insist on both, a partition makes the guarantee impossible to honor. This isn't an engineering problem you can solve with better hardware or smarter code — it's a fundamental impossibility result (proven by Gilbert and Lynch in 2002, building on Brewer's conjecture).
 
-Two database nodes, US-East and US-West. A network cut separates them. A write hits US-East. Then a read hits US-West.
+## Mental Model
 
-- **CP system:** US-West refuses to answer (or blocks waiting). It won't serve data it can't confirm is current. You get an error or a hang.
-- **AP system:** US-West serves its last known value. You get a response, but it might be stale.
+Imagine two database replicas in different data centers, connected by a single network link. That link goes down.
 
-There's no third option where US-West somehow returns fresh data — it's physically isolated.
+- **CP behavior:** One replica stops accepting writes, returns `503 Service Unavailable`. The other keeps running. When the link recovers, they reconcile. Your data is never inconsistent, but requests fail during the partition.
+- **AP behavior:** Both replicas keep accepting writes independently. When the link recovers, you have a merge conflict — two "latest" values for the same key. The system is always responsive, but you must resolve divergence.
 
 ## Practical Scenarios
 
-**Backend:** Database selection is fundamentally a CAP decision. Cassandra and DynamoDB lean AP — they'll serve stale data during a partition and reconcile afterward. Good fit for user carts, preferences, activity feeds where a slightly stale read is acceptable. HBase, Zookeeper, and etcd lean CP — they'll reject requests if they can't maintain quorum. Required for distributed locks, leader election, anything where two nodes acting on conflicting state causes corruption.
+**Backend:** When choosing a database, this is the design axis that matters most. Zookeeper and etcd are CP — they're used for coordination (leader election, distributed locks) where split-brain is catastrophic. Cassandra and DynamoDB are AP — they prioritize uptime and use eventual consistency with conflict resolution (last-write-wins, vector clocks) for use cases like shopping carts or user preferences where brief staleness is acceptable.
 
-**SRE:** CAP tells you what failure mode to expect during incidents. A CP database that loses quorum *stops accepting writes* — you need runbooks that handle read-only degradation and communicate "the system is refusing writes to protect data integrity." An AP system *silently serves stale data* — you need monitoring that detects replication lag and alerting on divergence, not just on availability. Getting this wrong means you're troubleshooting the wrong thing at 2am.
+**SRE:** During an incident, understanding your system's CAP stance tells you what to expect. A CP system under network stress starts returning errors — your availability SLO takes the hit, but data integrity holds. An AP system under the same stress keeps returning `200` but may serve stale or conflicting data — users see inconsistency, but the service appears "up." Knowing which failure mode to expect shapes your runbook.
 
-## The Part That Gets Oversimplified
+## Why This Matters Beyond Trivia
 
-"Consistency" in CAP means *linearizability* — the strictest form, where every operation appears instantaneous and globally ordered. That's not the C in ACID, which is about transaction validity. These are different things and people conflate them constantly.
-
-Also, modern systems blur the binary. Cassandra's consistency levels let you dial from ONE (AP-ish) to QUORUM or ALL (CP-ish) per operation. DynamoDB offers strongly consistent reads as an option. You're not choosing a camp at system design time — you're often choosing per-query, which means you can accidentally mix guarantees and create subtle bugs.
-
-CAP is less a hard theorem and more a forcing function: it makes you articulate *what you're willing to lose* when the network lies to you.
+CAP is often misapplied as a simple taxonomy. The sharper understanding is: **partition tolerance isn't a property you choose, it's a constraint you accept**, and the theorem is really about what you sacrifice *during* partitions. PACELC extends this further — even without partitions, there's a latency/consistency tradeoff — which is where senior design conversations usually go next.

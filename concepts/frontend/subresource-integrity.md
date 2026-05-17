@@ -1,50 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Subresource Integrity (SRI)
+## Subresource Integrity
 
-SRI lets you verify that files fetched from external servers haven't been tampered with before the browser executes them. It's your defense against a compromised CDN or a supply chain attack serving malicious JavaScript.
+When you load jQuery or a font from a CDN, your browser trusts whatever bytes arrive. SRI breaks that blind trust: you embed a hash of the expected file content in your HTML, and the browser refuses to execute or apply anything that doesn't match — even if it comes from the URL you specified.
 
-### The Mechanism
+**How it works**
 
-You compute a cryptographic hash of a file's exact byte content, then embed that hash in the HTML tag that loads it. When the browser fetches the resource, it hashes what it received and compares. If they don't match, the resource is blocked entirely — never parsed, never executed.
+The `integrity` attribute takes a base64-encoded cryptographic hash (SHA-256, SHA-384, or SHA-512) of the exact file content you're expecting:
 
 ```html
 <script
-  src="https://cdn.example.com/lodash-4.17.21.min.js"
-  integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUcFLjZjeod4AbbDbdnZ"
-  crossorigin="anonymous">
-</script>
+  src="https://cdn.example.com/jquery-3.7.1.min.js"
+  integrity="sha384-1H217gwSVyLSIfaLxHbE7dRb3v4mYCKbpQvzx0cegeju1MVsGrX5xXxaioMN/c5"
+  crossorigin="anonymous"
+></script>
 ```
 
-The `crossorigin="anonymous"` attribute is required — without CORS headers on the response, the browser can't read the body to hash it.
+The `crossorigin="anonymous"` is required — SRI needs the browser to perform a CORS fetch so the response body is readable for verification. Without it, SRI silently does nothing on cross-origin resources.
 
-The supported algorithms are SHA-256, SHA-384, and SHA-512. SHA-384 is the current practical standard.
+You generate the hash offline against the file you've vetted: `openssl dgst -sha384 -binary jquery.min.js | openssl base64 -A`. If the CDN serves a byte-for-byte different file — whether due to compromise, silent updates, or a misconfigured edge node — the browser blocks it and fires a CSP violation report.
 
-### Mental Model
+**Where it breaks down**
 
-Think of it like downloading software and verifying its checksum before installing. The difference is the browser does it automatically and refuses to proceed if verification fails. The threat isn't just a compromised CDN — it's also MITM attacks and library maintainers pushing silent updates to files you thought you'd audited.
+SRI hashes are tied to exact byte content. CDNs that minify or compress on the fly, or files that include a build timestamp, will produce different hashes on every request. You also need to re-generate the hash whenever you intentionally upgrade a dependency version — easy to forget, especially in automated pipelines.
 
-### Where This Matters in Practice
+It also only covers the resource you've hashed. If `jquery.min.js` itself loads other scripts dynamically (and many analytics or ad SDKs do), those second-order fetches are invisible to SRI.
 
-**Frontend:** You're loading React, a charting library, or a UI toolkit from a CDN to avoid bundling it. If that CDN is breached and serves a modified script that skims form input, SRI blocks execution before any damage happens. You locked down the exact bytes you audited.
+**Practical scenarios**
 
-**Fullstack:** Server-rendered apps often inject third-party SDKs — payment processors, analytics, support widgets. These are high-value targets. With SRI on your Stripe.js or similar script tag, you get a hard guarantee that the version running in production is the one your security team signed off on — not a silently updated patch that happened at the CDN layer.
+*Frontend:* SRI is most valuable for externally-hosted scripts where you're not in control of the server — CDN-distributed libraries, analytics tags, payment widgets. If you're self-hosting everything through your own origin, SRI adds friction for minimal gain since an attacker who can tamper with your files can also tamper with your HTML.
 
-### What It Doesn't Cover
+*Fullstack:* When your server-rendered templates reference versioned CDN assets, automate hash generation as part of your build step — not as a one-time manual step. Tools like `webpack-subresource-integrity` and Vite plugins handle this. The failure mode to avoid: shipping with a stale hash because someone bumped the CDN URL but forgot to regenerate.
 
-- **Dynamically generated assets** — if the CDN adds request-specific content or serves different compression variants, the hash will constantly mismatch
-- **Version upgrades** — you regenerate the hash whenever you update the library; it's a workflow cost
-- **fetch() / XHR / img / iframe** — SRI only applies to `<script>` and `<link rel="stylesheet">`
+**When to reach for it**
 
-### Generating Hashes
-
-```bash
-openssl dgst -sha384 -binary lodash.min.js | openssl base64 -A
-```
-
-Or use the `sri-hash` npm package in your build pipeline, or `srihash.org` for one-offs.
-
-SRI is most valuable when you don't own the asset server. For self-hosted assets, a strong Content Security Policy does more work with less overhead.
+Reach for SRI when you're loading third-party scripts that handle sensitive user interactions (auth, payments, form submission) from a CDN you don't control. It's a cheap defense against CDN compromise and gives you auditable proof that the code users run matches what you reviewed. Skip it for first-party, self-hosted assets — the threat model doesn't warrant the maintenance cost.

@@ -1,31 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Cross-Shard Queries
 
-Once you shard a database, any query that needs data from more than one shard becomes a cross-shard query — and the database can no longer handle it as a single atomic operation.
+When you shard a database, you trade query simplicity for scale. Cross-shard queries are the debt you pay: any query that can't be answered by a single shard must fan out across multiple shards, collect results, and merge them — a pattern called scatter-gather.
 
-### The core problem
+**The core mechanism**
 
-When your data is on one node, a `JOIN`, `GROUP BY`, or `ORDER BY` is a local operation — the query planner has full visibility. After sharding by, say, `user_id`, user 1's orders live on shard A and user 2's orders live on shard B. A query asking "what's the total revenue across all users last month?" now requires touching every shard. Nothing coordinates that automatically.
+In a sharded system, each shard owns a slice of the keyspace. A query scoped to one shard key (e.g., `WHERE user_id = 42`) routes directly to one shard — fast, cheap. But queries that don't filter on the shard key, or that aggregate across many entities, have no home. The query coordinator must broadcast to all N shards, wait for all N responses, then merge, sort, deduplicate, or aggregate the results in memory. Latency becomes O(slowest shard), not O(average shard), and you've now coupled your query latency to fleet health.
 
-The typical execution model becomes: your application layer (or a query router) fans out the query to all relevant shards in parallel, collects partial results, then merges them. This scatter-gather pattern sounds simple but surfaces several hard problems:
+**Concrete example**
 
-- **Partial aggregations**: Each shard computes a local `SUM`. Merging sums is easy. Merging a `MEDIAN` or `DISTINCT COUNT` across shards is not — you can't just add medians together.
-- **Cross-shard JOINs**: If orders are sharded by `order_id` and users by `user_id`, joining them means one side of the join has to move across the wire. You're doing a distributed hash join manually, which is expensive and error-prone.
-- **Ordering and pagination**: `LIMIT 10 ORDER BY created_at` requires fetching the top 10 from every shard, then picking the global top 10. A query that's cheap locally becomes O(shards × limit) in data transfer.
-- **Transactions**: Cross-shard writes that need atomicity require distributed transactions (2PC or sagas), which reintroduce the coordination overhead sharding was meant to eliminate.
+Say you shard an e-commerce orders table by `user_id`. Fetching a user's orders: single shard, trivial. Now product management wants "total revenue by country for last 30 days." Country isn't your shard key — you scatter to every shard, pull partial revenue aggregates, sum them in the application layer. At 10 shards this is annoying. At 500 shards, it's a bottleneck that can take down your analytics pipeline.
 
-### Concrete example
+**How engineers actually deal with this**
 
-You shard a multi-tenant SaaS by `tenant_id`. Querying a single tenant's data is fast — it hits exactly one shard. But your analytics dashboard needs cross-tenant metrics: "how many active users signed up this week across all tenants?" That query hits every shard, aggregates locally, merges globally. At 50 shards with 10ms latency each (parallel), you're adding a merge step and potentially megabytes of intermediate data flowing through your app tier.
+Two primary strategies emerge:
 
-### Practical implications
+1. **Scatter-gather** — accept the fan-out but make it fast. Parallelize the sub-queries, push as much aggregation down to each shard as possible (partial sums, filtered counts), minimize what crosses the wire. This is what most OLTP sharded systems do for infrequent cross-shard queries.
 
-**Backend**: Design your shard key to make your hottest query paths shard-local. Cross-shard queries should be the exception, not the rule. If you find yourself doing them frequently, your shard key is probably wrong.
+2. **Denormalization / pre-aggregation** — eliminate the cross-shard query entirely by writing the data differently. Maintain a separate unsharded (or differently-sharded) summary table that gets updated on writes. The classic tradeoff: you pay on writes to avoid paying on reads.
 
-**Data/Analytics**: This is why OLAP workloads often don't live on your sharded OLTP database at all. Tools like ClickHouse, BigQuery, or Redshift are built to scatter-gather across nodes efficiently, with query planners that understand distributed aggregation. Replicating OLTP data into a columnar store sidesteps the cross-shard problem entirely for analytical queries.
+**Why this matters in practice**
 
-The core tradeoff: sharding buys write scalability and isolation at the cost of query flexibility. Cross-shard queries are where that cost becomes visible.
+For **backend engineers**, cross-shard queries are where naive feature requests turn into architectural discussions. "Add a leaderboard" or "show all active sessions" sounds simple until you realize those require scatter-gather across every user shard. The shard key isn't a storage detail — it's a contract about what queries will be cheap.
+
+For **data engineers**, cross-shard queries are often why OLAP workloads get offloaded to a data warehouse entirely. Sharded OLTP databases are optimized for point lookups; analytical queries that aggregate broadly are fundamentally at odds with that design.
+
+**The senior-engineer signal**
+
+In design discussions, knowing to ask "what queries need to run on this data?" *before* picking a shard key separates engineers who understand sharding from engineers who've only used sharded systems. The shard key decision is really a decision about which queries you're willing to make expensive.

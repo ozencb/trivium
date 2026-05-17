@@ -1,36 +1,48 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Query execution plans** are the database engine's internal blueprint for *how* it will physically carry out a SQL query — which indexes to use, in what order to join tables, how to filter rows. Understanding them is how you move from "my query is slow" to "here's exactly why."
+## Query Execution Plans
 
-## How it works
+A query execution plan is the database engine's step-by-step blueprint for how it will retrieve your data — the specific sequence of scans, joins, and sorts it selected after evaluating alternatives. Reading plans is the difference between guessing why a query is slow and actually knowing.
 
-SQL is declarative — you say *what* you want. The plan is imperative — it says *how* to get it. When you submit a query, the optimizer generates multiple candidate plans, estimates the cost of each using statistics (row counts, cardinality, data distribution histograms), and picks the cheapest. The plan is a tree of physical operators: `Index Scan`, `Hash Join`, `Sort`, `Nested Loop`, etc.
+### How it works under the hood
 
-The optimizer can be wrong. Its estimates break down when statistics are stale, when data is skewed in ways it doesn't model, or when your query structure makes cost estimation hard (e.g., correlated subqueries, OR conditions across indexed columns).
+The planner is a cost-based optimizer. It doesn't look at your data directly — it looks at *statistics*: estimated row counts per table, column cardinality, data distribution histograms. From these, it estimates the cost of different execution strategies and picks the cheapest one.
 
-## Concrete example
+That distinction matters: the planner is reasoning about a *model* of your data, not the data itself. When that model is wrong — stale stats, unusual distributions, skewed values — the planner makes bad decisions, and that's where most hard-to-diagnose performance problems originate.
+
+### The core failure mode: cardinality estimation
+
+Consider this query:
 
 ```sql
-SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.country = 'DE';
+EXPLAIN ANALYZE
+SELECT * FROM orders o
+JOIN users u ON o.user_id = u.id
+WHERE u.country = 'US';
 ```
 
-The optimizer picks between roughly:
-1. Full scan on `orders`, hash join to `customers`, filter by country
-2. Index scan on `customers WHERE country = 'DE'`, nested loop into `orders`
+The plan might show:
+```
+Hash Join (rows estimated=48000, actual=14)
+  -> Seq Scan on users (filter: country='US')
+  -> Hash on orders
+```
 
-Option 2 is obviously better if German customers are 1% of your data. But if the optimizer's statistics show `country` has low cardinality and assumes uniform distribution, it may pick option 1 — and your query scans 10M rows to return 5K.
+The planner thought the country filter would return 48k users, so it built a hash table over orders — expensive upfront, efficient at scale. But only 14 rows matched. A nested loop with an index scan on orders would have finished in milliseconds. This is a cardinality estimation failure caused by stale statistics or a data distribution the planner didn't account for.
 
-`EXPLAIN ANALYZE` (Postgres) or `EXPLAIN FORMAT=JSON` (MySQL) gives you the actual plan with estimated vs. actual row counts. When those diverge wildly, that's the tell: stale stats or data skew. Running `ANALYZE` to refresh statistics often fixes it without touching the query.
+The fix might be `ANALYZE users`, or a partial index, or a query rewrite that materializes the filtered set first.
 
-## In practice
+### Backend: production query regressions
 
-**Backend:** A query that's fast in staging turns slow in prod. Data volume is different, but also data *distribution* is different. Pull the plan against prod-scale data — you'll often find a `Seq Scan` where an `Index Scan` was expected, because the optimizer decided the index wasn't selective enough. Sometimes a partial index or a `WHERE` clause restructure is the fix, not a new index.
+When a query that worked fine for months suddenly times out, check the plan before touching indexes. The most common cause is that data volume crossed a threshold where the planner switched strategies — from index scan to sequential scan — because it now estimates the index isn't worth it. Running `EXPLAIN ANALYZE` before and after the regression usually shows exactly where the plan diverged.
 
-**Data:** ETL and analytical queries frequently blow up from join ordering. Three large tables joined in the wrong order can produce a massive intermediate result set before filters apply. Knowing how to read a plan lets you force ordering via CTEs (which Postgres materializes), `STRAIGHT_JOIN`, or optimizer hints — rather than cargo-culting indexes.
+### Data: multi-table analytical joins
 
-## Mental model
+In OLAP workloads, join order dominates performance. The planner sequences joins based on estimated intermediate row counts — filter aggressively early, join less data later. When it gets cardinality wrong, it might join two 10M-row tables before applying a filter that would have reduced one to 200 rows. Explicit `JOIN` ordering hints, CTEs that force materialization, or statistics targets on skewed columns are the levers here.
 
-Treat the execution plan as the *compiled artifact* of your SQL. The SQL is source code; the plan is the binary. Profiling a slow query without inspecting the plan is like debugging performance without a profiler — you're guessing at the wrong level of abstraction.
+### Why this matters in interviews and design discussions
+
+Most engineers know to "add an index." Senior engineers know to pull the plan, identify whether the bottleneck is a bad scan type, a wrong join strategy, or a cardinality misestimate — and propose the right fix for that specific cause. That precision is what separates architectural intuition from cargo-culting.

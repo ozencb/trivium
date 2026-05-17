@@ -1,30 +1,41 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Optimistic locking is a concurrency strategy where you don't lock a resource when reading it — instead, you detect conflicts at write time and reject updates that would overwrite someone else's changes.**
+## Optimistic Locking
 
-The pessimistic approach holds a database lock for the duration of a transaction. Optimistic locking avoids that entirely: read freely, compute your change, then verify nothing changed before committing. The mechanism is typically a `version` column (or a timestamp). On read, you capture the version. On update, you include a `WHERE version = <what you read>` condition. If that row's version has since changed, zero rows are affected — conflict detected, transaction aborted, caller retries.
+Optimistic locking bets that concurrent writes to the same row are rare — so instead of blocking readers and writers with a lock, it lets transactions proceed freely and only checks for conflict at commit time. If a conflict is found, the transaction fails fast and retries. You trade lock contention for occasional retries.
+
+**The mechanism**
+
+Every row carries a version counter (or timestamp). A transaction reads the row and captures that version. When it writes back, it adds a `WHERE version = <captured_value>` predicate to the `UPDATE`. If another transaction modified the row in between, the version won't match, the update affects 0 rows, and your application detects the conflict and retries. The check-and-increment is atomic — the database handles that.
 
 ```sql
--- Read
+-- Read phase
 SELECT id, balance, version FROM accounts WHERE id = 42;
--- Got: balance=1000, version=7
+-- → balance=1000, version=7
 
--- Write attempt
-UPDATE accounts
-SET balance = 900, version = 8
+-- Write phase (after computing new balance)
+UPDATE accounts SET balance = 900, version = 8
 WHERE id = 42 AND version = 7;
--- If rowcount = 0, someone else updated it first
+-- If rows_affected = 0, someone else modified it — retry
 ```
 
-The version bump is done by the writer, not a trigger or database magic. Some ORMs (Hibernate, ActiveRecord, TypeORM) manage this automatically.
+**Mental model**
 
-**Why this beats pessimistic locking in most cases:** reads never block each other. Conflicts only pay a cost when they actually happen. In typical web apps — users editing their own profile, processing their own orders — conflicts are rare. Holding DB locks for the duration of an HTTP request (which might involve network calls, user think time, etc.) is a bad trade.
+Think of it like an edit on a wiki page. You load the page (version 7), make changes, and submit. If someone else submitted first (version is now 8), your submit is rejected and you reconcile. Pessimistic locking would instead lock the page the moment you opened it for editing — blocking everyone else until you're done.
 
-**Backend scenario:** A payment service deducts from an account balance. Two requests hit simultaneously. Pessimistic locking serializes them via a row lock. Optimistic locking lets both read freely — the second writer detects the conflict and retries, now reading the updated balance. Same correctness, higher throughput under low-contention workloads.
+**When to reach for it**
 
-**Fullstack scenario:** A CMS where multiple editors can open the same article. You track `version` in the document. When Alice saves, her `version=3` matches — success. When Bob saves 30 seconds later with `version=3`, the update fails because Alice already bumped it to `version=4`. You surface this as "conflict: someone edited this document while you were working" and present a merge UI. This is exactly how tools like Notion, Linear, and GitHub handle concurrent edits at the persistence layer.
+Optimistic locking shines when reads far outnumber conflicting writes and you can't afford long-held locks — classic examples: shopping cart checkout, seat reservation on read-heavy inventory, or any record-editing form where users spend minutes reading before submitting. If users rarely edit the same row at the same time, you gain throughput without ever blocking.
 
-**Where it falls apart:** high-contention scenarios. If 50 threads are racing to decrement a shared counter, optimistic locking degenerates into a retry storm. Inventory reservation during a flash sale is the canonical example — pessimistic locking or queuing wins there. The heuristic: if conflict probability is low, go optimistic; if contention is structural, go pessimistic or rethink the data model.
+It becomes a problem when conflict rates are actually high — retries pile up and you end up with worse throughput than pessimistic locking would give you. High-contention counters (inventory decrement during a flash sale, account balance under heavy load) tend to fight optimistic locking. Use pessimistic locking or atomic operations (`UPDATE ... SET count = count - 1`) there.
+
+**Practical patterns**
+
+- **ORMs**: Hibernate, ActiveRecord, and most mature ORMs have built-in optimistic locking — usually a `lock_version` or `@Version` column. It's one annotation/config line away.
+- **Fullstack**: REST APIs often expose this as an `ETag` header. The client reads a resource, gets an `ETag`, and must send `If-Match: <etag>` on update. The server rejects with `412 Precondition Failed` if the resource changed. Same pattern, HTTP-native.
+- **Retry budget**: Always cap retries (2–3 is typical). Infinite retry loops under contention degrade to a spin-lock and can starve other requests.
+
+The key insight: locking is a coordination cost. Optimistic locking defers that cost to the rare case where you actually need it.

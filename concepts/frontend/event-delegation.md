@@ -1,41 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Event Delegation
 
-Instead of attaching an event listener to every child element, you attach one listener to a parent and let the DOM's natural event bubbling do the routing. It's both a performance optimization and a correctness fix for dynamic content.
+Instead of attaching listeners to each element individually, you attach one listener to a shared ancestor and use `event.target` to determine what was actually clicked. This works because DOM events bubble: a click on a `<button>` fires on that button, then its parent, then its parent's parent, all the way to `document`.
 
-### The Core Mechanism
+**The core mechanism**
 
-When a DOM event fires, it doesn't just notify the target element — it bubbles up through every ancestor in the tree. A click on a `<button>` inside a `<li>` inside a `<ul>` will trigger click handlers on all three, then `<body>`, then `document`. Event delegation exploits this: put one listener high up, check `event.target` to see what was actually clicked, act accordingly.
+When a user clicks an element, the browser creates an event object and dispatches it downward through the DOM (capture phase), then back up (bubble phase). By the time it reaches your parent listener, `event.target` still points to the original element that was clicked — the deepest one. Your handler can inspect that target and decide whether to act.
 
 ```js
-// Without delegation — 1000 listeners for 1000 items
-items.forEach(item => item.addEventListener('click', handleClick));
-
-// With delegation — 1 listener for everything
-list.addEventListener('click', (e) => {
-  const item = e.target.closest('.item');
-  if (item) handleClick(item);
+document.querySelector('#list').addEventListener('click', (e) => {
+  const item = e.target.closest('[data-id]');
+  if (!item) return;
+  handleItemClick(item.dataset.id);
 });
 ```
 
-The `closest()` call is key — `event.target` is the deepest element clicked, which might be a `<span>` inside your `<li>`, not the `<li>` itself. `closest()` walks up until it finds a matching ancestor.
+`closest()` is the practical companion here — it walks up from `event.target` to find the semantic element you care about, which handles the case where the user clicks a `<span>` inside your `<li>` rather than the `<li>` itself.
 
-### Why It Matters
+**Why it matters beyond "fewer listeners"**
 
-**Memory and initialization cost.** 500 list items means 500 listeners, each holding a closure, each registered in the browser's event system. With delegation, that's one. For large tables, virtual lists, or anything dynamically rendered, this compounds quickly.
+The real win isn't just memory. It's that the listener is structure-agnostic: dynamically added children are automatically covered. If you're rendering a list that changes — search results, a virtual list, items added via WebSocket — you never wire up individual handlers. The parent listener exists once and handles the whole surface area, present and future.
 
-**Dynamic content.** This is where delegation is often *necessary*, not just efficient. If you add a new list item after initial render, it has no listener — you'd have to manually attach one. A delegated listener on the parent works for all current *and future* children automatically.
+**Frontend patterns**
 
-### Practical Scenarios
+This is how virtually every table, list, menu, or tree component in production works. React's synthetic event system implements delegation at the root level (`document` or the root container) — your `onClick` props aren't real DOM listeners per element. Understanding this explains why `e.stopPropagation()` can silently break other components listening higher up.
 
-**Frontend:** Any list, table, or feed where items are added/removed at runtime — comments, search results, drag-and-drop sortables. React's synthetic event system actually uses delegation internally (attaching listeners at the root), which is partly why React event handling is cheap even with thousands of elements.
+**Fullstack / SSR contexts**
 
-**Fullstack (server-rendered pages):** Classic server-rendered HTML where JS progressively enhances markup. You can't guarantee elements exist at script execution time, and re-querying + re-attaching on each fetch is fragile. One delegated listener on a stable container element handles everything cleanly.
+In server-rendered HTML where you're progressively enhancing (htmx, Turbo, vanilla JS), delegation is essentially mandatory. You don't control when fragments land in the DOM, so per-element setup logic is fragile. A top-level delegated listener handles dynamically injected content without any lifecycle hookup.
 
-### The One Gotcha
+**The main pitfall**
 
-`event.stopPropagation()` breaks delegation. If a child handler stops bubbling, the parent listener never fires. This becomes a subtle bug when third-party components or nested interactive elements stop propagation — your delegated handler silently stops working for those targets. Worth knowing before you spend 20 minutes debugging it.
+`stopPropagation()` kills delegation. If something in the subtree calls it, your parent listener never fires. This is the source of subtle bugs when integrating third-party components — they stop propagation for their own reasons, and your delegated handler silently stops working. Prefer `stopImmediatePropagation` only when necessary and be suspicious when delegation mysteriously breaks.

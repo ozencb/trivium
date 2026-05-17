@@ -1,42 +1,49 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## React Server Components
 
-React Server Components (RSC) let you render components exclusively on the server — not as a build-time snapshot (like static SSG) or a full-page render (like SSR), but as a persistent server-side component that never ships its code to the browser.
+React Server Components (RSC) let you render components exclusively on the server and send only their serialized output to the client — no JavaScript, no hydration. Where Streaming SSR gives you faster time-to-first-byte by piping HTML in chunks, RSC goes further: the component's code itself never ships to the browser.
 
-### The Core Mechanism
+**The core mechanism**
 
-Traditional SSR renders the full component tree on the server, sends HTML, then *re-renders the same tree in the browser* during hydration. Every component — even one that just fetches and displays data — ships its code, dependencies, and runtime to the client.
+RSC introduces a two-world model. Server components run once on the server (they can be `async`, query databases, read files directly) and emit a serialized React tree — not HTML, but a JSON-like payload describing the UI. Client components (`'use client'`) still hydrate normally. The framework reconciles both into a single coherent tree.
 
-RSC breaks the component tree into two kinds: **Server Components** run only on the server and are never hydrated. **Client Components** (marked `"use client"`) work like components you know today. The server streams a serialized description of the rendered Server Component tree (not HTML — a special React wire format) to the client, where it gets reconciled into the existing tree.
+The critical insight: RSC is a protocol, not just a rendering strategy. The server streams a description of the tree, and the client reconstructs it. This means client-side navigation can refetch only the RSC payload for a route — no full page reload, no re-running client components that didn't change.
 
-The key insight: Server Components can be *interspersed* with Client Components. A server component can render a client component as a child. A client component cannot render a server component directly — but it can receive one as a prop (via `children` or similar), because that subtree was already resolved on the server.
+**Mental model**
 
-### Mental Model
+Think of it as a clean split between "components that compute" and "components that interact." A server component is like a stored procedure for UI — it runs close to the data, produces output, and disappears. A client component is the part that needs the DOM, event handlers, and browser state.
 
-Think of it like a template engine that understands React. A Server Component is like a PHP/Blade template — it has full access to the database, filesystem, secrets — but instead of outputting HTML strings, it outputs a React tree. That tree gets handed off to a React runtime that knows which parts need client-side behavior.
+```jsx
+// This runs only on the server — DB client never ships to browser
+async function UserProfile({ userId }) {
+  const user = await db.users.findById(userId); // direct DB call
+  return <ProfileCard user={user} />;
+}
 
-### Practical Implications
-
-**Fullstack:** You can query your database directly inside a component with no API layer:
-
-```tsx
-// No useEffect, no fetch, no loading state
-export default async function UserProfile({ id }) {
-  const user = await db.users.findUnique({ where: { id } });
-  return <div>{user.name}</div>;
+// This ships to client — has interactivity
+'use client';
+function ProfileCard({ user }) {
+  const [expanded, setExpanded] = useState(false);
+  return <div onClick={() => setExpanded(!expanded)}>{user.name}</div>;
 }
 ```
 
-This isn't a build-time query — it runs per-request on the server. You collapse the backend-for-frontend layer for data fetching.
+**Practical scenarios**
 
-**Frontend:** Bundle size drops significantly. A markdown renderer, a syntax highlighter, a date library — if they're only used in Server Components, they're never included in the client bundle. You get the component model without the weight.
+*Frontend:* Navigation bars, sidebars, and data-heavy layouts become server components. No `useEffect` data fetching, no loading spinners, no leaking your ORM into the bundle. The `sharp` image processing library or a 50KB date formatting library stays server-side.
 
-**Coexistence with Streaming SSR:** RSC composes with Suspense streaming. Server Components can suspend, letting the shell render immediately while data-dependent subtrees stream in — without any client-side fetching waterfalls.
+*Fullstack:* You can eliminate entire API routes. A dashboard page queries the DB in the server component and passes serializable data down to client components for interactivity. The data access layer lives in the component tree, not a separate layer.
 
-### The Tradeoff
+**Where engineers get tripped up**
 
-The mental model overhead is real: you need to track which components can use hooks/event handlers (client only) versus which can access server resources (server only). The `"use client"` boundary becomes an architectural decision, not just a file annotation. Get it wrong and you either over-ship code to the browser or hit serialization errors when you try to pass non-serializable values (functions, class instances) across the boundary.
+The `'use client'` boundary is viral — everything a client component imports also becomes client-side. A common mistake is putting a heavy library behind a client component unnecessarily. Also, props crossing the server/client boundary must be serializable — no functions, no class instances, no React context.
+
+The other pitfall: RSC doesn't replace client state or event-driven UI. If a component needs `useState`, `useEffect`, or DOM access, it must be a client component. Trying to push too much to the server produces awkward prop-drilling just to pass callbacks back up.
+
+**Why this matters in design discussions**
+
+RSC forces a deliberate conversation about where data-fetching responsibility lives. The senior move is knowing when the boundary belongs at the page level versus the component level, and understanding that RSC shifts architecture decisions that used to happen in API design into the component tree itself.

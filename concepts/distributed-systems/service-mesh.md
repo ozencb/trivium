@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Service Mesh
 
-A service mesh is an infrastructure layer that handles service-to-service communication concerns — retries, timeouts, circuit breaking, mTLS, observability — without touching application code. The motivation: in a microservices system, these cross-cutting concerns get duplicated across every service in every language if left to application teams.
+A service mesh moves cross-cutting communication concerns — encryption, retries, observability, circuit breaking — out of your application code and into a dedicated infrastructure layer. The motivation is that every service shouldn't have to independently implement and maintain the same networking logic.
 
-### Core Mechanism
+**The core mechanism**
 
-The canonical implementation is the **sidecar proxy pattern**. Every service instance gets a lightweight proxy (typically Envoy) injected alongside it. All inbound and outbound traffic flows through this proxy — the application believes it's talking directly to another service, but the proxy silently intercepts everything. A **control plane** (e.g., Istio's `istiod`) pushes config to all these proxies centrally: routing rules, retry policies, mTLS certificates, traffic weights.
+A sidecar proxy (Envoy is the dominant one) gets injected into every pod/container. All inbound and outbound traffic flows through it, not through the application directly. The application thinks it's making a plain TCP connection to `orders-service:8080`; the sidecar intercepts that, negotiates mTLS with the destination sidecar, applies retry policies, records latency metrics, and enforces traffic rules — all transparent to application code.
 
-This is architecturally distinct from an API gateway. Gateways handle north-south traffic (external client → service). A mesh handles east-west traffic (service → service). Both can coexist.
+The control plane (Istio's Pilot, Linkerd's controller) pushes configuration to all sidecars centrally. That's how you can say "retry failed requests 3 times" or "send 10% of traffic to v2" without touching a single application config file.
 
-### Mental Model
+**Mental model**
 
-Each service has a dedicated operator (sidecar) who handles every call it makes and receives. The operators follow a central rulebook (control plane config). Your services just dial numbers — retry logic, encryption, and routing are invisible to them. The operators handle it transparently.
+Think of it like a kernel abstraction. Applications don't implement their own Ethernet framing or TCP flow control — the OS handles it. A service mesh does the same thing one layer up: it abstracts service-to-service communication concerns away from application developers.
 
-### Practical Scenarios
+**Where this matters in practice**
 
-**SRE:** Latency spike between Service A and B. Without a mesh, you're tailing logs across two codebases and hoping someone instrumented their HTTP client. With a mesh, the proxy layer automatically emits distributed traces and golden signal metrics — no code changes. Circuit breaker tripped? It shows up in your observability tooling, not buried in application logs.
+*For backend engineers:* You stop debating which HTTP client library supports circuit breaking or whether the retry logic in service A is consistent with service B. Policy lives in the mesh, applied uniformly. The tradeoff is complexity: debugging why a request failed now involves checking both application logs and the sidecar's access logs.
 
-**DevOps:** Canary deploy — shift 5% of traffic to a new version. In a mesh, you define a traffic split in a `VirtualService` or equivalent policy object. No load balancer reconfiguration, no feature flag in application code. Traffic shift and rollback are config changes, not deployments.
+*For SREs:* The mesh gives you golden signals (rate, error, duration, saturation) for every service pair without instrumentation changes. When an incident happens, you can do traffic shifting — send zero traffic to a bad instance — without a deploy. You also get fine-grained mTLS policy enforcement as a security control.
 
-**Backend:** Compliance requires mTLS between services. Without a mesh, every team implements it differently, cert rotation is manual, and debugging cert failures requires deep app knowledge. With a mesh, mTLS is enforced at the proxy — your service speaks plain HTTP internally, the sidecar handles encryption and automatic cert rotation via the control plane.
+*For DevOps/platform teams:* The operational cost is non-trivial. Sidecars add ~50-100ms to cold start, consume meaningful CPU/memory at scale, and upgrades require rolling restarts across every service. The control plane becomes critical infrastructure. Teams often underestimate this until they're running it at scale.
 
-### The Real Tradeoff
+**When to reach for it**
 
-Meshes add latency (two extra network hops per request — out through your proxy, into theirs) and meaningful operational complexity. The control plane is a new failure domain you're now responsible for. At 5–10 services, the overhead rarely justifies it. At 50+ services with cross-team ownership, the centralized observability and policy enforcement start earning their keep.
+Service mesh pays off when you have many services (10+) and care about uniform security policy, traffic management, or need observability without developer coordination. Below that threshold, a well-configured API gateway plus library-level retries is often simpler. The mistake is adopting it early for the wrong reasons — "everyone's doing it" — without accounting for the operational tax.
+
+In design discussions, the differentiated take is recognizing that a service mesh shifts complexity rather than eliminating it: you trade per-service implementation complexity for platform-level operational complexity. Whether that trade is worth it depends entirely on team topology and scale.

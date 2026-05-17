@@ -1,0 +1,19 @@
+id: message-queues
+title: Message Queues
+category:
+  - Messaging
+  - Infrastructure
+roles:
+  - backend
+  - sre
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - at-least-once-delivery
+  - dead-letter-queues
+  - backpressure
+  - pub-sub-pattern
+brief: Durable, broker-mediated buffers that decouple producers from consumers, enabling async processing, load leveling, and resilience when downstream services are slow or unavailable.

@@ -1,37 +1,31 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Optimistic Updates
+Optimistic updates are a UX strategy where you apply a mutation to local state immediately — before the server responds — then either reconcile with the real response or roll back if it fails. The premise is that most requests succeed, so why make users wait?
 
-Assume the server will succeed and update the UI immediately — then reconcile (or roll back) when the response actually arrives. The goal is eliminating perceived latency for operations that almost always succeed.
+**The core mechanism**
 
-### The Core Mechanism
+The flow is: (1) user triggers an action, (2) you immediately update local state as if it succeeded, (3) you fire the async request, (4) on success you optionally sync the server's canonical response back; on failure you revert. The tricky part isn't the happy path — it's tracking enough "before" state to cleanly undo the optimistic change, and handling edge cases like multiple in-flight mutations that might interleave.
 
-Normally you: send request → wait → update UI on success. With optimistic updates you: update UI immediately → send request → confirm or revert.
+A concrete model: imagine a todo list. User clicks "Mark complete." Naive approach: disable the checkbox, wait 300ms, re-enable it checked. Optimistic approach: check it immediately, kick off the PATCH in the background. If the request fails, uncheck it and show an error. The user barely notices the network round-trip happened at all.
 
-The key insight is that you're not "lying" to the user — you're betting that the success path is overwhelmingly likely, and you're right almost every time. The complexity you're buying into is handling the rare failure: you need to store enough state to reverse the mutation if the server rejects it.
+**Where it matters**
 
-This means three things need to happen atomically from the UI's perspective:
-1. Apply the change locally (to state, cache, whatever you're using)
-2. Store a snapshot or inverse operation to enable rollback
-3. Kick off the network request in the background
+Frontend: React Query and SWR both have first-class `onMutate` hooks for this pattern. You store a snapshot of the cache before mutation, apply the optimistic change, then in `onError` you restore from the snapshot. Libraries handle the rollback plumbing — your job is knowing when to opt in.
 
-### Concrete Mental Model
+Fullstack: If you own both sides, you can design the API response to return the updated entity with server-generated fields (timestamps, IDs), then merge that back into your local state post-confirmation. This keeps client and server in sync without a second fetch.
 
-Think of a "like" button on a post. The naive implementation disables the button, shows a spinner, waits 200-500ms, then increments the count. The optimistic version increments the count and toggles the button *instantly*, fires the API call, and only touches the UI again if something goes wrong.
+**When to reach for this**
 
-From the user's perspective, the app feels instant. From your perspective, you've introduced a small state management problem: what happens if the API returns 401, 409 (conflict), or 500? You revert — quietly if possible, or with an error message if not.
+- Low failure rate mutations: liking a post, reordering a list, toggling a setting. These feel snappy.
+- High-latency networks or slow backends: even a 200ms round-trip is noticeable on every keystroke or tap.
 
-### Practical Scenarios
+**Common pitfalls**
 
-**Frontend (React/SPA):** Most visible with mutation-heavy UIs — todo apps, social feeds, collaborative tools. Libraries like TanStack Query and SWR have `onMutate`/`rollback` hooks built for this. You optimistically update the cache before the request, and `onError` you restore the previous cache state. The ergonomics are decent; the risk is that cache management gets subtle when multiple mutations are in-flight simultaneously.
+The biggest one is forgetting that the server response might differ from what you assumed. If your optimistic state shows `id: null` (you don't know the server-generated ID yet) and something else tries to reference that entity, you have a race. Similarly, concurrent mutations — user marks item complete, then immediately deletes it before the first response comes back — require careful ordering guarantees or you'll apply a success callback on a stale entity.
 
-**Fullstack:** Where this gets serious is in collaborative apps (Figma, Linear, Notion). You're optimistically applying operations locally, syncing them to the server, and reconciling against other users' concurrent changes. This is where Operational Transformation (OT) or CRDTs enter the picture — they're essentially formal systems for making optimistic updates composable and conflict-free. For most apps you don't go that far, but understanding optimistic updates is the prerequisite for understanding why those systems exist.
+Another footgun: silent failures. If your rollback logic is broken or swallowed, the UI shows success but the server never persisted it. Always surface errors visibly, even if the optimistic path felt complete.
 
-### When Not To Use It
-
-Avoid it for destructive or irreversible operations (deleting an account, completing a payment), or anywhere the failure rate is non-trivial (e.g., form submissions with server-side validation). The UX of "undo-ing" something the user thought was done is worse than a brief spinner.
-
-The pattern is fundamentally a latency-vs-correctness tradeoff, weighted toward latency because modern APIs are reliable enough to make the bet worth taking.
+The pattern is a deliberate trade: you accept code complexity in the mutation/rollback layer in exchange for perceived performance. For read-heavy UIs or mutations that rarely fail under normal conditions, that trade is almost always worth it.

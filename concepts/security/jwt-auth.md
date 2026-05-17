@@ -1,34 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## JWT-Based Authentication
 
-JWT-based authentication lets a server prove a user's identity on every request without maintaining session state — the token itself carries the proof of authenticity via a cryptographic signature the server can verify locally.
+The core trade-off: instead of the server maintaining a session store that maps `sessionId → user`, the server mints a self-contained token that *is* the session. Any service that knows the secret (or has the public key) can validate it without a database round-trip.
 
-### Core Mechanism
+**The mechanism**
 
-When a user logs in, the server mints a JWT: it constructs a header (algorithm) + payload (claims like `sub`, `exp`, roles) + a signature computed over those two. For HS256, that's `HMAC-SHA256(base64url(header) + "." + base64url(payload), secret)`. For RS256, the server signs with a private key and any holder of the public key can verify — which is why this scales to distributed systems cleanly.
+A JWT is three base64url-encoded segments: header (algorithm), payload (claims), and signature. The signature covers the first two segments — so a client can read the payload freely, but cannot alter it without invalidating the signature. When the server receives a request, it re-derives the signature and compares; if it matches and `exp` hasn't passed, the token is trusted.
 
-On subsequent requests, the client sends the JWT and the server re-computes the expected signature. If it matches, the claims are trusted — no DB lookup required. Crucially, the payload is only base64url-encoded, not encrypted. Anyone can decode it. The signature guarantees tamper-evidence, not confidentiality.
+This is why "stateless" matters: you can scale horizontally to 50 servers with zero shared state. Each server independently validates. No Redis session store, no sticky sessions.
 
-### Mental Model
+**Where it breaks down**
 
-Think of a JWT like a tamper-evident wristband at a venue. Staff issued it, and any other staff member can verify the hologram without radioing HQ. But once issued, you can't "un-issue" it until it expires — that's the fundamental tension.
+Revocation is the honest cost. A valid token *is* valid until expiry — you can't "un-sign" one. The practical workarounds are: short-lived access tokens (15 minutes) paired with a refresh token flow, or a token blocklist (which re-introduces server state for the revoked set). Neither is free.
 
-### Backend
+The other pitfall: `alg: none` attacks and algorithm confusion. If your library accepts the algorithm field from the token itself, an attacker can forge tokens. Always specify the expected algorithm server-side, never trust the header's `alg`.
 
-Your auth middleware intercepts every request, extracts the Bearer token, verifies the signature (cheap CPU operation, zero I/O), and populates the request context with identity. This means your API servers are fully stateless — horizontally scalable with no shared session store.
+**Mental model**
 
-The catch is revocation. If a user logs out or gets compromised, the token is valid until `exp`. The common mitigations are: short-lived access tokens (15 min) paired with refresh tokens, or a token blocklist — which reintroduces a cache/DB lookup and partially defeats the stateless benefit. Pick your tradeoff deliberately.
+Think of a JWT like a notarized document. Anyone can read it, anyone with the notary's stamp can verify it's authentic, but you can't revoke a notarization — you can only wait for it to expire. The notary (auth server) doesn't need to be present for verification.
 
-### Fullstack
+**Practical scenarios**
 
-Storage location matters: `localStorage` is vulnerable to XSS (any injected script can read it); `httpOnly` cookies resist XSS but require CSRF protection. The Authorization: Bearer header pattern implies JS access, so you're trading XSS safety for simpler cross-origin behavior.
+*Backend services:* JWT shines in microservice architectures. The auth service issues a token; downstream services (orders, inventory, notifications) each validate it independently with a shared public key. No inter-service session lookups.
 
-On the client side, you need to handle expiry gracefully — typically a silent refresh flow where the access token expires and the client uses the refresh token to get a new one without user interaction.
+*Fullstack apps:* The typical pattern is an `/auth/login` endpoint returns `{ accessToken, refreshToken }`. The client stores the access token in memory (not localStorage — XSS risk) and the refresh token in an `httpOnly` cookie. On 401, the client silently hits `/auth/refresh` to rotate. The access token's short TTL limits blast radius if it leaks.
 
-### Connection to What You Know
+**When to reach for it vs. not**
 
-In OAuth 2.0, the access token is often a JWT — the resource server validates it locally using the authorization server's public key (fetched once from a JWKS endpoint), avoiding a round-trip to the auth server per request. This is the pattern behind services like Auth0 or Cognito issuing tokens your API validates without calling back home.
+Reach for it when you need stateless validation across multiple services or when you're building an API consumed by third parties. Avoid it when you need instant revocation (financial sessions, "log out all devices") — opaque session tokens with a fast lookup (Redis) handle that better. The two aren't mutually exclusive: use JWTs for service-to-service auth, server-side sessions for user-facing auth where revocation matters.

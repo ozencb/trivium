@@ -1,30 +1,24 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-TCP Keepalive is a mechanism that periodically probes an idle TCP connection to verify the remote peer is still reachable. Without it, a connection can appear valid on your side while the peer has crashed, rebooted, or been silently dropped by a NAT device — and you won't discover the truth until you actually try to use it.
+TCP keepalive solves a subtle but painful problem: an idle TCP connection can become a zombie — the local process thinks it's connected, but the remote host has crashed, the NAT entry has expired, or a stateful firewall has silently dropped the session. Without keepalive, you won't discover this until you try to write and wait for a timeout that might take minutes.
 
-## How it works
+**The mechanism**
 
-Keepalive is implemented at the OS level (not in the TCP spec itself). When enabled on a socket, the kernel tracks idle time. Once a connection sits idle for `tcp_keepalive_time` seconds, the OS starts sending empty ACK probe packets at `tcp_keepalive_intvl` intervals. If `tcp_keepalive_probes` probes go unanswered, the OS closes the connection and surfaces an error to your application.
+When a connection sits idle past `tcp_keepalive_time` (default: 2 hours on Linux), the kernel starts sending empty ACK probes. If the remote responds, the idle timer resets. If probes go unanswered `tcp_keepalive_probes` times (default: 9), spaced `tcp_keepalive_intvl` apart (default: 75s), the kernel tears down the connection and returns an error to the application. The critical detail: this happens entirely in the kernel — your application is unblocked from a hung `read()` or eventually gets an error, rather than waiting forever.
 
-Linux defaults: `tcp_keepalive_time=7200s`, `tcp_keepalive_intvl=75s`, `tcp_keepalive_probes=9`. That means you'd wait **over 2 hours** before detecting a dead connection. This is almost always wrong for production.
+**Mental model**
 
-These are configurable per-socket (via `setsockopt`) or system-wide via `/proc/sys/net/ipv4/`.
+Think of it like a landlord doing periodic welfare checks on tenants. If a tenant stops responding after several knocks, the landlord doesn't keep the unit reserved — they mark it available. Keepalive does the same for socket file descriptors and connection pool slots.
 
-## Mental model
+**Backend implications**
 
-Two sides of a phone call that's gone silent. After N seconds of silence, one side says "hello?" — if no response after a few tries, they hang up. Without this, the line stays "open" indefinitely even if the other person left hours ago.
+Database and HTTP connection pools rely heavily on this. Without keepalive (or a short enough timeout), a pool can fill with connections that *look* healthy but are actually broken — typically because a firewall between your app server and DB silently expired its NAT state after 5-30 minutes of inactivity. The next query on that connection blocks until TCP's own retransmit timeout (~15 min by default), destroying latency. Most database drivers let you set `keepalive=true` and configure the intervals at the socket level — this should be on by default in any production pool config.
 
-## Practical scenarios
+**SRE implications**
 
-**Backend:** Connection pools are the main battleground. A pool keeps connections alive across requests, but a connection idle for 30 minutes might look healthy to your pool while the database or a firewall has long forgotten about it. First use of that connection either hangs or errors. Setting aggressive keepalive values (e.g., 30-60s idle before probing) lets the pool detect stale connections proactively rather than surfacing errors to callers. Most DB clients expose this: `keepAlive: true` in node-postgres, `tcp_keepalives_idle` in libpq, `socketKeepAlive` in JDBC.
+Long-lived gRPC streams, persistent WebSocket connections, and database streaming replicas all hit keepalive issues at scale. If you're seeing connections drop during low-traffic windows (overnight, weekends) but not during peak hours, firewall or NAT state expiry is usually the culprit — the idle connections get reaped because traffic stops flowing. The fix is setting keepalive intervals *below* your network's NAT/firewall timeout, which you often have to discover empirically. AWS NAT Gateway, for instance, drops idle connections after 350 seconds.
 
-**SRE:** NAT gateways and stateful firewalls maintain connection tables with their own timeouts — AWS NAT Gateway drops idle TCP connections after ~350s, GCP after ~600s. If your application's keepalive interval exceeds the NAT timeout, the NAT drops the mapping silently. Your app still thinks the socket is open; the next packet hits a dead route. This is the canonical cause of "first request after a quiet period fails." The fix is setting keepalive to probe well inside the NAT timeout. Also relevant for long-lived gRPC streams or WebSocket connections through load balancers.
-
-## Important distinction
-
-TCP keepalive is separate from application-layer heartbeats (HTTP keep-alive headers, WebSocket pings, gRPC PING frames). They address similar failure modes but operate independently — a TCP keepalive probe can keep the socket alive even if the application layer is silent, and vice versa.
-
-The core takeaway: OS defaults are designed for telephone-era reliability assumptions, not cloud infrastructure with aggressive NAT timeouts. Tune `tcp_keepalive_time` to something under your environment's NAT idle timeout, or you'll hit half-open connection bugs under low-traffic conditions.
+One gotcha: application-level heartbeats (like gRPC's PING frames or MQTT keepalive) and TCP keepalive are separate mechanisms. TCP keepalive detects broken paths; application heartbeats can also detect unresponsive *peers* that are still reachable. For robust production systems, you often need both.

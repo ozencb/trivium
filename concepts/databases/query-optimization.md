@@ -1,30 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Query Optimization** is the process by which a database engine transforms your SQL into an efficient execution strategy — it's why two semantically identical queries can have wildly different performance characteristics.
+## Query Optimization
 
-## The Core Mechanism
+The query planner is the layer between your SQL and the data — it decides *how* to execute what you asked for, and that decision can mean the difference between a 2ms and a 45-second query. Understanding this separates engineers who can debug slow queries from those who can avoid them.
 
-When you submit a query, the database doesn't execute it literally. It hands it to the **query optimizer**, which generates multiple candidate execution plans, estimates the cost of each (in terms of I/O, CPU, and memory), and picks the cheapest one. This cost estimation relies on **statistics** the database maintains about your data: cardinality (how many distinct values a column has), row counts, data distribution histograms, and index availability.
+**The Core Mechanism**
 
-The optimizer operates in two phases. First, **logical optimization** rewrites the query algebraically — pushing filters down closer to the data source, eliminating redundant subqueries, reordering joins. Second, **physical optimization** decides *how* to execute each operation: which index to use (or whether to scan), which join algorithm (nested loop, hash join, merge join), whether to sort before joining.
+When you submit a query, the planner doesn't execute it directly. It generates multiple candidate execution plans (different join orders, different index choices, sequential vs. index scans), estimates the cost of each using *statistics* it maintains about your data, then picks the cheapest.
 
-## A Concrete Mental Model
+Those statistics are the key: the planner stores histograms, distinct-value counts, and null fractions for each column — collectively called *cardinality estimates*. It uses these to answer questions like "how many rows will survive this WHERE clause?" and "which table should be the outer loop in this join?" A bad estimate cascades: if the planner thinks a filter returns 100 rows but it actually returns 100,000, it might choose a nested-loop join that becomes catastrophically slow at scale.
 
-Think of it like a GPS with traffic data. The destination (your query result) is fixed, but there are dozens of routes. The optimizer is the GPS: it estimates travel time for each path using historical data (statistics), picks the fastest one, and gives you turn-by-turn instructions (the execution plan). If its map data is stale — like when statistics haven't been updated after a bulk insert — it'll route you into traffic.
+**Mental Model**
 
-Example: `SELECT * FROM orders WHERE user_id = 42 AND status = 'pending'`. If `user_id` is highly selective (one user out of millions) and `status` is not (maybe 40% of rows are pending), the optimizer should filter on `user_id` first. A bad statistics estimate can flip this decision, causing a full table scan.
+Think of it as a compiler optimization pass, but for data access. Just as a compiler chooses between loop unrolling, branch prediction hints, and register allocation based on profiling data, the query planner chooses between hash joins, merge joins, index seeks, and parallel scans based on statistics. It can't read your mind about data distribution — it can only see what `ANALYZE` (or auto-analyze) has sampled.
 
-## Practical Scenarios
+**Where This Bites You in Practice**
 
-**Backend:** You write a `JOIN` across three tables for a REST endpoint. Locally it's fine (10k rows), but in production (10M rows) it times out. The optimizer chose a nested-loop join because statistics were out of date. Running `ANALYZE` or `UPDATE STATISTICS` and adding a composite index often fixes this without touching application code.
+*Backend:* You add an index, query stays slow. The planner has stale statistics and thinks a sequential scan is cheaper. `EXPLAIN ANALYZE` shows the estimated rows vs. actual rows diverging by orders of magnitude — that's your tell. Running `ANALYZE` or forcing a stats update fixes it.
 
-**Fullstack:** Your search feature does `WHERE name LIKE '%smith%'`. The leading wildcard prevents index use entirely — the optimizer has no choice but to scan. Knowing this, you'd reach for a full-text index or an external search service instead of assuming an index will help.
+*Fullstack:* Queries that are fast in dev become slow in prod. Dev has 500 rows; prod has 50 million. The cardinality estimates that made an index scan "expensive" in dev now make a seq scan catastrophic in prod. Always test query plans against production-scale data.
 
-**Data:** A reporting query with multiple aggregations and subqueries is slow. The optimizer may be materializing a subquery repeatedly. Rewriting with a CTE or window function gives the optimizer better rewrite opportunities and often changes the plan significantly.
+*Data:* Multi-table analytical joins with skewed distributions — the planner picks a join order based on average cardinality, but your filter on `user_type = 'enterprise'` hits 2% of rows, not 50%. Providing better statistics (partial indexes, extended statistics in Postgres 10+) or explicit join hints can recover this.
 
-## Why This Matters Now
+**Why It Matters in Interviews and Design**
 
-Understanding optimization is what separates writing queries that *work* from writing queries that *scale*. Index Selection and Execution Plans are the two tools you use to inspect and influence the optimizer's decisions — execution plans show you what it actually chose, and index design is your primary lever to change it.
+Senior engineers who understand this can have a specific conversation: "this query will likely force a hash join at scale because the cardinality on this column is high — we should composite-index here to make a merge join viable." That precision — tying index design to execution plan behavior — is what distinguishes a design discussion from guesswork.

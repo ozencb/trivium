@@ -1,45 +1,55 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Deadlocks
 
-A deadlock is a state where two or more threads are permanently blocked, each waiting for a resource held by another. Unlike a livelock or starvation, nothing moves — ever — without external intervention.
+A deadlock occurs when two or more transactions are each waiting for a lock held by the other, forming a cycle where no one can proceed. Unlike a slow query or a contention spike, a deadlock never resolves on its own—something external must intervene.
 
-### The Mechanism
+### The mechanism
 
-Four conditions must hold simultaneously (Coffman conditions). Break any one and deadlock is impossible:
+Databases maintain a wait-for graph: nodes are transactions, edges point from "waiting" to "holding." When a cycle appears in this graph, the engine picks a victim (usually the cheapest-to-abort transaction) and kills it, surfacing an error to the application. Your code *must* catch this and retry; the database did you a favor by not leaving you hung indefinitely.
 
-1. **Mutual exclusion** — resources can't be shared concurrently
-2. **Hold and wait** — a thread holds at least one resource while waiting for another
-3. **No preemption** — resources can't be forcibly taken; the holder must release
-4. **Circular wait** — there's a cycle in the wait-for graph: A waits on B, B waits on A (or longer chains)
+The cycle typically forms when two transactions acquire locks in opposite orders:
 
-Two-phase locking is particularly susceptible because threads acquire locks incrementally, making circular wait easy to accidentally construct.
+```
+T1: LOCK orders → wait for inventory
+T2: LOCK inventory → wait for orders
+```
 
-### Mental Model
+Each holds what the other needs. Neither can advance.
 
-Imagine two people at a dinner table. One holds a fork, reaches for a knife. The other holds the knife, reaches for a fork. Both wait indefinitely. The table never clears. The lock-acquisition order diverged, and now neither can proceed.
+### Concrete example
 
-The wait-for graph is the formal version of this: nodes are threads, edges point from "waiting" to "holds". A cycle in this graph *is* the deadlock.
+Two users simultaneously place orders that affect the same inventory rows and order rows:
 
-### Backend Scenario
+```sql
+-- T1
+BEGIN;
+UPDATE orders SET status = 'processing' WHERE id = 1;  -- locks order row
+UPDATE inventory SET qty = qty - 1 WHERE product_id = 42;  -- waits
 
-Classic REST service deadlock: request A locks `user_id=1` then tries to lock `account_id=7`. Concurrently, request B has locked `account_id=7` and is trying to lock `user_id=1`. Both spin on the second lock. Connection pool exhausts. Service goes dark.
+-- T2 (concurrent)
+BEGIN;
+UPDATE inventory SET qty = qty - 1 WHERE product_id = 42;  -- locks inventory row
+UPDATE orders SET status = 'processing' WHERE id = 2;      -- waits
+```
 
-The fix is almost always **consistent lock ordering** — always acquire `user` before `account`, across every code path. This eliminates circular wait by construction. Many teams enforce this with a numeric lock hierarchy (lower ID acquired first).
+Deadlock. The database aborts one transaction with something like `ERROR 1213: Deadlock found when trying to get lock`.
 
-### Data Scenario
+### Why lock ordering matters
 
-In Postgres, deadlocks happen more than people expect because row-level locks are implicit. Two transactions updating the same two rows in opposite order — e.g., `UPDATE orders WHERE id IN (1,2)` processed in different sequences — will deadlock. Postgres detects this via a background lock monitor and kills one transaction with `ERROR: deadlock detected`. The application must retry.
+The canonical fix is consistent lock ordering: if every transaction always locks `orders` before `inventory`, the cycle can't form. This sounds obvious until you're coordinating across three microservices that each own one table and acquire locks in whatever order their ORM feels like.
 
-Batch operations are especially vulnerable. If you process a list of IDs without sorting them first, the ordering is nondeterministic across concurrent requests, and deadlocks become probabilistic and hard to reproduce.
+### Backend patterns
 
-### Detection vs. Prevention
+In APIs, deadlocks commonly surface under load when you have multiple write paths touching the same rows. A retry loop with exponential backoff is table stakes. More importantly, design your write operations to touch tables in a fixed canonical order, and keep transactions short—long-running transactions increase the window for cycle formation.
 
-- **Detection** (Postgres's approach): let deadlocks happen, detect cycles in the wait-for graph, abort a victim. Simple but adds latency and requires retry logic.
-- **Prevention** (lock ordering): eliminate circular wait statically. More discipline required upfront, zero runtime cost.
-- **Avoidance** (e.g., Banker's algorithm): theoretically elegant, rarely practical in real systems due to overhead.
+### Data patterns
 
-For most production systems, lock ordering + short transactions + retry-on-deadlock covers the vast majority of cases.
+ETL pipelines and bulk operations are deadlock hotspots. A pipeline that processes records in arbitrary order while another process reads and re-ranks them is a deadlock factory. Solutions: process in sorted primary-key order, use `SKIP LOCKED` to avoid contention entirely, or shift contended updates into a queue processed serially.
+
+### The pitfall most engineers miss
+
+Deadlocks aren't just a database problem. Application-level mutexes, Redis `SETNX` locks, and queue systems can all form the same wait-for cycles. The database at least detects and breaks them—your custom distributed lock implementation probably doesn't. If you're building multi-resource locking outside of a database, you need explicit cycle detection or a global ordering convention baked into the design.

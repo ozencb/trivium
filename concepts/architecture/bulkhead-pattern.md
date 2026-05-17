@@ -1,34 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Bulkhead Pattern
 
-The bulkhead pattern partitions resources so that failure or saturation in one partition can't exhaust resources needed by others. Where Circuit Breaker stops calls to a failing dependency, bulkhead limits *how much of your system* that dependency can take down with it.
+The bulkhead pattern prevents a failure in one part of your system from cascading into a total outage by partitioning shared resources into isolated pools. Where a circuit breaker stops *calling* a failing dependency, a bulkhead stops a slow dependency from *starving* everything else.
 
-### The core mechanism
+### The core idea
 
-The name comes from watertight compartments in ship hulls — if one compartment floods, the others stay dry. In software, the "compartments" are resource pools: thread pools, connection pools, semaphores, or even process isolation.
+In a typical service, all requests share the same thread pool (or connection pool, semaphore count, etc.). When one downstream dependency—say, a payment service—starts responding in 8 seconds instead of 200ms, threads pile up waiting. Within seconds, your entire thread pool is saturated with payment requests, and calls to your user-profile service or auth service queue up behind them, even though those dependencies are perfectly healthy. The slow service has taken the whole application hostage.
 
-Without bulkheads, your service has a single shared pool of threads (or connections). If downstream service A starts responding slowly, callers block waiting for responses. Those threads pile up until the pool is exhausted. Now requests to service B — which is perfectly healthy — also fail, because there are no threads left to handle them. One slow dependency has taken down your entire service.
+A bulkhead says: give each consumer its own fixed resource allocation. Payment calls get 10 threads, max. Profile calls get 20. Auth gets 15. Now payment going slow only blocks the payment pool—the other two keep processing normally.
 
-With bulkheads, you carve that pool into named partitions. Calls to service A draw from A's pool; calls to service B draw from B's. A's threads can fill up and start rejecting requests — but B's threads are untouched.
+### How it's implemented
 
-The two common implementations:
-- **Thread pool isolation**: each integration gets its own bounded executor. Overhead: context switching between pools, but strong isolation.
-- **Semaphore isolation**: a counter limits concurrent calls without spawning threads. Lower overhead, but doesn't protect against slow blocking calls that tie up the caller thread.
+The two common shapes:
 
-### Concrete example
+- **Thread pool isolation**: each downstream dependency gets a dedicated thread pool (Hystrix popularized this). Requests to that dependency execute on its pool; when the pool saturates, calls fail fast instead of queuing. Expensive because threads have memory overhead.
+- **Semaphore isolation**: a counter limits concurrent in-flight requests per dependency. Lighter weight, but doesn't isolate thread-level blocking (a thread still blocks waiting).
 
-Say you have an API that calls a payment service, a recommendations service, and a user profile service. Payment starts timing out at 5s instead of 200ms. Without bulkheads, the 200-thread pool fills with stuck payment calls in seconds — every endpoint on your service starts throwing 503s. With bulkheads: payment gets 30 threads, recommendations gets 30, profiles get 30. Payment degrades in isolation; the rest of your service keeps serving traffic.
+You can also apply bulkheads at higher levels—separate Kubernetes deployments for critical vs. non-critical workloads, separate DB connection pools per consumer type, separate ingress routes for internal vs. external traffic.
 
-### For backend engineers
+### Backend in practice
 
-Implement this at the HTTP client level — most circuit breaker libraries (Resilience4j, Polly, Hystrix) bundle bulkhead support. Size each pool based on expected peak concurrency plus headroom, not your total available threads. A pool that's too large defeats the purpose; too small and you'll shed load unnecessarily.
+When you have a service that handles both latency-sensitive user-facing requests and slower background/analytics requests, a single shared pool means a burst of expensive analytics queries can degrade user experience. A bulkhead gives each path its own pool and lets analytics degrade gracefully without affecting users.
 
-### For SREs
+### SRE perspective
 
-Bulkheads map naturally to tenant isolation in multi-tenant systems: separate rate limits, queue depths, or worker pools per customer tier. A noisy tenant hitting their limit gets 429s; premium customers see nothing. This is also the principle behind Kubernetes resource quotas per namespace — CPU and memory bulkheads enforced at the orchestration layer rather than in code.
+Bulkheads are where you start thinking about **blast radius reduction** at the infrastructure level. If one tenant, one region, or one feature is misbehaving, you want it contained. This shows up in multi-tenant SaaS as per-tenant rate limits and resource quotas, and in SRE incident analysis as "why did service X get taken down by service Y's traffic spike?"
 
-The key insight: Circuit Breaker is reactive (trips after failure is detected). Bulkhead is structural — it limits blast radius regardless of whether the failure is detected.
+### The design discussion differentiator
+
+Junior engineers know "add a timeout." Mid-level engineers add circuit breakers. What distinguishes senior engineers is understanding that circuit breakers protect *against* a bad dependency but don't protect *other* dependencies from the blast radius of one dependency going slow. Bulkheads address the partition problem circuit breakers don't. In design reviews, asking "what's the blast radius if this pool saturates?" is the kind of question that signals systems thinking.
+
+The tradeoff worth naming: bulkheads add operational complexity and can lead to resource underutilization if pool sizes are misconfigured. Size them too small and you get unnecessary failures; too large and you've gained nothing.

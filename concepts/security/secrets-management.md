@@ -1,28 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Secrets management is the discipline of storing, distributing, and rotating credentials (API keys, database passwords, TLS certs, tokens) in a way that prevents accidental exposure while still making them available to the systems that need them. The core problem it solves: plaintext secrets in env files, CI configs, or git history are a persistent, low-effort attack surface.
+## Secrets Management
 
-## Core Mechanism
+Secrets management is the practice of storing credentials, API keys, and certificates in a dedicated system that controls access, rotates values automatically, and logs every retrieval — rather than baking them into environment variables, config files, or source code. The core problem it solves isn't just "don't commit secrets to git" (that's table stakes); it's minimizing the damage when credentials inevitably leak and eliminating the operational nightmare of rotating them across hundreds of services.
 
-The fundamental shift is from *ambient* secrets to *dynamic, audited access*. Instead of a service having a static password baked into its config, it authenticates to a secrets store (Vault, AWS Secrets Manager, GCP Secret Manager) using its own identity — an IAM role, a Kubernetes service account, a signed JWT — and receives a short-lived credential. The secret itself travels over the wire only when needed, lives in memory, and expires.
+**The core mechanism**
 
-This separates two concerns: *who can get the secret* (access policy) and *what the secret is* (the credential). Both are now centrally auditable.
+The key insight is shifting from *static long-lived credentials* to *dynamic short-lived ones*. A system like HashiCorp Vault or AWS Secrets Manager doesn't just store a database password — it can generate a unique, time-limited username/password pair per service per request. Your app asks Vault for database credentials, Vault creates a new Postgres user with a 1-hour TTL, and hands it back. When that hour expires, the user is automatically revoked. If those credentials leak, the blast radius is one hour of one service, not your entire database forever.
 
-The other key mechanism is **secret rotation**. When secrets have TTLs and are dynamically issued, rotation stops being a painful manual operation and becomes the default. A compromised credential expires on its own; rotating becomes a no-op from the application's perspective.
+The trust chain works like this: services authenticate to the secrets manager using their own identity (an IAM role, a Kubernetes service account, a TLS cert) rather than another static secret. This is where Zero-Trust thinking applies — every entity must prove identity before receiving credentials, and that proof is continuously validated.
 
-## Mental Model
+**Concrete example**
 
-Think of it like a valet stand vs. keeping your car keys in the lobby. With env-var secrets, you've left the keys in the lobby — anyone who walks through (compromised container, leaked logs, careless `env` output) has them. With secrets management, there's a valet who checks your identity, hands you the keys briefly, logs the transaction, and the keys expire if you don't return them.
+Without secrets management: your payment service has `DB_PASSWORD=hunter2` in a `.env` file, replicated across 40 pods, stored in CI/CD environment variables, and probably in a Slack message from 2022. Rotating it means coordinating a deployment across everything simultaneously or accepting downtime.
 
-## Practical Scenarios
+With Vault: the payment service authenticates via its Kubernetes service account, receives a dynamically-generated DB credential valid for 30 minutes, and renews it automatically. Rotation is Vault's problem. Audit logs show exactly which pod retrieved credentials and when.
 
-**Backend:** Your service needs a database password. Instead of injecting `DB_PASSWORD=abc123` into the environment at deploy time, the service authenticates via its Kubernetes service account, calls Vault, gets a dynamically generated Postgres credential with a 1-hour TTL. If the pod is compromised, the blast radius is bounded.
+**Where it matters in practice**
 
-**SRE:** Incident response gets cleaner. When a credential leaks, you revoke it in one place — the secrets store — rather than hunting down every deployment that might hold a copy. Audit logs show exactly which service called for what secret and when, which is invaluable during post-mortems.
+*Backend*: Stop passing secrets as environment variables through your deploy pipeline. Instead, have your app fetch secrets at startup from the secrets manager using its runtime identity. This also means secret values never appear in CI logs.
 
-**DevOps:** CI/CD pipelines are a major secrets exposure vector. Instead of storing `AWS_SECRET_ACCESS_KEY` as a CI variable (often readable by anyone with repo access), your pipeline authenticates via OIDC to AWS directly, receiving short-lived credentials scoped to exactly what that job needs. No static secrets exist to leak.
+*SRE*: Incident response changes significantly. When a credential is suspected compromised, you revoke it in one place and the blast radius is bounded by TTL. Without this, "rotate all credentials" is a multi-team fire drill.
 
-The integration point with Zero-Trust is direct: secrets management is how you implement "never trust, always verify" for non-human identities. Every service proves who it is before it gets the credential, every time.
+*DevOps*: Secret sprawl — the same credential duplicated across Terraform state, CI/CD vars, Kubernetes secrets, and developer laptops — is a silent risk. A secrets manager becomes the single source of truth, and you can prove it with audit trails.
+
+**The senior-engineer signal**
+
+In design discussions, reaching for "we should use dynamic credentials with short TTLs" rather than "we should rotate secrets quarterly" demonstrates you understand that the goal isn't just security hygiene — it's reducing the operational cost of credential compromise to near-zero. That framing (blast radius + operational cost, not just compliance) is what separates someone who's operated systems under pressure from someone who's read the docs.

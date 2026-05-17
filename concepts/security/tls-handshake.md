@@ -1,41 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## TLS Handshake
 
-TLS Handshake is the negotiation phase before any encrypted data flows — both parties agree on a cipher suite, authenticate the server (and optionally the client), and derive a shared symmetric key without ever transmitting it over the wire.
+TLS solves two problems at once: **confidentiality** (traffic is encrypted) and **authenticity** (you're talking to who you think you are). The handshake is the negotiation that establishes both before a single byte of application data flows.
 
-### The Core Mechanism
+### Core Mechanism
 
-The handshake solves a bootstrapping problem: you need a shared secret to encrypt, but you can't share the secret securely without already having encryption. TLS solves this with asymmetric crypto *only for the handshake*, then switches to symmetric crypto for the actual data.
+The naive approach — encrypt with the server's public key — doesn't work for ongoing communication: asymmetric crypto is too slow and lacks forward secrecy. Instead, TLS uses the handshake to bootstrap a short-lived **symmetric session key** that both sides derive independently.
 
-In TLS 1.3 (the current standard), the flow is:
+In TLS 1.3 (the modern baseline):
 
-1. **ClientHello** — client sends supported cipher suites and a key share (its half of a Diffie-Hellman exchange)
-2. **ServerHello** — server picks the cipher suite, sends its DH key share and its certificate
-3. **Both sides independently derive the same session key** from the DH exchange — no key was ever transmitted
-4. **Server sends Finished** (encrypted with the derived key, proving it has the right key)
-5. **Client verifies the cert** against trusted CAs, sends its own Finished
-6. Symmetric encryption begins
+1. **Client Hello** — client sends supported cipher suites and a Diffie-Hellman public key share
+2. **Server Hello** — server responds with its DH key share and its certificate (containing its public key, signed by a CA)
+3. **Key derivation** — both sides independently compute the same shared secret via DH math. The secret was never transmitted.
+4. **Finished messages** — each side sends a MAC over the entire handshake transcript, proving they hold the expected keys and haven't been tampered with
+5. Application data flows, encrypted with AES-GCM or ChaCha20
 
-TLS 1.2 needed 2 round trips; TLS 1.3 needs 1 (and supports 0-RTT resumption for reconnects, with caveats around replay attacks).
+The DH key shares are **ephemeral** (ECDHE) — generated fresh per session. This gives you **forward secrecy**: compromising the server's long-term private key later doesn't decrypt past sessions, because those session keys are gone.
+
+Certificate verification is separate: the client walks the certificate chain up to a trusted root CA. This answers "is this really api.stripe.com?" — the server proves identity by signing handshake data with the private key corresponding to the cert's public key.
 
 ### Mental Model
 
-Think of DH key exchange like mixing paint: you and the server each have a private color, you exchange a public base color, each mixes their private color in, and you both end up with the same final color — but an observer only ever sees the base and the mixed intermediate, never the private component.
+Think of it as establishing a shared secret by each throwing colored paint into a public bucket — anyone watching sees the colors, but deriving the final mixed color requires information only each side holds privately. The certificate is the identity badge that proves the person holding the bucket is actually Stripe.
 
-The certificate is separate from the key exchange — it's the server proving *who it is*, not how you'll communicate secretly.
+### Practical Implications
 
-### Practical Scenarios
+**Backend**: Most TLS failures (`CERTIFICATE_VERIFY_FAILED`, hostname mismatch) happen because the certificate chain validation broke, not encryption. Common culprits: missing intermediate certs, system CA bundle not updated in containers, clock skew causing cert to appear expired.
 
-**Backend:** When your service calls a third-party API over HTTPS, a handshake happens per connection (or per connection pool entry). High-frequency service-to-service calls benefit heavily from connection reuse — a new handshake adds ~1 RTT of latency. This is why HTTP keep-alive and connection pooling matter more than most engineers realize.
+**SRE**: TLS termination at the load balancer vs. end-to-end is an architectural tradeoff. Terminating at the LB means internal traffic is plaintext — fine on a trusted internal network, but a compliance blocker for PCI-DSS or HIPAA. Also: TLS 1.3 saves one full round-trip versus 1.2, which matters at scale or on mobile.
 
-**SRE:** TLS termination usually happens at the load balancer, which means traffic *inside* your cluster may be unencrypted unless you've set up mTLS (which builds directly on this). Certificate expiry is a classic incident cause — the handshake fails with a hard error the moment a cert expires, taking down services immediately.
+**Fullstack**: HSTS, cert pinning, mixed content errors — all stem from this layer. When you see a mysterious CORS failure, check whether the preflight is hitting a cert error first; browsers report them identically.
 
-**Fullstack:** Browser devtools show TLS version and cipher suite in the Security tab. If users report intermittent connection failures, a mismatch in supported TLS versions (e.g., an old client trying TLS 1.0 against a server that dropped support) will manifest as a handshake failure before any HTTP traffic, which looks like a network error rather than an application error.
-
-### What This Unlocks
-
-Once you have the handshake model, mTLS is just "now the client also presents a certificate in step 5" — mutual authentication instead of one-way. Certificate pinning is "the client rejects the cert unless it matches a known fingerprint, bypassing normal CA trust."
+The conceptual jump from here to **mutual TLS** is small: the client also presents a certificate, and the server verifies it. Same mechanism, both directions.

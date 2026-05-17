@@ -1,34 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Micro-Frontends
 
-Micro-frontends apply the microservices idea to the UI layer: instead of one team owning a monolithic frontend, multiple teams independently build, deploy, and own distinct slices of the same user-facing application.
+The same autonomy that microservices gave backend teams — independent deploys, isolated ownership, tech-stack freedom — applied to the UI layer. Instead of a single frontend app that every team commits into, you slice the UI by business domain and let each team ship their slice on their own cadence.
 
-**The core mechanism**
+**The core idea**
 
-The browser assembles a page from pieces that were built and deployed separately. Those pieces can be composed at three different points:
+A traditional frontend monolith means the Checkout team can't deploy without coordinating with the Search team, because they share a build. Micro-frontends break that coupling. Each "micro-frontend" is a self-contained app (or component) with its own repo, CI pipeline, and deploy lifecycle. At runtime, a **shell app** (also called the app shell or host) composes them — pulling in each slice and stitching them into a coherent UI.
 
-- **Build time** — each team publishes a package, a shell app imports them as dependencies. Simple, but re-deploys the whole shell on any change.
-- **Server-side** — an edge layer (nginx, CDN, BFF) stitches HTML fragments from different origins before the response lands in the browser. Fast first paint, complex infrastructure.
-- **Runtime (client-side)** — the shell app dynamically loads remote JavaScript bundles at runtime. Each team ships independently; the browser wires them together on page load. This is the dominant modern approach, and it's the mechanism that Module Federation was built to formalize.
+Composition can happen at different layers:
+- **Build time** — each MFE is an npm package; the shell depends on them. Simple, but reintroduces coupling at deploy time.
+- **Runtime via iframes** — true isolation, but terrible UX and DX. Mostly a dead end.
+- **Runtime via Module Federation** (Webpack 5+) — the dominant pattern. Each MFE exposes a remote module; the shell loads it at runtime over the network. You can deploy a MFE without touching the shell.
+- **Server-side composition** — an edge or server layer assembles HTML fragments from multiple origins (e.g., Zalando's Mosaic, or just an nginx `include`).
 
-Each micro-frontend typically owns its own route or clearly bounded UI region — a checkout widget, a navigation bar, an admin panel — along with the data fetching and state that belongs to it.
+**Mental model**
 
-**Concrete mental model**
+Think of a news site: the header is owned by Platform, the article renderer by Content, the commenting widget by Community. Each team deploys independently. The shell knows where to fetch each piece; the user sees one coherent page.
 
-Think of an e-commerce site. The search team ships `search-app`, the cart team ships `cart-app`, the recommendations team ships `rec-app`. A thin shell loads whatever bundles are needed for the current route. The cart team can hotfix a payment bug and deploy at 2am without touching anything the search team owns. Users never notice a full-page reload.
+**In practice**
 
-**Where this matters in practice**
+*Frontend:* Routing usually splits teams cleanly — `/checkout/*` goes to the Checkout MFE, `/search/*` to Search. Shared state (auth, cart) lives either in a global event bus or a shared service, not in a component tree.
 
-*Frontend:* You stop writing cross-team PRs for a shared monorepo. Each team gets its own CI pipeline, its own release cadence, and its own tech choices within reason (though shared design systems and framework versions reduce integration friction significantly).
+*Fullstack:* Each MFE typically owns its own BFF (backend for frontend). You end up with vertical slices of ownership from DB to UI — which is the real organizational payoff.
 
-*Fullstack:* Micro-frontends pair naturally with microservices. The checkout micro-frontend talks to the checkout service; the inventory widget talks to the inventory service. Ownership aligns vertically: one team owns the full stack for their domain, front to back.
+*DevOps:* Each MFE gets its own pipeline. This is where the complexity lands: you now have N deployment targets, N sets of infrastructure config, and cross-MFE integration testing becomes genuinely hard. Contract testing (Pact) and visual regression suites matter a lot here.
 
-*DevOps:* Each micro-frontend becomes its own deployable artifact. You get per-team deployment pipelines, independent rollback, and the ability to canary a single slice of the UI without gating on other teams. The cost is more infrastructure surface area — you're now coordinating CDN caching, CORS, and contract testing across multiple independently deployed assets.
+**When to reach for it**
 
-**The real tradeoff**
+Not before you have real org pain. A team of 15 engineers doesn't need this. The forcing function is when team coupling in the frontend is slowing deployments or causing coordination overhead that's visibly hurting velocity. At that point, the architectural complexity pays for itself. Doing it prematurely just adds infrastructure cost and cross-team API surface without the organizational benefit.
 
-Micro-frontends solve an organizational problem (team autonomy, parallel delivery) at the cost of technical complexity (shared state is hard, consistent UX requires discipline, debugging across bundle boundaries is painful). If you have one team, they're almost certainly wrong for you. If you have five teams blocked on each other in a UI monorepo, they start making sense.
+The senior-engineer signal in interviews: knowing that micro-frontends are primarily an *organizational* solution, not a technical one. The tech enables the org structure — Conway's Law, applied deliberately.

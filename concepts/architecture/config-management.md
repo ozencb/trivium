@@ -1,38 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Config Management is the discipline of separating runtime configuration from code so the same artifact can run correctly in any environment. The "why" is operational: a Docker image that embeds prod credentials or hardcoded hostnames forces you to rebuild for every environment, breaking the entire premise of portable deployments.
+## Config Management
 
-## The Core Mechanism
+Config management is the practice of separating everything that varies between deployments from your artifact itself — so the same binary or container image runs in dev, staging, and prod, with environment-specific behavior injected at runtime rather than baked in at build time. The payoff is a real promotion pipeline: build once, promote the artifact, swap the config layer.
 
-You already know Twelve-Factor's "store config in the environment." Config Management is what happens when you take that seriously at scale. The fundamental shift is treating config as a *first-class artifact*: versioned, validated, audited, and delivered to processes without being baked into them.
+### The Core Mechanism
 
-There are three main patterns:
+Your app is a function. Config is its input. The same binary + different inputs = different runtime behavior. "Config" means anything that varies across environments: database URLs, service discovery endpoints, timeouts, log levels, resource limits. The canonical injection mechanisms are environment variables (12-factor), mounted config files (Kubernetes ConfigMaps/Secrets), and config services (AWS AppConfig, HashiCorp Consul, GCP Runtime Config).
 
-**Environment injection** — the classic approach. Config lives in env vars set by the platform (Docker, systemd, your CI). The app reads `os.environ`. Simple, but doesn't handle dynamic changes or large config sets well.
+The escalation path matters. Env vars work fine up to ~20 variables per service. Beyond that, you want structured config with versioning, history, and rollback — a config service handles this. The config service also enables live reloads: change a value, the running process picks it up without restart.
 
-**Mounted config files** — Kubernetes ConfigMaps are the canonical example. Config is stored as a cluster resource and mounted into the pod's filesystem at runtime. The app reads a file, the platform manages what's in it. This handles larger config and lets you version it in Git alongside your manifests.
+### Concrete Example
 
-**Config server / distributed KV** — tools like Consul, etcd, or AWS Parameter Store act as a live config store. The app (or sidecar) polls or watches for changes, enabling *dynamic reconfiguration* without restarts. This is where Config Management starts unlocking Feature Flags.
+A Kubernetes deployment ships the same Docker image to staging and prod. The staging ConfigMap sets `DB_HOST=staging-db.internal`, `LOG_LEVEL=debug`, `REPLICA_COUNT=1`. The prod ConfigMap sets `DB_HOST=prod-db.internal`, `LOG_LEVEL=warn`, `REPLICA_COUNT=10`. One image, two behaviors, zero rebuild. This is what makes canary deploys possible — you promote the image, and the config layer stays environment-local.
 
-## Mental Model
+### Role-Specific Patterns
 
-Think of your application as a pure function: `f(code, config) → behavior`. Config Management is everything that ensures the right values reach `f` for a given environment, at the right time, with a change history you can reason about.
+**Backend**: The subtle failure mode is implicit config — defaults hardcoded in application logic that silently override what you set in the environment. Always make config explicit with a config struct loaded at startup, logged at startup (minus secrets), and validated before the app accepts traffic.
 
-The hard part isn't reading an env var — it's knowing which values changed when the on-call incident happened, and why staging behaves differently than prod despite running the "same" image.
+**SRE**: Config drift causes a whole class of incident. Two pods of the same service running different config versions because someone patched one manually produces bugs that look like flakiness. Config management is how you get the audit trail: what changed, when, and who.
 
-## Where This Shows Up
+**DevOps**: Config is the seam between your artifact pipeline and your environment pipeline. The build system owns the artifact; the config system owns the parameters. Keeping these separate is what makes environment promotion cheap and repeatable.
 
-**Backend**: Database pool sizes, downstream service URLs, timeouts, and retry counts are all config. Hardcoding them is a rebuild every time you tune for production load.
+**Fullstack**: Frontend apps have the same problem — API base URLs, analytics keys, OAuth client IDs. Building per environment breaks promotion. The right pattern is runtime injection: a `/config` endpoint the app fetches at load time, or server-side rendering that injects config into the initial HTML.
 
-**SRE**: Circuit breaker thresholds, rate limits, and canary traffic weights are things you want to change *under pressure*, not via a deployment pipeline. A config server lets you do that safely.
+### What This Unlocks
 
-**DevOps**: Helm values files are config management for Kubernetes. You maintain `values-dev.yaml`, `values-prod.yaml` and let the chart parameterize the difference. ConfigMaps and Secrets are the runtime delivery mechanism.
-
-**Fullstack**: API base URLs, CDN origins, and feature flag defaults vary by environment. Config Management prevents the classic bug where someone hardcoded `api.staging.example.com` and it went to prod.
-
----
-
-The boundary worth keeping in mind: Config Management handles *non-sensitive* configuration. Once a value needs to be secret (credentials, API keys), it crosses into Secrets Management — which layers encryption and access control on top of the same delivery patterns.
+Feature Flags are config that gates behavior, refreshed without deploy. Secrets Management is config with stricter access control, encryption at rest, and rotation — conceptually just sensitive config with a different trust boundary. Understanding config management as a system (not just "use env vars") is what lets you reason about both.

@@ -1,34 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Zero-Trust Networking
 
-Zero-trust is a security model that eliminates implicit trust based on network location — every request must be authenticated and authorized regardless of where it originates, including requests from inside your own network.
+Traditional network security bets everything on the perimeter: once a service is "inside," it's trusted. Zero-trust rejects that premise entirely — network location is not a credential, and every request must prove identity and authorization regardless of where it originates.
 
-### The Core Idea
+**The core mechanism**
 
-Traditional perimeter security assumes: if traffic is inside the firewall, it's probably legitimate. Zero-trust rejects this entirely. The model treats every request as potentially hostile until proven otherwise, regardless of whether it comes from the public internet, a corporate VPN, or a Kubernetes pod on the same node as the target service.
+The shift is from network-level trust to workload identity. Instead of "this IP is in the internal subnet, so it's allowed," you get "this service presented a valid certificate proving it's the payment service, and policy says it's allowed to call the inventory service on this specific path." The identity carrier is typically a short-lived X.509 cert issued by a workload identity system like SPIFFE/SPIRE, and mTLS is the transport mechanism you already know — both sides present certs, both sides verify.
 
-The mechanism rests on three pillars:
+The other half is authorization: authentication proves who you are, but a separate policy layer (Open Policy Agent, or service mesh-native policy) decides what you're allowed to do. These are separate concerns even though they're often deployed together.
 
-1. **Strong identity on every request.** Each workload, user, and device has a cryptographic identity. This is where mTLS comes in — your service mesh issues short-lived certificates to each workload, so `payments-service` can prove to `orders-service` that it actually is the payments service, not something that somehow got onto the network.
+**Mental model**
 
-2. **Authorization is per-request, not per-connection.** Even after a service proves its identity, each request is checked against an authorization policy: *can this identity perform this action on this resource, given current context?* Context can include time of day, device posture, or anomaly signals.
+Imagine every service call goes through a bouncer who checks two things: a government-issued ID (identity cert) and a guest list (policy). Being physically inside the building doesn't skip the bouncer. A compromised host behind the firewall is stuck — it can't impersonate another service without a valid cert, and it can't call arbitrary services without matching policy.
 
-3. **Least-privilege by default.** Services and users get exactly the access they need, nothing more. Lateral movement after a compromise is contained — owning `logging-service` shouldn't grant any access to the payments database.
+**In practice**
 
-### Mental Model
+*Backend*: You stop designing trust around "internal network = safe." Any service you build should expect to present identity and handle 401s from peers. If your DB connection string is the only thing protecting your data layer, a compromised app server owns your DB — zero-trust forces a credential boundary there.
 
-Think of it like a hospital. Even if someone is wearing scrubs and clearly works there, they still need to badge into the ICU. Being physically inside the building isn't the credential — the badge is. And the badge might only work for certain doors during certain shifts.
+*DevOps*: Service meshes (Istio, Linkerd) are the common implementation path. They handle cert rotation, mTLS, and policy enforcement transparently via sidecar proxies, so services don't need to implement it themselves. The configuration cost is real — misconfigured policies are a common source of outages during adoption.
 
-### Practical Scenarios
+*SRE*: Blast radius containment is the payoff. When a pod is compromised, lateral movement is blocked by policy. Your incident response goes from "assume the entire internal network is dirty" to "that one workload identity is revoked, scope contained." This dramatically changes how you write runbooks and design network segmentation.
 
-**SRE:** When a service starts making unusual outbound calls — say, your reporting service suddenly querying the auth DB directly — a zero-trust system can detect identity anomalies and kill that connection. Blast radius containment becomes architectural, not just incident-response.
-
-**DevOps:** Zero-trust shapes how you build CI/CD pipelines. Instead of giving your deployment runner broad IAM permissions because it runs "inside" the VPC, you issue it a short-lived workload identity with exactly the permissions needed for that deploy, scoped to that environment, expiring in minutes.
-
-**Backend:** Service-to-service calls can't rely on network ACLs or IP allowlists alone. With a service mesh doing mTLS and policy enforcement, your `users-service` can declare: "only `auth-service` and `api-gateway` may call my `/internal/profile` endpoint" — and that policy is enforced cryptographically, not by firewall rules that drift over time.
-
-Zero-trust doesn't mean paranoia — it means moving trust decisions out of network topology and into explicit, auditable, cryptographically verified policies.
+The senior-engineer differentiation: knowing that zero-trust is an *architecture* (identity + policy enforcement at every hop), not a product, and being able to articulate the tradeoffs — operational complexity, latency from cert verification, and the need for solid PKI hygiene — is what separates someone who's deployed it from someone who's read a blog post.

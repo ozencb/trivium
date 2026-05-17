@@ -1,33 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CDN Edge Caching
 
-Edge caching stores HTTP responses at CDN nodes geographically close to users, so subsequent requests for the same resource are served from the edge rather than traveling to your origin — reducing latency from hundreds of milliseconds to single digits and absorbing traffic your origin never sees.
+Edge caching lets CDN nodes answer requests directly from memory instead of forwarding them to your origin — the result is lower latency, less origin load, and resilience under traffic spikes. It's the difference between your origin handling 10k req/s and handling 200 req/s because the other 9,800 were served from cache in Singapore, Frankfurt, and São Paulo.
 
-### The Core Mechanism
+### How it actually works
 
-The edge node acts as a **read-through cache keyed on the request**. On a cache miss, the edge fetches from origin, stores the response, and serves it to the requester. Every subsequent request matching that cache key gets the stored response until TTL expires or the entry is invalidated.
+When a request hits an edge node and the cached response is missing or stale, the edge makes one request to your origin (or the next cache tier), stores the response, and serves it to subsequent requests. The edge respects `Cache-Control: max-age` for TTL and `Vary` for key differentiation. Most CDNs also support *surrogate keys* (Fastly calls them surrogate keys, Cloudflare calls them cache tags) — arbitrary labels you attach to responses that let you invalidate a whole group of cached objects at once rather than by URL.
 
-The cache key is typically the URL, but CDNs also respect the `Vary` header — which tells the cache to treat different header values (e.g., `Accept-Encoding`, `Accept-Language`) as separate cache entries. Over-varying is a common footgun: `Vary: Cookie` makes nearly everything uncacheable because most requests carry different cookies.
+The critical detail most engineers miss: **cache key composition**. By default, many CDNs key on the full URL including query string. If you have `?utm_source=email` variants flooding in, you're either fragmenting your cache (each variant is a separate entry) or you need to configure query string normalization. Getting the cache key wrong is the most common cause of "CDN isn't actually caching this."
 
-The headers that actually drive behavior:
-- `Cache-Control: max-age=3600` — tells browsers *and* shared caches (CDN) to cache for an hour
-- `Cache-Control: s-maxage=86400` — CDN-specific TTL, overrides `max-age` at the edge while browser still uses `max-age`
-- `stale-while-revalidate=60` — edge serves stale content for up to 60 seconds while asynchronously refreshing it, hiding revalidation latency from users
+### Concrete mental model
 
-Most CDNs also offer an **origin shield** (or mid-tier cache): a single designated node that aggregates all edge misses before hitting origin. Instead of 50 edges hammering your origin simultaneously, one does — critical for protecting against thundering herd during cache invalidation events.
+Think of it as a read-through cache that your CDN manages for you. First request per edge PoP: miss, fetch from origin, store. All subsequent requests within TTL: hit, serve from edge. Purge or TTL expiry: back to miss. The edge node is functionally a Varnish or Nginx proxy cache — just globally distributed and managed for you.
 
-### Mental Model
+### Practical scenarios
 
-Think of it as a distributed L2 cache. Your origin is L1 (authoritative), the origin shield is L2 (regional), and edge nodes are L3 (per-PoP). Cache hits short-circuit at the outermost layer.
+**Backend:** Your product page API (`/api/products/123`) doesn't change per user — set `Cache-Control: public, max-age=300, stale-while-revalidate=60`. The CDN handles the thundering herd on a product launch. Attach surrogate key `product:123` so a price update can invalidate just that object across all edges instantly.
 
-### In Practice
+**SRE:** During an origin incident, `stale-if-error` keeps serving stale content instead of returning 502s. Combined with health checks that pull traffic to healthy origins, edge caching becomes a buffer — your users may never notice a 30-second origin degradation. Cache hit ratio on your CDN dashboard is a key SLI.
 
-**Backend**: The biggest lever is `s-maxage`. API responses for non-personalized data (product catalog, public config) can carry `s-maxage=300` without touching browser behavior at all. Watch the `Vary` header — audit it; if it includes `Cookie` anywhere, that route is uncacheable at the edge.
+**Fullstack:** Dynamic pages that still have cacheable segments — you can cache-vary on a cookie to serve different TTLs to authenticated vs anonymous users, but ideally you structure things so anonymous pages are fully cacheable and authenticated state lives in client-side fetches, not the rendered HTML.
 
-**SRE**: Cache hit ratio is your signal. A drop from 95% to 60% means significantly more origin traffic — often from a bad deploy that changed cache keys or TTLs. During invalidation events, origin shield absorbs the collapse; without it, a full-cache purge causes a traffic spike proportional to your edge node count.
+### When to reach for it
 
-**Fullstack**: The standard pattern is long TTLs (`s-maxage=31536000`) on fingerprinted static assets (hashed filenames like `app.8f3a2b.js`) and short TTLs on HTML (`s-maxage=60` or `no-store` for personalized pages). HTML controls which asset versions users get; assets themselves can be cached forever because the filename changes on each deploy.
+Anytime a response is identical across users (or a predictable subset), idempotent, and changes on a schedule you control. The moment user-specific data bleeds into a cached response, you're debugging a data leak.

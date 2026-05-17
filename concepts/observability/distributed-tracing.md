@@ -1,33 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Distributed tracing gives you end-to-end visibility into a single request as it travels through multiple services, so you can answer "where did this 2-second request actually spend its time?"**
+Distributed tracing gives you a single coherent view of a request as it flows through multiple services — without it, you're left correlating logs across systems by timestamp and hoping for the best. It's the difference between watching a relay race live versus reconstructing it from each runner's personal diary.
 
-## Core Mechanism
+## The Core Mechanism
 
-A **trace** represents one logical request. It's a tree of **spans**, where each span is one unit of work — an HTTP call, a database query, a cache lookup. Every span carries:
+Every request gets a **trace ID** at its origin point (typically your API gateway or the first service that touches it). As that request fans out — auth service, user service, database calls, downstream APIs — each service creates a **span**: a timed unit of work that records what it did, how long it took, and any relevant metadata.
 
-- A `trace_id` shared across the entire request lifetime
-- Its own `span_id`
-- A `parent_span_id` pointing to whoever called it
-- Start/end timestamps and arbitrary key-value metadata
-
-The critical piece is **context propagation**: when Service A calls Service B, it injects the current `trace_id` and `span_id` into the request headers (W3C's `traceparent`, or Zipkin's B3 headers). Service B reads these headers, creates a child span, and continues the tree. Each service ships its spans asynchronously to a collector (Jaeger, Zipkin, an OTEL collector), which reassembles them into a timeline after the fact.
+The critical piece is **context propagation**: the trace ID (and parent span ID) travel *with* the request, typically as HTTP headers (`traceparent` in W3C Trace Context, or `X-B3-TraceId` in older Zipkin-style). Each service reads these headers, creates its child span, does its work, and passes the context forward. The result is a tree of spans that reconstructs the full execution path.
 
 ## Concrete Mental Model
 
-User hits "checkout." The API gateway creates the root span. It calls the order service (child span), which fans out to inventory (grandchild) and payment (grandchild) in parallel. Payment calls a fraud-scoring service (great-grandchild). Every hop records its own latency. The collector stitches spans by `trace_id` into a waterfall view: total 820ms, breakdown shows payment took 760ms, fraud scoring took 700ms of that. You now have a directed path to the problem, not a haystack.
+Imagine a request to `POST /checkout` takes 2.3 seconds. Your metrics tell you it's slow. Your logs tell you each service "completed successfully." Tracing tells you: 1.8s of that was spent waiting on the inventory service, which was waiting on a Redis lock that had been held for 1.6s by a batch job.
+
+That diagnosis goes from "unknown" to "actionable" in minutes instead of hours of log archaeology.
 
 ## Practical Scenarios
 
-**Backend**: p99 latency regressed after a deploy. Logs say nothing. Traces show one specific span — a JOIN query in the recommendations service — taking 600ms on requests where `user_segment = 'enterprise'`. Missing index on a recently added column. You'd never find this from metrics alone.
+**Backend**: Service A calls Service B calls Service C. Latency spikes intermittently. Without traces, you instrument each service independently and try to correlate by timestamp. With traces, you filter on high-duration traces, click into one, and immediately see which span is the outlier — and what that span's attributes say (e.g., `db.query`, row count, connection pool saturation).
 
-**SRE**: Cascading failures are hard to attribute. Traces expose the propagation chain: Service C errored because B timed out because A was retrying aggressively against a downstream that D owns. Error attribution stops being a blame game and becomes a structural observation.
+**SRE**: During an incident, you need to know whether slowness is in *your* service or a dependency. Flame graphs from traces answer this instantly. You also get error propagation chains — when Service C throws, you see exactly which upstream calls were affected.
 
-**DevOps**: During a canary rollout, trace span trees on new pods are unexpectedly deeper — new code is making an extra external call per request that wasn't there before. Catch behavioral regressions, not just performance regressions.
+**DevOps**: Traces expose where your service mesh is adding overhead. An mTLS handshake that takes 50ms on every cross-service call is invisible in metrics but obvious when you see it as a recurring span in every trace.
 
-## What This Unlocks
+## Common Pitfalls
 
-Once the trace/span model clicks, two problems follow naturally: **trace sampling** (you can't keep every trace — how do you pick which ones matter?) and **span propagation** (what actually happens when you cross gRPC, async queues, or thread boundaries — where does context get lost?).
+- **Broken propagation**: One service in the chain doesn't forward the trace headers (often a message queue or async worker), and the trace splits. Always instrument producer/consumer boundaries explicitly.
+- **Missing spans**: Not every library auto-instruments. Database clients, HTTP clients, gRPC stubs — verify each one is traced.
+- **Over-sampling in prod**: Tracing every request at high traffic is expensive. This is why Trace Sampling exists: you collect a statistically useful subset, with bias toward errors and high-latency requests.

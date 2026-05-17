@@ -1,38 +1,41 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Zero-Downtime Migrations
 
-Schema changes that don't require taking your database or application offline — achieved by carefully sequencing what gets deployed and when, so old and new code can coexist against the same database during the transition.
+Zero-downtime migrations are the discipline of making schema changes in multiple backward-compatible steps so that old and new application code can coexist during each step. The problem they solve is simple: a schema change and a code deploy are two separate events, and naive migrations assume they happen simultaneously—they don't.
 
-### The Core Problem
+### The Core Mechanism: Expand-Contract
 
-The naive approach to schema changes is: stop traffic, run migration, deploy new code, resume. That works in a maintenance window but fails when you need continuous availability. The real challenge is that you have two code versions running simultaneously during a deployment rollout — old pods are still serving requests while new ones spin up. If your migration removes a column that old code still reads, or renames a table the old queries reference, you get errors mid-rollout.
+The pattern has three phases:
 
-The solution is **expand-contract** (also called **parallel change**): break every schema change into phases where each phase is backward-compatible with the code versions running alongside it.
+1. **Expand** — add new structure without removing old. Both old and new code remain valid.
+2. **Migrate** — backfill data into the new structure, usually in batches to avoid lock contention.
+3. **Contract** — remove the old structure once no running code references it.
 
-### Expand-Contract in Practice
+This maps directly to multiple deploys. Each deploy must leave the system in a consistent state.
 
-Take renaming a column `user_name` → `username`:
+### Concrete Example: Renaming a Column
 
-1. **Expand**: Add the new `username` column. Write to both columns in application code. Old code still reads `user_name`, new code reads `username`. Both work.
-2. **Migrate**: Backfill `username` from `user_name` for existing rows. Do this in batches to avoid locking.
-3. **Contract**: Once all old code is gone (old pods fully drained), drop `user_name`.
+You want to rename `user_name` to `username`. The naive approach—`ALTER TABLE users RENAME COLUMN user_name TO username`—breaks any running pods still referencing the old name. The expand-contract approach instead:
 
-What looks like one migration is actually three separate deployments spanning days or weeks. That's the discipline — resist collapsing them back into one.
+1. **Expand**: Add `username` (nullable). Deploy code that writes to *both* columns, reads from `user_name`.
+2. **Migrate**: `UPDATE users SET username = user_name WHERE username IS NULL` — run in batches.
+3. **Transition**: Deploy code that reads from `username`, writes to both (still backward-compatible with any old pods).
+4. **Contract**: Deploy code that only uses `username`. Then drop `user_name`.
 
-### What This Looks Like Per Role
+What looked like one operation is four steps across three deploys. This is why senior engineers pause when someone casually says "let's just rename that column."
 
-**Backend**: You write dual-write logic during transitions and add feature flags or versioned endpoints to manage which code path runs. You also need to think about index creation — `CREATE INDEX` takes locks; use `CREATE INDEX CONCURRENTLY` in Postgres.
+### Why It Matters in Practice
 
-**SRE**: You define the rollout policy so old replicas fully drain before you remove backward-compatibility code. You monitor for query errors that signal a phase was skipped. You treat failed rollbacks the same as failed deployments — the database state must be compatible either way.
+**Backend**: Your migration tooling doesn't enforce this—you do. Libraries like Rails' `strong_migrations` or Flyway's compatibility checks help, but the expand-contract discipline is a judgment call at design time. Get it wrong and you're either taking a maintenance window or causing a production incident.
 
-**DevOps/Platform**: CI/CD pipelines need to know which migrations are safe to run before or after code deploys, and enforce the ordering. Some teams use migration "gates" — a migration can't be marked contract-phase until the expand-phase has been in production for N days.
+**SRE**: This pattern is how you honor error-budget commitments during schema changes. Without it, every non-trivial migration is either a calculated risk or a maintenance window. With it, you can migrate a billion-row table with zero downtime by spreading the backfill over hours while the system runs normally.
 
-### The Mental Model
+**DevOps**: Pipelines need to treat migration deploys and code deploys as distinct, gated stages. The migration runs first, validation happens (did the backfill complete? are there no `NOT NULL` violations?), and only then does the code deploy proceed. Collapsing these into one step is the footgun.
 
-Think of it like widening a road while traffic flows. You build the new lane first (expand), run both lanes together, verify load, then demolish the old lane (contract). You never close the road.
+### The Interview Signal
 
-The failure mode is skipping phases under deadline pressure. That's where most zero-downtime incidents actually come from — the process was known, but someone collapsed it.
+Most engineers treat migrations as atomic. The differentiating move is recognizing that any schema change spanning a deploy window needs to be backward-compatible in both directions—old code against new schema, and new code against old schema—until the transition is complete. When you hear "we need to add a foreign key constraint," the senior response is asking what the intermediate state looks like when half the fleet is on the old code.

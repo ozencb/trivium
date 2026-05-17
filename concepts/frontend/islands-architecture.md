@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Islands Architecture
 
-Islands Architecture is a frontend rendering strategy where most of a page is static HTML with isolated, independently hydrated interactive components — "islands" — scattered throughout. The goal is to ship near-zero JavaScript by default and only pay the hydration cost for components that actually need it.
+Islands Architecture is a rendering strategy where the server delivers fully-formed static HTML, and JavaScript is only shipped and executed for explicitly marked interactive regions ("islands") — each hydrating independently rather than the entire page. It's the architectural answer to the question: why hydrate a navbar and a cookie banner just to make one product carousel interactive?
 
 ### The Core Mechanism
 
-In a traditional SSR + hydration setup, the server renders HTML, ships it to the browser, then React (or equivalent) re-hydrates the entire page as a single component tree. Even if 90% of your page is read-only content, the browser still downloads and executes the JavaScript for all of it.
+In a traditional SSR + hydration setup (Next.js pages router, for example), the server renders HTML, ships the entire React tree as JS, then the client re-executes that tree to attach event listeners. Even static content participates in hydration. Islands Architecture breaks this by treating each interactive component as its own isolated unit with its own hydration boundary, state, and JS bundle. Static regions ship zero JavaScript — they're just HTML. The framework (Astro, Fresh, Marko) knows which components need hydration and only sends those.
 
-Islands inverts this. The server renders the full HTML, but the hydration step is surgically scoped. Each interactive component is treated as an independent unit with its own JavaScript bundle. The static content between them — headers, prose, layout — stays as inert HTML forever. No hydration, no JS execution.
+The key insight: islands don't share a JavaScript runtime. They're separate component trees that happen to coexist on the same page. Communication between them typically happens through the DOM, custom events, or a lightweight shared store — not through a unified component tree.
 
-The key insight: there's no shared component tree. Islands don't compose into a React root. They're parallel, isolated hydration units that happen to share a page.
+### Concrete Mental Model
 
-### Mental Model
+Think of the page as a newspaper layout. The article text, header, and footer are ink on paper — static, no interactivity needed. But you've glued in a few widgets: a live stock ticker, a comments section, a share button. Those widgets are self-contained; they have their own batteries. Islands Architecture formalizes this: the "ink" is server HTML, the "widgets" are hydrated islands.
 
-Think of a newspaper page. The article text is static — you don't need JavaScript to read it. But the "share" button, the comment widget, and the subscription paywall pop-up are interactive. Islands treats each of those as a self-contained application embedded in an otherwise static document. They boot independently, and the rest of the page doesn't care.
+### In Practice
 
-### Practical Application
+**Frontend:** Astro is the clearest implementation. You write `.astro` components that ship no JS by default, and opt specific components into hydration with directives like `client:load`, `client:visible`, or `client:idle`. `client:visible` is particularly powerful — it uses an IntersectionObserver to hydrate only when the island scrolls into view, which is essentially lazy hydration for free.
 
-**Frontend:** If you're building a content-heavy site — documentation, marketing pages, blogs — Islands dramatically reduces Time to Interactive. You write components normally (often in any framework), mark the interactive ones as islands, and the bundler handles scoping. Astro is the canonical implementation: `client:load`, `client:idle`, `client:visible` directives let you control *when* each island hydrates.
-
-**Fullstack:** Islands pairs naturally with edge rendering. You can stream the static shell from the edge instantly (low latency, no cold starts needed), then load only the JS for the interactive bits. This matters when you're building pages that are mostly data-display with a few interactive elements — think dashboards with static charts but a live filter widget, or e-commerce product pages where only the cart button needs hydration. You get the SEO and performance of fully static pages with the interactivity of a SPA, without shipping a monolithic JS bundle.
+**Fullstack:** Islands Architecture shines on content-heavy sites with sparse interactivity — marketing pages, documentation, blogs, e-commerce product pages. If your page is 80% static and 20% interactive, shipping a full SPA bundle is wasteful. The architecture lets you pay the JS cost proportionally.
 
 ### Where It Gets Nuanced
 
-The tradeoff is composition. When islands need to share state — say, a cart count in the header and a product page that updates it — you can't just lift state up through a React tree. You need a client-side store (nanostores, Zustand) or a custom event bus. This is the architectural cost: you trade bundle efficiency for the complexity of cross-island communication.
+The tradeoff is coordination cost. When islands need to communicate — a filter component updating a product grid — you lose the convenience of shared React state. You end up routing messages through `CustomEvent`, `nanostores`, or URL state. This is manageable but requires deliberate design.
+
+Also worth knowing: Islands Architecture isn't a replacement for SPAs. If your UI is inherently stateful and interconnected (a dashboard, a complex form flow), a unified component tree is the right call. Islands Architecture wins when the static/interactive ratio heavily favors static.
+
+**The senior differentiator in interviews:** knowing that Islands Architecture is fundamentally about hydration granularity, and being able to articulate when the coordination overhead of isolated islands is worth the JS bundle savings — versus when shared state needs make a unified hydration model the pragmatic choice.

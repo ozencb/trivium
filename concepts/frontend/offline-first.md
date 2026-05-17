@@ -1,38 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Offline-First Design
+**Offline-First Design** treats the local device as the primary source of truth and the server as a sync target — not a dependency. The shift matters because most apps fail silently on flaky connections; offline-first makes that failure mode a first-class design concern from day one.
 
-Offline-first means designing your app so it works *fully* without a network connection, treating connectivity as an enhancement rather than a prerequisite. The motivation: networks are unreliable by default — flaky mobile connections, tunnels, airplane mode — and building for offline gives you resilience that also makes online performance better.
+## Core Mechanism
 
-### The Core Idea
+The pattern has three moving parts: a local store, a sync engine, and a conflict resolution strategy.
 
-The mental shift is inversion of data flow. Traditional web apps do: *request → server → response → render*. Offline-first does: *read from local store → render → sync with server in background*. Every write goes to IndexedDB first, not the server first.
+Reads always hit local storage (IndexedDB, SQLite via WASM, etc.). Writes go to local storage first, immediately, and get queued for eventual sync. The Service Worker and Background Sync API handle delivering that queue when connectivity returns — even if the user has closed the tab.
 
-This means your UI never blocks on network. The user's actions are always immediately reflected locally, and a sync layer reconciles those changes with the server opportunistically.
+The piece most engineers underestimate is **conflict resolution**. When the server and client both have writes that happened during a disconnect, you need a strategy: last-write-wins (simple, lossy), CRDTs (complex, lossless), operational transforms (very complex, used in collaborative editors), or domain-specific merge logic. Most production apps use last-write-wins with a timestamp, which is usually fine but can silently clobber data.
 
-### The Mechanism
+## Mental Model
 
-Your Service Worker acts as a network proxy — intercepting fetch calls and returning cached responses when offline. IndexedDB serves as your local database, holding both cached server data and a queue of unsynced local mutations ("outbox"). Background Sync API fires a sync event when connectivity returns, at which point you drain the outbox and reconcile.
+Think of it like Git. You commit locally, work offline, then push and pull. Merges happen. Most of the time there's no conflict; occasionally there is and you resolve it. The server is your remote — authoritative but not required to operate.
 
-The hard part isn't the plumbing — it's **conflict resolution**. If two clients mutate the same record while offline, who wins on sync? Common strategies: last-write-wins (simple, lossy), operational transforms (complex, preserves intent), or CRDTs (converge automatically without coordination). Most apps use last-write-wins with a timestamp, which is wrong less often than it sounds.
+## Concrete Example
 
-### Concrete Example
+A field technician app for logging equipment inspections: the tech goes into a basement with no signal, fills out a form, hits submit. With a naive implementation: spinner, timeout, lost data. With offline-first: the write goes to IndexedDB immediately, the UI confirms success, and Background Sync delivers it to the server when the device resurfaces. The user never knew there was a problem.
 
-A note-taking app. User edits a note with no signal in a subway. Your app:
-1. Writes the edit to IndexedDB immediately
-2. Marks the record as "dirty" (unsynced)
-3. Registers a Background Sync tag
-4. Service Worker returns the IndexedDB version on any fetch for that note
+## Frontend vs. Fullstack Considerations
 
-When the phone reconnects, Background Sync fires, you POST the dirty records to the server, and clear the dirty flag. The user never noticed a network call.
+**Frontend:** The main work is around the sync queue (how do you track pending mutations?) and cache invalidation (how do you know when local data is stale?). Libraries like RxDB, PouchDB, or TanStack Query's persistence plugins take the heavy lifting off you. You still own the conflict strategy.
 
-### Practical Scenarios
+**Fullstack:** The server API needs to be idempotent and accept out-of-order writes — a sync flush from a reconnected client might replay mutations from two hours ago. You also need per-row timestamps or vector clocks if you want meaningful conflict detection. This cascades into your DB schema and API contract.
 
-**Frontend:** PWAs and mobile-web apps are the obvious target. But even dashboards benefit — serve stale cached data from IndexedDB while a fresh fetch runs in parallel (stale-while-revalidate). Tools like Workbox abstract most of the Service Worker boilerplate.
+## Where This Comes Up in Practice
 
-**Fullstack:** Your API needs to support idempotent mutations (so replayed outbox requests don't double-apply), and ideally expose vector clocks or `updated_at` timestamps for conflict detection. This usually means rethinking endpoints: instead of `PATCH /resource/:id`, you're processing an ordered log of intent-based operations.
+Reach for it when: users operate in unreliable network environments (field tools, mobile-heavy apps, developing markets), or when perceived performance is critical enough that you'd rather commit optimistically and reconcile later.
 
-The hardest engineering is making the sync layer invisible to users — progress indicators, optimistic UI, and graceful conflict surfacing when you can't silently merge.
+The senior signal in design discussions: knowing *not* to reach for it. For most CRUD admin tools with stable connectivity, offline-first adds conflict complexity with no real benefit. The ability to articulate that tradeoff — rather than treating offline-first as always better — is what distinguishes the thinking.

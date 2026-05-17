@@ -1,35 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Hash Tables**
+A hash table achieves O(1) average-case lookup by converting a key into an array index via a hash function, trading memory for time. The reason this matters: most data structures force you to choose between fast access (arrays, by index) or flexible keys (linked lists, trees) — hash tables give you both.
 
-A hash table gives you O(1) average-case lookups by trading memory for the ability to jump directly to where a value lives, instead of searching. It's the data structure behind almost every "instant" lookup you've ever implemented.
+## The Mechanism
 
-**The core mechanism**
+The core idea: given a key like `"user:42"`, a hash function deterministically maps it to an integer, which is then reduced to an array index via modulo (`hash(key) % capacity`). You store the value at that index. Lookup is the same operation — compute, mod, read. No traversal, no comparison chain.
 
-The trick is deterministic transformation: a hash function maps an arbitrary key to a fixed-size integer (the hash), which is then used as an index into an underlying array. Given the same key, you always get the same index — so insertion and retrieval follow the same path without any scanning.
+The hash function has one job: distribute keys uniformly across the array. A bad hash function that clusters keys in a few buckets turns your O(1) into O(n) because every lookup degrades into a linear scan within that bucket.
 
-The hard problem isn't hashing, it's **collisions**: two different keys producing the same index. The two dominant strategies:
+**Collisions are inevitable** (pigeonhole principle — infinite keys, finite slots), so every hash table needs a collision strategy:
 
-- **Chaining**: each array slot holds a linked list. Collisions just append to that list. O(1) average, O(n) worst case if everything hashes to one bucket.
-- **Open addressing**: on collision, probe neighboring slots (linear, quadratic, or Robin Hood probing). Cache-friendlier, but load factor matters more — tables typically resize at ~70% capacity to keep probe chains short.
+- **Chaining**: each slot holds a linked list. Collisions append to the list. Lookup walks the list. Works well with high load factors but has pointer overhead and cache unfriendliness.
+- **Open addressing** (linear/quadratic probing): on collision, probe adjacent slots. Better cache locality, but degrades faster as load factor increases. Deletion is tricky (can't just clear a slot — it breaks probe chains).
 
-The hash function itself matters more than people think. A poor function (like summing ASCII values of a string) clusters keys and degrades to O(n). Good ones — MurmurHash, xxHash, SipHash — distribute uniformly and are fast to compute.
+The **load factor** (elements / capacity) is the key invariant. Most implementations resize (rehash everything) when load exceeds ~0.7 to preserve O(1) amortized behavior.
 
-**Mental model**
+## Mental Model
 
-Think of a coat check: you hand over your coat, get a numbered ticket. Retrieval is O(1) because the ticket tells you exactly which hook to walk to. Collisions are like two people getting the same number — the attendant now has to check both coats on that hook.
+Imagine a library with 1000 shelves. Instead of cataloguing books alphabetically and searching linearly, a librarian applies a formula to each title that directly outputs a shelf number. Finding a book is one step: apply the formula, go to that shelf. The catalog *is* the formula. The problem: two books might hash to shelf 47 — that's a collision.
 
-**Practical connections**
+## Practical Scenarios
 
-*Backend*: Every in-process cache (Redis internally, your `Map<string, T>` in Node) is a hash table. Database query plan caches, session stores, rate-limiter state — all hash tables. Understanding load factor and rehashing explains why Redis can spike CPU during key expiry or why a HashMap pre-sized to expected capacity avoids costly resizes under load.
+**Backend**: Redis keys, database index hash partitioning, routing tables in load balancers. When you do `O(1)` session token lookup in-memory rather than a DB query, that's a hash table. Collision strategy affects memory under pathological key distributions — adversarial inputs can force worst-case behavior (see: hash-flooding DoS attacks on PHP/Ruby around 2011).
 
-*Frontend*: JavaScript objects and `Map` are hash tables. When you reach for `Map` over an object for frequent add/delete cycles, you're making a conscious hash table tradeoff — `Map` maintains insertion order and handles non-string keys without prototype pollution risks.
+**Frontend**: JavaScript objects and `Map` are hash tables. React's reconciler uses key-based hashing to diff component trees efficiently. Webpack's module registry is hash-keyed.
 
-*Fullstack*: HTTP routing in most frameworks resolves route handlers via a hash table keyed on method + path pattern. Content-addressable storage (git objects, asset fingerprinting, CDN cache keys) uses hashes as keys. Understanding this makes it obvious why two files with identical content produce the same cache key.
+**Fullstack**: Content-addressable storage (Git objects, CDN cache keys) hashes content to a key — the hash *is* the address. This requires collision resistance at a cryptographic level, which is a different constraint than performance hashing.
 
-**Why this unlocks what's next**
-
-Consistent hashing extends this to distributed systems — when nodes join/leave, you want minimal key remapping, which requires rethinking how you assign keys to buckets. Bloom filters borrow the multi-hash idea to answer "definitely not in set" with zero false negatives using far less memory than storing actual keys. Both are direct consequences of pushing hash table mechanics into new constraints.
+Understanding hash tables unlocks consistent hashing (how to resize without rehashing everything — critical for distributed caches) and bloom filters (probabilistic set membership using multiple hash functions).

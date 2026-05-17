@@ -1,46 +1,56 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## CSS Modules
+**CSS Modules** solves the global namespace problem in CSS by making class names locally scoped by default — you write `.button` and the build tool transforms it to something like `.button_3xk9a` so it can never collide with another component's `.button`.
 
-CSS has always had a global scope problem: any class name you define in one file can silently collide with one in another. CSS Modules solves this at build time by making class names local by default.
+## The Core Mechanism
 
-**Core mechanism**
+CSS Modules is not a runtime library — it's a build-time convention. When you import a CSS file as a module, the bundler (webpack, Vite, etc.) does two things simultaneously:
 
-When you write a `.module.css` file, your bundler (webpack, Vite, Next.js, etc.) transforms each class name into a unique hash during compilation. `.button` becomes `.Button_button__3k9as` in the output. That mapping is exposed as a JavaScript object you import directly:
+1. Rewrites every class selector in the stylesheet with a generated hash suffix
+2. Exports a JavaScript object mapping your original class names to the hashed ones
 
 ```css
 /* Button.module.css */
-.button {
-  background: blue;
-  color: white;
-}
+.root { padding: 8px 16px; }
+.primary { background: blue; }
 ```
 
-```jsx
+```js
 import styles from './Button.module.css';
+// styles = { root: 'Button_root_3xk9a', primary: 'Button_primary_7mz2b' }
 
-export function Button({ children }) {
-  return <button className={styles.button}>{children}</button>;
+<button className={styles.root + ' ' + styles.primary}>Click</button>
+```
+
+The emitted CSS in your bundle contains the hashed names. Nothing in the browser knows about modules — it's all resolved at build time.
+
+## What This Actually Eliminates
+
+Without CSS Modules you have three bad options: global names that collide, BEM naming conventions that require discipline to maintain, or CSS-in-JS which pays runtime cost. CSS Modules gives you component-scoped styles with zero runtime overhead and no naming convention overhead. The hash is deterministic from the file path and class name, so builds are reproducible.
+
+The `composes` keyword is the underused power feature — it lets you compose classes across files without copy-pasting:
+
+```css
+.primaryButton {
+  composes: base from './shared.module.css';
+  background: blue;
 }
 ```
 
-You write simple, readable names in source. The build step makes them unique. Two components can both define `.button` in their own module files and they'll never interfere.
+## Practical Scenarios
 
-**How it compares to alternatives**
+**Frontend (React/Vue component libraries):** The canonical use case. Each component owns its styles, you can refactor or delete a component without hunting for orphaned CSS, and you can name things `.wrapper`, `.title`, `.icon` in every component without thought.
 
-BEM solves collisions through naming discipline — `.ComponentName__element--modifier`. CSS Modules solves it structurally, so naming conventions become optional rather than load-bearing. You get flat, readable class names without trusting everyone on the team to follow a convention.
+**Fullstack (Next.js, Remix):** Both support CSS Modules out of the box. In Next.js specifically, the `.module.css` convention is built into the framework — no configuration needed. You get per-page and per-component scoping with zero setup cost.
 
-Versus CSS-in-JS (styled-components, emotion): modules keep CSS as real CSS files. No runtime parsing, no JavaScript overhead, full access to CSS tooling — linters, preprocessors, editor support. The tradeoff is that dynamic styles based on props require conditionally composing class names rather than interpolating values directly.
+## Common Pitfalls
 
-**Practical scenarios**
+- **Global styles still need a global stylesheet.** CSS Modules doesn't cover `body`, `a`, `:root` — you need a separate unscoped file for those.
+- **`:global()` escape hatch is easy to abuse.** You can escape scoping with `:global(.some-class)`, which is useful for targeting third-party component classes but tempting to overuse.
+- **Dynamic class composition gets verbose.** Conditionally joining multiple scoped classes pushes people toward `clsx` or `classnames` libraries — this is normal and expected.
+- **The hashes make debugging harder** unless you configure your bundler to include the original name in development (most do by default).
 
-*Frontend (component library/design system):* Team members can work on separate components in parallel without namespace coordination. A `.card`, `.badge`, or `.container` class in one component file doesn't leak anywhere else. Refactoring a component's styles is fully contained.
-
-*Fullstack (Next.js, Remix):* CSS Modules are the default recommendation in Next.js. Because the build step can statically analyze which modules each page uses, the server only sends the CSS actually needed for that page — no unused styles shipped to the client. It's also SSR-safe since there's no runtime style injection.
-
-**One gotcha**
-
-Global styles — resets, typography scales, utility classes — don't belong in modules. The usual pattern is a single global CSS file imported once at the app root, with modules handling everything component-specific.
+Reach for CSS Modules when you want deterministic, zero-runtime scoping without adopting a CSS-in-JS solution. It's the lowest-friction option for component-based architectures.

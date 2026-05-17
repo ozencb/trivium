@@ -1,44 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Microtasks vs Macrotasks
 
-JavaScript's event loop doesn't treat all async callbacks equally — it maintains two separate queues with different priority, and the order they drain determines the execution sequence you observe in your code.
+The JavaScript event loop doesn't treat all async callbacks equally — it runs an entire category of callbacks (microtasks) to completion before touching the next scheduled unit of work (macrotask). This two-tier queue is why `Promise.then` and `setTimeout(() => {}, 0)` don't interleave the way intuition suggests.
 
-### The Core Mechanism
+**The mechanism**
 
-The event loop works like this: pick one **macrotask**, run it to completion, then drain the **entire microtask queue** before touching the next macrotask. Not one microtask — all of them, including any microtasks spawned by microtasks.
+The event loop processes one macrotask per iteration — a script execution, a `setTimeout` callback, a `setInterval` tick, an I/O event. After each macrotask completes, before the next macrotask is dequeued, the engine drains the entire microtask queue. Every `.then`, `.catch`, `.finally`, `queueMicrotask()`, and `MutationObserver` callback is a microtask. Crucially, if processing a microtask enqueues another microtask, *that* runs before any macrotask. The microtask queue must reach empty before the loop moves on.
 
-**Macrotasks** (also called "tasks"): `setTimeout`, `setInterval`, `setImmediate` (Node), I/O callbacks, UI rendering events.
+**Concrete model**
 
-**Microtasks**: Promise callbacks (`.then`/`.catch`/`.finally`), `queueMicrotask()`, `MutationObserver`, `process.nextTick` (Node, technically its own queue but conceptually similar).
-
-### Concrete Example
+Think of it as a main counter with a side queue that must hit zero before the next customer is served. The macrotask is the customer; the microtasks are the receipts, confirmations, and follow-ups generated while serving them — all handled before the next customer steps forward.
 
 ```js
 console.log('start');
 
-setTimeout(() => console.log('macro'), 0);
+setTimeout(() => console.log('setTimeout'), 0);
 
-Promise.resolve().then(() => console.log('micro'));
+Promise.resolve()
+  .then(() => console.log('p1'))
+  .then(() => console.log('p2'));
 
 console.log('end');
+// Output: start → end → p1 → p2 → setTimeout
 ```
 
-Output: `start → end → micro → macro`
+`p1` and `p2` both run before `setTimeout` despite the zero delay, because the microtask queue drains fully between macrotasks.
 
-Even though both the `setTimeout` and the Promise are "already resolved" by the time the synchronous code finishes, the microtask queue drains first. The 0ms delay on `setTimeout` doesn't matter — macro always yields to micros.
+**Frontend implications**
 
-### Why It Matters in Practice
+React's `setState` batching (pre-React 18) and DOM `MutationObserver` callbacks are microtasks. If you chain multiple promise resolutions before yielding to the browser's render cycle (which happens between macrotasks), you can do a burst of state mutations without intermediate repaints — intentional and performant. But it also means a runaway microtask chain (promises chaining infinitely) will starve the render loop and freeze the UI, since the browser never gets to its next macrotask.
 
-**Frontend:** You've probably written code that assumes a DOM update has settled before running follow-up logic. `MutationObserver` callbacks are microtasks, so they fire before the browser gets a chance to repaint (which is a macrotask). If you need to batch DOM reads after several mutations, you're already depending on this behavior. It also explains why `await`-ing a resolved Promise still lets other microtasks ahead of a `setTimeout` — `async/await` desugars to Promise chains, which are microtasks.
+**Fullstack / Node.js implications**
 
-**Fullstack (Node.js):** In high-throughput servers, if you recursively queue microtasks (e.g., a `.then` that returns another Promise that schedules another `.then`...), you can starve I/O callbacks, which are macrotasks. This is a real production footgun — an infinite microtask chain blocks all I/O until it unwinds. Node's `setImmediate` exists partly to explicitly defer work to the macrotask queue and let I/O events breathe.
+Node has the same two-tier model, plus a third tier: `process.nextTick` callbacks drain *before* the native Promise microtask queue, making it even higher priority. When you're debugging why an I/O callback fires later than expected relative to a `.then` chain, you're almost always looking at this ordering. It matters for stream handling, database query callbacks, and any place you mix `util.promisify`-wrapped functions with legacy callback APIs.
 
-### Mental Model
+**The invariant to internalize**
 
-Think of the event loop as a chef. Each order (macrotask) gets cooked one at a time. But every order comes with a "while you're at it" sticky note (microtask). The chef finishes all the sticky notes from the current order before pulling the next ticket — even if new sticky notes appear while reading the originals.
-
-The practical upshot: microtasks are the right tool for work that must happen "immediately after this, but before anything else gets scheduled." Macrotasks are for genuinely deferring work to a future loop iteration.
+Microtasks see the world in a consistent state — no I/O, no timers, no renders interrupt them mid-queue. Macrotasks don't have that guarantee. Anything you need to happen atomically relative to the current call stack should be scheduled as a microtask; anything that can tolerate being deferred past I/O or rendering belongs in a macrotask.

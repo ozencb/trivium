@@ -1,0 +1,17 @@
+id: vector-databases
+title: Vector Databases
+category:
+  - Databases
+  - AI/ML
+roles:
+  - backend
+  - data
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - database-indexing
+  - full-text-search
+dependents: []
+brief: Databases that index high-dimensional embedding vectors for approximate nearest-neighbor search, enabling semantic similarity retrieval that underpins RAG pipelines and recommendation systems.

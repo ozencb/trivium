@@ -1,48 +1,51 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Font Loading Strategies
 
-Fonts are a late-discovered, potentially render-blocking resource — by default, the browser won't display text until the font file arrives, causing either invisible text or jarring layout shifts. Font loading strategies are the set of tools for controlling that tradeoff.
+Browsers have to decide what to do when your CSS references a web font that hasn't loaded yet: show invisible text while waiting (FOIT), show a fallback font and swap later (FOUT), or something in between. Font loading strategies are how you control that decision explicitly rather than accepting browser defaults.
 
-### The core problem
+### The core mechanism
 
-The browser discovers fonts *late* in the Critical Rendering Path. It must parse HTML, build the CSSOM, find `@font-face` declarations, then determine which fonts are actually used by visible elements — only *then* does it request them. This late discovery means even a fast network connection produces a noticeable delay.
+When the browser hits a `@font-face` rule with an external `src`, it starts a network request. Meanwhile, any text element using that font enters a "block period" — the browser holds rendering of that text. The `font-display` descriptor inside `@font-face` controls two variables: how long to block, and whether/when to swap to the real font once it loads.
 
-Two failure modes emerge from this:
-
-- **FOIT** (Flash of Invisible Text): text is hidden while the font loads
-- **FOUT** (Flash of Unstyled Text): text renders in a fallback font, then reflows when the custom font arrives
-
-### The main controls
-
-**`font-display`** (in `@font-face`) is the primary lever. Think of it as setting a timeout policy:
-
-| Value | Block period | Swap period | Behavior |
-|---|---|---|---|
-| `block` | ~3s | infinite | FOIT risk — hides text then swaps |
-| `swap` | none | infinite | FOUT guaranteed — shows fallback immediately |
-| `fallback` | ~100ms | ~3s | brief invisible, swap if font arrives quickly |
-| `optional` | ~100ms | none | browser decides based on network — no layout shift |
-
-`optional` is interesting: on slow connections the browser just uses the fallback and *never* swaps. Good for non-critical decorative fonts. Bad if the font carries meaning.
-
-**Preloading** solves the late-discovery problem directly:
-
-```html
-<link rel="preload" as="font" href="/fonts/inter.woff2" type="font/woff2" crossorigin>
+```css
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/inter.woff2') format('woff2');
+  font-display: swap;
+}
 ```
 
-This pushes font fetching to the top of the waterfall — before CSSOM is even built — at the cost of a higher-priority network request that might compete with more critical resources.
+The five `font-display` values map to different block/swap windows:
+- `block` — long block period, indefinite swap (classic FOIT)
+- `swap` — zero block, indefinite swap (FOUT, but text always visible)
+- `fallback` — 100ms block, 3s swap window, then sticks with fallback
+- `optional` — 100ms block, no swap (browser uses the font only if it arrives in time; good for non-critical fonts)
+- `auto` — browser decides (usually `block`)
 
-**Font subsetting** reduces file size by stripping unused glyphs. Shipping only Latin characters instead of full Unicode can cut a font from 200KB to 20KB.
+`swap` is the most common recommendation, but `optional` is underused — it's ideal for decorative fonts where fallback is acceptable, and it also lets the browser skip the download entirely on slow connections.
 
-### Practical scenarios
+### Preloading
 
-**Frontend:** On a content-heavy site (blog, docs), `font-display: swap` with a carefully matched fallback stack (`font-family: 'Inter', system-ui, sans-serif`) minimizes FOIT while keeping layout shift acceptable. Pair it with a preload hint for the weight used above the fold.
+`font-display: swap` still means the font arrives late. To close that window, preload the font so it's in-flight before the stylesheet even parses:
 
-**Fullstack:** Next.js `next/font` handles this automatically — it self-hosts Google Fonts at build time, injects the right `font-display` value, generates preload hints per-route, and subsets to only characters actually present in your content. The lesson: what used to require manual coordination across CSS, HTML `<head>`, and CDN config is now a build-time concern. When you're implementing SSR from scratch, you'd replicate this by generating route-aware preload hints in your `<head>` template.
+```html
+<link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+```
 
-The general heuristic: preload the font used for your largest contentful text, use `font-display: fallback` or `swap`, and invest in a fallback font stack that minimizes visual shift when the swap happens.
+The `crossorigin` attribute is required even for same-origin fonts — browsers make font requests in anonymous CORS mode.
+
+### Subsetting
+
+Font files are large. A full Latin typeface can be 200–400KB. Subsetting strips out glyphs you don't use — if your product is English-only, you don't need Cyrillic or Greek character ranges. Tools like `pyftsubset` or services like Google Fonts' `text=` parameter let you ship only the characters you actually render, often reducing file size by 70–90%.
+
+### Where this matters in practice
+
+**Frontend:** Landing pages and marketing sites are where FOIT/FOUT hurts most — content is what users came to read, and invisible or jumping text is jarring. Use `swap` + preload for your primary body font, `optional` for display/headline fonts.
+
+**Fullstack:** If you're server-rendering, the HTML is ready immediately but fonts still arrive async. This makes the FOIT/FOUT problem *more* visible, not less — the user sees actual content sooner, which makes the flash more obvious. SSR doesn't fix this; you still need explicit font loading strategy.
+
+**Common pitfall:** Preloading every font variant. If you preload bold and italic as well as regular, you've added 3 high-priority requests. Preload only the critical path font (usually your body regular weight) and let others load normally.

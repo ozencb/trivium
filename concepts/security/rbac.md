@@ -1,32 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Role-Based Access Control (RBAC)
 
-RBAC is a permission model where access is granted to **roles**, not directly to users — users then inherit permissions by being assigned to roles. It exists because at scale, managing per-user permissions becomes unworkable; roles let you express access policy at a human-organizational level.
+RBAC decouples permissions from users by introducing roles as an intermediary — users are assigned roles, and roles carry permissions. The key insight is that you're managing policy at the role level, so when a permission changes, you update one role and every user in it gets the change automatically.
 
-### Core Mechanism
+### The Core Mechanism
 
-The model has three primitives: **users**, **roles**, and **permissions**. Permissions are atomic capabilities (`invoice:read`, `invoice:write`, `user:delete`). Roles are named collections of permissions (`billing-admin`, `support-agent`, `read-only`). Users are assigned roles, not permissions directly.
-
-The key insight is that roles model **job functions**, not individuals. When someone changes jobs, you change their role assignment — not 47 individual permission toggles. When compliance requires auditing who can delete data, you inspect a role definition, not a per-user matrix.
-
-Most production implementations add one more concept: **role hierarchy**. A `super-admin` role implicitly includes everything `admin` includes, which includes everything `viewer` includes. This lets you express inheritance rather than duplicating permission lists.
+The data model is three entities and two join tables: `users`, `roles`, `permissions`, with `user_roles` and `role_permissions` bridging them. A permission check becomes: "does any role assigned to this user have permission X?" At enforcement time, you either compute this on the fly (DB join) or materialize it into a token — which is exactly what OAuth 2.0's `scope` field or JWT `roles` claim does. The authorization server bakes the role set into the token at issuance; your resource servers don't need to hit a database on every request.
 
 ### Concrete Mental Model
 
-Think of it like an apartment building's key system. The building doesn't give each tenant a unique custom key cut per door they're allowed to open. Instead, they issue keycards by type: "resident" opens lobby + elevators + their floor; "maintenance" opens utility rooms + all floors; "management" opens everything. Adding a new tenant = assign a keycard type. The doors don't change. The tenant doesn't change. Just the mapping.
+Think of a hospital: instead of granting Dr. Smith access to prescriptions, billing records, and lab results individually, you assign the `attending-physician` role. When regulations change what attendings can see, you update the role once. Contrast this with assigning permissions directly to each of 500 physicians — that's the mess RBAC avoids.
+
+### Where It Gets Tricky
+
+Role explosion is the classic failure mode. Systems start with `admin`, `editor`, `viewer`, then accumulate `regional-admin`, `read-only-billing`, `temp-contractor` until nobody knows what a role actually grants. The other pitfall is treating roles as groups (a social concept) rather than permission bundles (a policy concept) — they often diverge and cause confusion.
+
+Privilege creep is subtler: users accumulate roles over time without pruning, especially after job changes. An RBAC system without role revocation audits isn't actually enforcing least privilege.
 
 ### Practical Scenarios
 
-**Backend:** Your API middleware checks `req.user.roles` against a required role before hitting the route handler. Easier pattern: attach resolved permissions to the request context at auth time so downstream code checks `can('invoice:write')` — this decouples routes from knowing role names, making refactors cheaper.
+**Backend**: Middleware checks JWT claims for a role, gates the route. Simple, stateless, fast. Problem arises when you need "user can edit *their own* posts but not others'" — that's row-level, not role-level, and RBAC can't express it cleanly without hacking in special roles.
 
-**Fullstack:** The frontend uses roles to conditionally render UI (hide the "Delete User" button for `support-agent`), but never trusts this as security — it's UX only. The real enforcement lives in the API. A common mistake is diverging these two, leading to confusing states where buttons disappear but API calls still succeed (or vice versa).
+**Fullstack**: Frontend conditionally renders UI based on roles from the token. Common mistake: treating this as a security boundary. It's UX, not enforcement — the API must still validate on every request.
 
-**SRE:** RBAC governs infrastructure access. Cloud IAM (AWS, GCP) is RBAC-flavored: service accounts get roles that bundle permissions to specific resource types. When on-call needs emergency write access to production, they're temporarily assigned an elevated role — auditable, time-bounded, reversible — rather than getting raw credentials.
+**SRE**: RBAC governs cloud IAM (AWS IAM roles, GCP service accounts). The discipline here is assuming roles at runtime (e.g., EC2 instance profile) rather than embedding static credentials — same RBAC concept applied to service identity.
 
-### Why This Matters for What Comes Next
+### Why This Matters in Interviews/Design
 
-RBAC works until your access rules depend on **context** beyond identity: "can edit this document, but only if they own it" or "can approve requests under $10k but not over." That's where RBAC hits its ceiling, and Attribute-Based Access Control (ABAC) picks up — it adds the resource's own attributes and environmental context into the decision.
+The senior move is knowing when RBAC breaks down. When you hear "access depends on the resource's attributes, the user's department, time of day" — that's the signal to reach for ABAC. RBAC is a prerequisite mental model for ABAC: ABAC generalizes roles into arbitrary attributes and policies evaluated at request time, trading simplicity for expressiveness.

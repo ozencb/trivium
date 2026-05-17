@@ -1,17 +1,15 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Performance Observer API
 
-The Performance Observer API is a push-based interface for subscribing to browser performance timeline entries as they're emitted, rather than polling a static snapshot. It's the foundation under everything from Core Web Vitals measurement to custom RUM instrumentation.
+The browser's performance timeline is a buffer of entries — navigation timing, resource loads, paint events, long tasks — and without `PerformanceObserver`, your only option is polling `performance.getEntries()` or hoping you checked the buffer before it rolled over. `PerformanceObserver` gives you a push-based subscription: the browser calls your callback as entries land, no polling, no missed entries.
 
-### Core Mechanism
+**Core mechanism**
 
-The browser maintains an internal **performance timeline** — a growing log of typed entries produced by the rendering pipeline, network stack, and JavaScript engine. These include resource loads, paint events, long tasks, layout shifts, and more. Before PerformanceObserver, you could only pull from this log synchronously via `performance.getEntriesByType()`. The problem: you had to know when to ask, and you'd miss entries that occurred before your code ran.
-
-PerformanceObserver flips this to a subscriber model. You declare which entry types you care about, register a callback, and the browser invokes it whenever matching entries land in the timeline:
+You create an observer with a callback, then call `.observe({ type: '...', buffered: true })`. The `buffered: true` flag is critical — it replays entries that already occurred before your observer registered, which matters because paint and navigation events often fire during or just after page load, before your JS has a chance to subscribe. The callback receives a `PerformanceObserverEntryList`, not a single entry, because the browser may batch multiple entries per callback invocation.
 
 ```js
 const observer = new PerformanceObserver((list) => {
@@ -20,23 +18,21 @@ const observer = new PerformanceObserver((list) => {
   }
 });
 
-observer.observe({ type: 'largest-contentful-paint', buffered: true });
+observer.observe({ type: 'longtask', buffered: true });
 ```
 
-The `buffered: true` flag is non-obvious but critical: the browser buffers entries from before your observer registered, so you don't miss events that fired during early page load before your script executed.
+Entry types you'll actually use: `navigation`, `resource`, `paint` (FP/FCP), `largest-contentful-paint`, `longtask`, `layout-shift`, `first-input`. Each type exposes a different entry shape — `PerformanceLongTaskEntry` has a `attribution` array pointing at frames/scripts, `LayoutShiftEntry` has a `value` (the CLS contribution) and `hadRecentInput`.
 
-### Mental Model
+**The mental model**
 
-Think of it like a database trigger vs. a polling query. `performance.getEntriesByType()` is `SELECT * FROM timeline WHERE type = 'paint'` run on demand. PerformanceObserver is `AFTER INSERT ON timeline WHERE type = 'paint' CALL myCallback()`. The browser does the work; you react.
+Think of it like a `MutationObserver` or `IntersectionObserver` — same pattern. You describe what you care about, the browser does the bookkeeping, you react to events. The alternative (polling `performance.now()` and diffing entries) is both unreliable and expensive.
 
-### Practical Scenarios
+**Where it matters in practice**
 
-**Frontend:** This is how `web-vitals.js` works under the hood. LCP uses the `largest-contentful-paint` entry type, CLS uses `layout-shift`, INP uses `event`. If you've ever integrated that library and wondered why it seems to "just know" when things happen — it's registering observers during module initialization, with `buffered: true`, so nothing slips through.
+*Frontend:* This is the foundation of real user monitoring (RUM). Libraries like web-vitals.js are thin wrappers around `PerformanceObserver`. If you're instrumenting LCP, CLS, or FID/INP yourself rather than delegating to a library, you're writing `PerformanceObserver` subscriptions.
 
-**Fullstack:** Instead of batching perf data at page unload (which is lossy — unload fires inconsistently on mobile), you can beacon individual entries to your analytics endpoint as they occur. A single `resource` observer lets you track third-party script load times in real time and fire alerts if a CDN degrades mid-session.
+*Fullstack:* You probably aren't running this server-side, but you're likely consuming its output — RUM data sent via `navigator.sendBeacon` to your analytics endpoint. Understanding what each entry type actually measures (and its gotchas, like LCP being reportable multiple times as the largest candidate changes) helps you interpret that data correctly.
 
-**SRE:** Most RUM vendors (Datadog, Sentry, Dynatrace) are thin wrappers around PerformanceObserver. Knowing the raw API lets you audit what they're actually capturing, explain discrepancies between their dashboards and your own metrics, or add custom `performance.mark()` / `performance.measure()` instrumentation that feeds into your existing pipeline without a second SDK.
+*SRE:* Long task detection is the practical path to diagnosing main-thread jank without a profiler attached. Logging entries with `attribution` in production gives you signal on which scripts are blocking — something synthetic monitoring often misses.
 
-### Why It Matters Going Forward
-
-Each of the APIs this unlocks — Paint Timing, Long Tasks, Resource Timing — are just specific entry types surfaced through this same observer interface. Once you understand the subscription model and the `buffered` flag behavior, those APIs are mostly just documentation lookups for which entry type to observe.
+**Common pitfall:** `largest-contentful-paint` and `layout-shift` entries stop being dispatched once the user interacts with the page. If you're accumulating CLS, you need to finalize your score on `visibilitychange` or `pagehide`, not just sum entries indefinitely.

@@ -1,48 +1,47 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Resource Timing API
 
-The Resource Timing API exposes per-resource network timing breakdowns for everything a page fetches — scripts, stylesheets, images, XHR/fetch calls. It's the programmatic equivalent of DevTools' waterfall chart, available at runtime.
+The Resource Timing API gives you precise, phase-by-phase timing data for every sub-resource your page loads—scripts, stylesheets, images, API calls—without touching those requests in code. Where Performance Observer tells you *that* something happened, Resource Timing tells you *where* the time went.
 
-### Core mechanism
+### The Core Mechanism
 
-Every loaded resource generates a `PerformanceResourceTiming` entry, which extends `PerformanceEntry`. Each entry records the full lifecycle of a request as high-resolution timestamps:
-
-```
-startTime → fetchStart → domainLookupStart/End → connectStart → secureConnectionStart
-→ connectEnd → requestStart → responseStart → responseEnd
-```
-
-`responseStart - requestStart` is effectively client-side TTFB. `responseEnd - responseStart` is download time. The gap between `startTime` and `fetchStart` captures redirect time.
-
-You access these via `PerformanceObserver` (preferred, streaming) or `performance.getEntriesByType('resource')` (snapshot):
+Every resource fetch goes through a fixed sequence of phases: redirect → DNS lookup → TCP connection → TLS negotiation → request sent → first byte received → transfer complete. The browser internally timestamps each transition, and the Resource Timing API exposes these as `PerformanceResourceTiming` entries on the performance timeline.
 
 ```js
 const observer = new PerformanceObserver((list) => {
   for (const entry of list.getEntries()) {
-    if (entry.initiatorType === 'fetch') {
-      console.log(entry.name, entry.responseStart - entry.requestStart); // TTFB
-    }
+    const dns = entry.domainLookupEnd - entry.domainLookupStart;
+    const tcp = entry.connectEnd - entry.connectStart;
+    const tls = entry.secureConnectionStart > 0
+      ? entry.connectEnd - entry.secureConnectionStart
+      : 0;
+    const ttfb = entry.responseStart - entry.requestStart;
+    const transfer = entry.responseEnd - entry.responseStart;
+
+    console.log(entry.name, { dns, tcp, tls, ttfb, transfer });
   }
 });
 observer.observe({ type: 'resource', buffered: true });
 ```
 
-`buffered: true` catches entries that fired before the observer was registered — important for resources loaded during parse.
+One critical detail: cross-origin resources will have most timing fields zeroed out unless the server sends `Timing-Allow-Origin: *` (or your origin specifically). Without that header, you get `fetchStart` and `responseEnd` but nothing in between—you see duration, not breakdown.
 
-Each entry also exposes `transferSize` (bytes over the wire, 0 if served from cache), `encodedBodySize`, and `decodedBodySize`, letting you distinguish cache hits from actual transfers.
+### Practical Scenarios
 
-One gotcha: cross-origin resources return zeroed-out timing fields unless the server sends `Timing-Allow-Origin: *` (or your specific origin). You can detect this — `transferSize` will be 0 and timing fields will be 0 even for non-cached requests.
+**Frontend:** You're debugging why your CDN-served JS bundle feels slow on first load for users in certain regions. Network DevTools shows 800ms, but you can't reproduce it locally. Ship Resource Timing collection in your RUM (Real User Monitoring) setup, and you find DNS is eating 400ms for users on mobile carriers—CDN nameserver propagation issue, not your bundle size.
 
-### Practical scenarios
+**Fullstack:** Your internal API calls from the browser take 200ms average, but p95 is 900ms. Resource Timing reveals the outliers have a 600ms TCP handshake—they're hitting a cold server instance that hasn't kept connections warm. You adjust your load balancer's connection draining settings.
 
-**Frontend:** Instrument your Real User Monitoring (RUM) pipeline. Instead of guessing whether your CDN is degraded for users in a specific region, you collect `domainLookupEnd - domainLookupStart` and `connectEnd - connectStart` in the field. Slow DNS + fast connect suggests a DNS issue; fast DNS + slow connect suggests routing or TLS overhead.
+**SRE:** After a deployment, page load regressions appear in your RUM dashboards. Resource Timing entries show TLS handshake time spiked—the new cert rollout included a longer chain. You catch it before most users notice because you're alerting on phase-level percentiles, not just total duration.
 
-**Fullstack:** Your API might respond in 80ms server-side, but users report slowness. Resource Timing reveals the gap — maybe `requestStart - connectEnd` is high (connection reuse isn't happening), or `responseEnd - responseStart` is the culprit (slow response body streaming). Neither shows up in your server metrics.
+### What to Watch For
 
-**SRE:** Aggregate `responseStart - fetchStart` (total wait time excluding download) across your fleet to build client-perceived latency percentiles for each resource. This catches CDN or edge proxy issues that never surface in origin server logs because the request never reaches origin.
+- `transferSize` is 0 for cache hits (not an error—means it came from disk/memory cache)
+- `decodedBodySize` vs `encodedBodySize` lets you verify compression is actually being applied
+- Waterfall gaps between `responseStart` and `requestStart` often reveal queueing, not network latency
 
-The key distinction from server-side APM: this measures what the browser actually experienced, including network topology, ISP routing, and protocol negotiation — all invisible from your backend.
+The API shines when you stop treating network time as a black box and start attributing it to specific infrastructure layers.

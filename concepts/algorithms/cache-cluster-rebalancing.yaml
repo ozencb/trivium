@@ -1,0 +1,14 @@
+id: cache-cluster-rebalancing
+title: Cache Cluster Rebalancing
+category:
+  - Algorithms
+  - Distributed Systems
+roles:
+  - backend
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - consistent-hashing
+dependents: []
+brief: The process of redistributing cached data across a changing pool of nodes while minimizing remapped keys, solved by consistent hashing to bound the number of misses on topology change.

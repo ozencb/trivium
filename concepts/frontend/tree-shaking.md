@@ -1,44 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Tree shaking is dead code elimination at the module level — bundlers (Rollup, esbuild, Webpack, Vite) statically analyze your import graph and drop any exports that nothing actually uses. The result is a smaller bundle without you manually curating what gets included.
+Tree shaking is dead-code elimination performed at bundle time: your bundler statically analyzes which exports are actually imported across your codebase and drops everything else before writing the final output. The payoff is smaller bundles without you manually curating what gets included.
 
-## The Core Mechanism
+**The core mechanism**
 
-This only works because ES Modules have **static** import/export syntax. When the bundler parses your code, it can build a complete dependency graph before executing anything — every `import` is at the top level, never inside a conditional or a function call. CommonJS `require()` is dynamic and can appear anywhere, so bundlers can't safely eliminate anything without running the code first.
+It only works with ES modules (`import`/`export`) because those are *statically analyzable* — the module graph is fixed at parse time, not runtime. CommonJS (`require()`) is dynamic, so bundlers can't safely trace it. When you `import { debounce } from 'lodash-es'`, the bundler sees exactly which export you need and can prove the rest are unreachable. With `import _ from 'lodash'` (CJS), it has to include everything.
 
-The bundler starts from your entry point, follows every `import`, and marks which exported bindings are actually referenced. Anything unreferenced gets dropped, along with any code that's only reachable from those dropped exports.
+The bundler builds a dependency graph starting from your entry point, marks every reachable export as "live," and discards the rest. This is why it's called tree shaking — you're shaking the tree and letting dead leaves fall.
+
+**The sideEffect problem**
+
+The hard part: bundlers have to be conservative. If a module has side effects (modifies globals, patches prototypes, registers something), removing it could break behavior. Bundlers default to assuming any module *might* have side effects unless told otherwise. Libraries opt out via `"sideEffects": false` in `package.json`, or list specific files that do have them. If a library doesn't set this flag, you'll carry dead code even with tree shaking enabled.
+
+**Concrete example**
 
 ```js
 // utils.js
-export function used() { /* ... */ }
-export function neverImported() { /* ... */ }
+export const add = (a, b) => a + b;
+export const multiply = (a, b) => a * b; // never imported anywhere
 
 // main.js
-import { used } from './utils'
-used()
+import { add } from './utils.js';
 ```
 
-`neverImported` never appears in an `import` statement, so it doesn't ship.
+`multiply` never appears in the import graph → bundler excludes it. Simple case. The tricky version: you import a class that internally uses `multiply` in a method you never call. Bundlers can't always prune at method-level granularity — that's why smaller, focused exports beat large utility classes for tree shaking.
 
-## The Side Effects Problem
+**Practical patterns**
 
-Bundlers can't blindly drop modules, because some code runs on import purely for its effects (polyfills, global registrations, CSS). A bundler that drops `import './analytics'` because nothing uses its exports would break your app silently.
+*Frontend:* Icon libraries and component libraries are the most impactful targets. `import { IconCamera } from '@heroicons/react'` should shake off 300 other icons. If the library isn't ESM or lacks `sideEffects: false`, check if they have a modular entry point (`/esm`, `/es`).
 
-This is why `package.json` has the `"sideEffects"` field. Setting `"sideEffects": false` tells the bundler the package is safe to shake aggressively. Library authors who get this right enable much better tree shaking downstream.
+*Fullstack:* Server bundles (Lambda, Edge functions) benefit just as much. A Next.js API route that imports one helper from a large shared utilities package will bloat cold start times if that package isn't shakeable. Keep shared packages ESM-first and mark side-effect-free modules explicitly.
 
-## Frontend Scenario
-
-You install lodash and write `import { debounce } from 'lodash-es'`. With tree shaking, only `debounce` and its internal dependencies ship — not the 300+ other functions. This is exactly why `lodash-es` exists alongside the CommonJS `lodash`: the ES Module version is statically analyzable. Without it, even a single `require('lodash')` would pull the entire library.
-
-Named exports give bundlers more granularity than barrel files that re-export everything, which is why `import { Button } from '@ui/components'` from a well-written library works, but a poorly-structured one with `export * from './Button'` chains can defeat tree shaking.
-
-## Fullstack Scenario
-
-In a Next.js app, tree shaking is the mechanism that prevents server-side code from leaking into client bundles. If your shared `lib/db.ts` exports a database client you only import in server components, the client bundle never sees it — assuming the module graph is clean. This is also why the Next.js compiler warns about large client-side bundles: it's often a sign that something with server-only dependencies got imported on the wrong side of the boundary.
-
-## Practical Gotcha
-
-Bundlers are conservative by default. They'll keep a module if they can't *prove* it's side-effect-free. The `/*#__PURE__*/` annotation on function calls (common in React's compiled output) is a hint that a call has no side effects and can be dropped if its result is unused — you'll see this in compiled JSX.
+**Common pitfall:** barrel files (`index.ts` that re-exports everything) often defeat tree shaking — some bundlers handle them, some don't. If you're seeing unexpectedly large bundles, check whether your barrel re-exports are being analyzed correctly with a bundle analyzer.

@@ -1,30 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Horizontal Scaling
 
-Adding more machines to handle more load — rather than making one machine bigger. The key insight is that this shifts your bottleneck from hardware limits to distributed systems problems.
+Horizontal scaling means adding more identical instances of a service to share load, rather than giving a single instance more CPU or RAM. The appeal isn't just capacity—it's that you can grow incrementally and recover from failures without a single point of contention.
 
-### The core mechanism
+### The Core Mechanism
 
-Vertical scaling (bigger machine) hits a ceiling: there's only so much RAM and CPU you can throw at one box, it gets expensive fast, and a single point of failure remains. Horizontal scaling sidesteps that ceiling by running multiple identical instances behind a load balancer. Each instance handles a slice of traffic independently.
+The invariant that makes horizontal scaling work is **shared-nothing between instances**. Each request must be completable by any instance without coordination. That means no in-process session state, no local cache you depend on being warm, no locks held across requests. The load balancer becomes the entry point; the backing store (database, cache, queue) becomes the source of truth.
 
-The prerequisite is statelessness. If instance A handles a user's login and stores session data in memory, instance B can't serve that user's next request. Once you've moved state out-of-process — to a database, Redis, a cookie — any instance becomes interchangeable, and you can spin up 2 or 200 of them without coordination logic.
+This is why stateless processes are a prerequisite. If your app stores session data in memory, adding a second instance means requests that hit the "wrong" node will fail authentication. The fix—externalizing session to Redis—is the canonical pattern for making a service horizontally scalable.
 
-### Mental model
+A useful mental model: think of each instance as a worker that only knows what's in the current request and what it can read from shared storage. Two workers should produce identical outputs for identical inputs.
 
-Think of it like checkout lanes at a grocery store. One cashier with superhuman speed (vertical) eventually maxes out. Opening more lanes (horizontal) scales linearly — until you hit the shared constraint: the one inventory system, the one card terminal vendor, the one store manager. That's your stateful bottleneck surfacing.
+### Concrete Example
 
-### Practical implications by role
+You have an API that processes image uploads. Initially one server handles everything. Load spikes. You vertically scale—bigger CPU, more RAM—and buy time. But eventually you hit the instance size ceiling, or you realize a single node is a reliability risk.
 
-**Backend:** Your service needs to be written for this from the start. No in-process caches that diverge across instances, no file system state, no singleton counters. Distributed locks, external session stores, and idempotent endpoints become load-bearing. When you add the 5th replica and suddenly see duplicate job processing, that's horizontal scaling making a latent statefulness bug visible.
+Horizontal scaling: put a load balancer in front, deploy three identical instances, store uploads in S3 instead of local disk, store job state in a database. Now any instance can handle any request. Adding a fourth instance during a traffic spike is a config change, not an infrastructure event.
 
-**SRE:** Horizontal scaling is what makes your SLOs survivable. Losing one of ten instances means 10% capacity degradation, not an outage. But it introduces new failure modes: thundering herd when all instances restart simultaneously, partial deploys catching traffic mid-rollout, health check tuning to ensure load balancers shed bad instances fast enough. Your runbooks need to distinguish "one instance is sick" from "the whole fleet is sick."
+### Practical Angles
 
-**DevOps/Platform:** You need autoscaling policies (CPU? RPS? queue depth?) and the infrastructure to make instance launch fast enough to matter. If a spike takes 4 minutes to trigger and provision a new instance, you scaled too late. The other half of the job is scale-*in* — removing instances without dropping in-flight requests, which means graceful shutdown and connection draining.
+**Backend:** The hardest part is usually identifying hidden statefulness—things like local file writes, in-memory caches that diverge across nodes, or background jobs that assume single-instance execution. Distributed locks and leader election patterns exist specifically for cases where you can't fully eliminate coordination.
 
-### Why it unlocks Database Sharding
+**SRE:** Horizontal scaling directly enables rolling deploys and fault tolerance. With N instances, you can take one down for maintenance or absorb a node failure without downtime. It also makes autoscaling tractable—your scaling policy becomes "add instance when CPU > 70%" rather than "call someone to resize the VM."
 
-Once your application tier scales horizontally, the database becomes the next bottleneck — it's still one stateful thing handling all reads and writes. Sharding is horizontal scaling applied to the data layer: partitioning data across multiple database nodes so no single node holds everything. The same tradeoffs reappear at a lower level.
+**DevOps:** Containerization (Docker/Kubernetes) made horizontal scaling operationally cheap. The work shifted from "how do we scale" to "how do we handle stateful components at the edges"—databases, queues, and caches are what require careful thought now. Kubernetes HPA (Horizontal Pod Autoscaler) is the direct expression of this pattern.
+
+### The Ceiling You're Avoiding
+
+Vertical scaling has a hard ceiling—the largest available machine. It also introduces risk: bigger nodes are often more expensive to replace, harder to provision, and a single failure hurts more. Horizontal scaling trades that ceiling for coordination complexity, which is usually the better tradeoff once you've externalized your state correctly.

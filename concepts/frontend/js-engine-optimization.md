@@ -1,41 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## JavaScript Engine Optimization
 
-Modern JS engines don't just interpret your code line-by-line — they profile it at runtime and compile hot paths down to near-native machine code. Understanding how they decide what to optimize (and what causes them to give up) is how you write JS that's actually fast.
+JavaScript engines like V8 don't interpret your code line-by-line at runtime — they compile it to machine code on the fly, speculating that your objects will keep the same shape and your call sites will keep seeing the same types. When those bets pay off, you get near-native speed; when they don't, the engine silently throws away its compiled code and falls back to slower execution.
 
-### The core mechanism: speculative compilation
+**The core mechanism: hidden classes and inline caches**
 
-V8 (Chrome/Node) runs code in two stages. First, the Ignition interpreter executes quickly but produces no optimized code. As it runs, it collects *type feedback* — what types flow through each variable, what shapes objects have. When a function runs enough times, TurboFan (the optimizing compiler) takes over using that feedback to speculate: "this function always receives a number, so I'll compile it assuming that."
+V8 internally assigns every object a *hidden class* — a compact description of its property layout (names, offsets, types). When you do `obj.x`, V8 doesn't look up `"x"` in a hash map at runtime. Instead, it JIT-compiles a specialized version of that access: "this object's hidden class is C12, and `x` is always at byte offset 8, so just load from there." That compiled stub is the *inline cache*.
 
-The catch: if the speculation is ever wrong, V8 *deoptimizes* — throws away the compiled code and falls back to the interpreter. This is cheap occasionally, but if it happens in a tight loop, you're paying the cost over and over.
+This works because hidden classes are stable — they're preserved as long as you don't change the object's shape. Two objects created with `{ x: 0, y: 0 }` share the same hidden class. The moment you add a property in a different order (`{ y: 0, x: 0 }`) or tack one on later (`obj.z = 5`), V8 creates a new hidden class and may invalidate cached machine code.
 
-### Hidden classes: the property order trap
+**The polymorphism tax**
 
-V8 assigns each object a "hidden class" based on its shape — which properties it has, in which order they were added. Objects with identical shapes share a hidden class and get fast O(1) property access through inline caches.
+A call site or property access becomes *monomorphic* (one hidden class seen), *polymorphic* (2–4 classes seen), or *megamorphic* (5+ classes). Monomorphic sites compile to a direct memory load. Polymorphic sites compile to a small switch. Megamorphic sites abandon the cache entirely and fall back to the generic lookup — the slow path. The engine doesn't warn you; it just gets slower.
 
-```js
-// Both objects get the same hidden class — fast
-function Point(x, y) { this.x = x; this.y = y; }
+**Concrete mental model**
 
-// These two get different hidden classes — slower
-const a = {}; a.x = 1; a.y = 2;
-const b = {}; b.y = 2; b.x = 1; // different insertion order
-```
+Think of hidden classes like TypeScript interfaces, but enforced at the property-insertion level. If you always build objects through a constructor or object literal with a fixed shape, V8 creates one hidden class and reuses it everywhere. If you conditionally add properties, you're forking the hidden-class tree and fragmenting your caches.
 
-`delete obj.prop` is similarly toxic — it forces a shape transition and often makes the object "dictionary mode," which disables inline caches entirely.
+**In practice**
 
-### Monomorphic vs. megamorphic call sites
+*Frontend:* React's reconciler creates many component state objects. If you spread different shapes into `useState` or mutate objects by adding properties conditionally, you can fragment hidden classes across a hot render path — cumulative microsecond penalties that show up as jank at 60fps.
 
-A function that always receives the same argument types is *monomorphic* — fully optimizable. Once 5+ different shapes flow through a call site, V8 marks it *megamorphic* and stops trying. This matters when you write generic utility functions that get called with wildly varying object shapes.
+*Fullstack (Node.js):* Request handler objects that get properties attached based on middleware conditions are a classic megamorphic trap. A logging middleware that sometimes adds `req.traceId`, sometimes `req.correlationId`, produces objects V8 can't specialize for. High-throughput routes feel the cost most.
 
-### Practical implications
-
-**Frontend:** React's reconciler benefits from consistent component prop shapes. Passing `undefined` for optional props vs. omitting them creates different hidden classes — at scale, this can affect performance in large lists.
-
-**Fullstack (Node):** Hot request handlers should avoid constructing objects with variable property sets. Parsing different JSON shapes through the same handler repeatedly will hit megamorphic state. Normalizing incoming data into consistent shapes before processing it keeps V8 happy.
-
-The heuristic to internalize: *consistency beats cleverness*. Consistent types, consistent object shapes, homogeneous arrays. The engine rewards predictability with aggressive optimization; dynamic, flexible code pays a runtime tax.
+The fix in both cases is the same: define object shapes upfront, add all properties in consistent order, and avoid ad-hoc property attachment after construction.

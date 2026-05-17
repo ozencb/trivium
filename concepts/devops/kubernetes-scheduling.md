@@ -1,32 +1,45 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Kubernetes Scheduling** is the process by which Kubernetes decides which node runs each Pod. It matters because wrong placement kills performance, wastes money, and causes cascading failures at scale.
+## Kubernetes Scheduling
 
-## The Core Mechanism
+The kube-scheduler decides which node runs each pod. Getting this wrong doesn't fail loudly at deploy time — it silently degrades production through OOMKills, evictions, and noisy-neighbor contention that's hard to trace back to a misconfigured resource request.
 
-The scheduler is a control loop watching for Pods with no assigned node (`spec.nodeName` is empty). For each unscheduled Pod, it runs two phases:
+### Core Mechanism
 
-**Filtering** — eliminates nodes that can't run the Pod. Hard constraints: does the node have enough CPU/memory, do node selectors match, are there taints the Pod doesn't tolerate, does the volume need to be in a specific zone?
+Scheduling happens in two phases:
 
-**Scoring** — ranks surviving nodes. Soft preferences: spread Pods across zones for HA, pack tightly to free up nodes for scale-down, prefer nodes where the image is already cached.
+**Filtering (predicates):** eliminates nodes that can't run the pod. Checks include available CPU/memory *requests* (not actual usage), node selectors, taints/tolerations, and affinity rules. A node is removed from consideration if it can't satisfy any single constraint.
 
-The highest-scoring node wins, and the scheduler writes that node name into the Pod spec. The kubelet on that node sees the assignment and starts the container.
+**Scoring (priorities):** ranks the remaining nodes. Default scoring favors spreading pods across nodes (`LeastRequestedPriority`) and balancing resource utilization. The highest-scoring node wins.
 
-Critically, the scheduler only looks at *requested* resources (what you declare), not actual utilization. A node running at 5% CPU but with 90% of its CPU *requested* looks "full" to the scheduler. This is why resource requests are not optional configuration — they're the scheduler's only signal.
+The critical subtlety: the scheduler works off *requested* resources, not *actual* usage. A node running pods that collectively request 80% CPU is "full" to the scheduler even if actual CPU usage is 20%. This is intentional — requests are the contract the kubelet uses to guarantee quality of service.
 
-## Mental Model
+### The OOMKill Trap
 
-Think of it like airline seat assignment. Filtering removes flights that don't go to your destination or are already full. Scoring picks the best option — maybe a window seat, maybe the one with extra legroom. The scheduler doesn't care what you actually do in the seat; it just committed capacity to you when it assigned it.
+Limits cap what a container can use. Requests are what the scheduler accounts for. When you set requests too low:
 
-## Practical Scenarios
+- Scheduler happily packs many pods onto a node
+- Under load, actual usage exceeds the node's physical capacity
+- Kubelet starts evicting pods (lowest-priority first, or those exceeding limits)
+- Your app gets OOMKilled, and the alert fires with no clear explanation
 
-**SRE**: When a node goes down, the scheduler reschedules its Pods on remaining nodes. If you've set `podAntiAffinity` rules to spread replicas across nodes, the scheduler enforces that — but only if surviving nodes have enough unallocated (requested) capacity. Tight resource requests are what make rescheduling fast vs. Pods getting stuck in `Pending`.
+The insidious part: this only manifests under traffic. A service that looks healthy in staging explodes in production because staging never stressed the actual memory path.
 
-**DevOps**: Node pools and taints/tolerations let you segment workloads — GPU nodes only run ML jobs, spot nodes run batch, on-demand nodes run stateful services. The scheduler enforces this via the taint/toleration system without you needing to manage placement manually.
+### Mental Model
 
-**Backend**: If your service has spiky traffic and you're using Horizontal Pod Autoscaler, new Pods need to schedule quickly. Scheduling latency is often gated on whether nodes have headroom. Cluster Autoscaler provisions new nodes when Pods stay `Pending` — but that takes 2-4 minutes. Pre-warming node capacity or tuning requests/limits tightly is how you keep p99 autoscaling time under control.
+Think of requests as the space a tenant *reserves* in an apartment building. Limits are the absolute max they can use. The building manager (scheduler) decides occupancy based on reservations, not how much furniture people actually own. If tenants lie about needing less space than they use, the building gets overbooked.
 
-Understanding scheduling is the prerequisite to reasoning about resource requests and limits meaningfully — they're not just quotas, they're the inputs the scheduler uses to make every placement decision.
+### Practical Scenarios
+
+**SRE:** When investigating a wave of pod evictions, the first thing to check is `kubectl describe node` — specifically the `Allocated resources` section. If requests are near capacity but `top` shows low actual usage, you have a request inflation problem (or the inverse). Eviction priority is controlled by QoS class: pods with no requests/limits get `BestEffort` and are killed first.
+
+**DevOps/Platform:** Setting `LimitRange` defaults in namespaces prevents teams from deploying pods with no resource specs, which would otherwise get `BestEffort` QoS and become eviction targets during any memory pressure event.
+
+**Backend:** If your service has variable memory usage (e.g., large batch jobs vs. normal requests), `VPA` (Vertical Pod Autoscaler) can tune requests based on observed usage — but it requires pod restarts to apply, so it's not a live fix.
+
+### Why This Matters in Interviews
+
+Most engineers know "set requests and limits." Senior engineers know *why*: requests affect scheduling and QoS class, limits affect runtime behavior, and the gap between them is where production incidents live. Being able to trace an OOMKill through scheduler decisions to a misconfigured deployment manifest is the kind of end-to-end reasoning that separates operational depth from surface knowledge.

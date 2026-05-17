@@ -1,0 +1,16 @@
+id: performance-budget
+title: Performance Budget
+category:
+  - Frontend
+  - Performance
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - web-vitals
+dependents:
+  - synthetic-monitoring
+brief: Enforced limits on metrics like bundle size, LCP, and TTI that define the maximum performance cost a feature is allowed to ship, catching regressions before they reach users.

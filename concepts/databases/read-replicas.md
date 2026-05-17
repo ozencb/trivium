@@ -1,30 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Read Replicas
 
-A read replica is a copy of your primary database that serves read-only queries, letting you scale read throughput horizontally without overloading the node that handles writes.
+Read replicas are asynchronous copies of your primary database that serve read traffic, letting you scale query throughput horizontally without sharding or upgrading hardware. The core motivation: most applications are read-heavy, and your primary database is spending most of its IOPS answering `SELECT`s that could run elsewhere.
 
-**The core mechanism**
+**The mechanism**
 
-Standard replication gives you durability and failover. Read replicas take that further: instead of keeping replicas idle until the primary fails, you actively route queries to them. The primary still handles all writes (INSERT, UPDATE, DELETE), and changes propagate to replicas via the replication log — the same WAL-based or binlog-based stream you already know. The key insight is that most production workloads are heavily read-skewed. Separating reads from writes lets each tier scale independently.
+The primary streams its write-ahead log (WAL) or binlog to replicas, which apply changes in order. Replicas are always slightly behind—lag is real and variable, ranging from milliseconds under low write load to seconds (or more) when the primary is hammered or the replica is catching up after a restart. This is not a bug you can engineer away; it's intrinsic to async replication.
 
-Because replicas consume the same replication stream, replication lag is your main constraint. A replica might be 50ms to several seconds behind the primary depending on write volume, replica count, and network. Reads from a replica are *eventually consistent* with the primary — this isn't a flaw you work around, it's the tradeoff you design for.
+Your application must be aware of this. Read your own writes from the primary. Everything else—dashboards, search, list pages, analytics—can go to a replica.
 
 **Mental model**
 
-Think of the primary as a single cashier who also manages inventory (writes). Adding read replicas is like hiring staff who can answer customer questions ("what's in stock?") by checking a copy of the inventory sheet that's updated every few seconds. Most questions get answered correctly; occasionally someone asks about something that changed 3 seconds ago.
+Think of it like a library that makes photocopies of its catalog. Someone can look up books in the photocopy room (replica) rather than bothering the head librarian (primary). The catch: if a new book was just added, the photocopy might not reflect it yet. You don't let someone look up their just-returned book in the photocopy room—you send them to the librarian directly.
 
-**Practical scenarios**
+**In practice**
 
-*Backend:* Route your application's read queries (product listings, user profile fetches, search) to replicas, and writes to primary. Most frameworks and ORMs support this via a database connection router. The main footgun: after a write, immediately reading from a replica may not reflect that write yet. Session-consistency patterns — routing post-write reads to primary for a short window — exist for this.
+*Backend*: Route reads via a connection pool that distinguishes primary vs. replica. Common pattern: use the primary for anything within a user's session after a write (e.g., redirect-after-post reads the primary). Libraries like PgBouncer or application-level proxy middleware handle this routing. A subtle failure mode: serving stale session data because a replica hasn't caught up yet—users see "reverted" state after edits, which looks like a bug.
 
-*SRE:* Read replicas are leverage during traffic spikes. You can scale read capacity by adding replicas without touching the primary, and you can offload long-running analytics queries to a dedicated replica so they don't compete with OLTP traffic. Replica lag is a key SLI to monitor; sustained lag often signals the primary is write-saturated or a replica is falling behind.
+*SRE*: Replicas give you read capacity headroom and also serve as hot standbys for failover. Monitor replica lag as a first-class metric—spikes in lag under write load indicate the replica is falling behind and stale reads are increasingly likely. Lag under 100ms is usually fine; lag over a few seconds needs attention. Also, replicas under heavy read load can actually *increase* lag if I/O is saturated.
 
-*Data:* Running heavy analytical queries on the primary kills OLTP latency. A dedicated analytics replica — sometimes with looser lag tolerance — lets you run expensive aggregations, reports, or ETL extractions without affecting application users. Some teams use this as an entry point before committing to a full data warehouse.
+*Data*: Analytical queries are natural candidates for replicas—long-running aggregations that would block or compete with OLTP traffic on the primary. Just know that reports run against a replica might undercount very recent data. Often acceptable; sometimes not (financial reports, compliance). Some teams promote a dedicated replica that's intentionally one replication cycle behind for stable reporting snapshots.
 
-**The connection to connection pooling**
+**When to reach for this**
 
-Read replicas multiply your database endpoints. Instead of pooling connections to one host, you're now managing pools per replica plus the primary. This is where connection pooling strategy gets meaningfully more complex — each replica needs its own pool, and your router needs awareness of which pool to target per query type.
+When read query load is visibly straining the primary and you haven't exhausted caching options. Before adding replicas, ensure you've tuned slow queries and added appropriate indexes—replicas scale throughput, not query efficiency.

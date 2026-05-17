@@ -1,28 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**OpenID Connect (OIDC)** is an identity layer built on top of OAuth 2.0 that answers the question OAuth intentionally left unanswered: *who is this user?* OAuth tells you what a token is authorized to do; OIDC tells you who the token belongs to.
+## OpenID Connect
 
-## The Core Mechanism
+OAuth 2.0 solves authorization ("can this app access this resource?") but says nothing about who the user is. OIDC fills that gap by standardizing an **ID token**—a signed JWT containing user identity claims—so your app can authenticate users via a trusted third party without managing passwords or building a user store from scratch.
 
-OAuth 2.0 gives you an access token, but that token is opaque by design — it's a credential for resource access, not a user identity assertion. OIDC extends the OAuth flow by adding an **ID token**: a signed JWT containing verified claims about the authenticated user (`sub`, `email`, `name`, `iss`, `aud`, `exp`, etc.).
+### Core Mechanism
 
-The key addition to the OAuth flow is the `openid` scope. When your client requests this scope, the authorization server returns *both* an access token and an ID token. The ID token is signed with the provider's private key, so you can verify it without a round-trip — you fetch the provider's JWKS endpoint once, cache the public keys, and verify locally from then on.
+OIDC adds one key thing to the OAuth 2.0 Authorization Code flow: the token endpoint returns an `id_token` alongside the `access_token`. This ID token is a JWT signed by the identity provider (IdP), containing claims like `sub` (stable user ID), `email`, `name`, and `aud` (your client ID). You verify the signature using the IdP's public keys (fetched from `/.well-known/jwks.json`) and trust the claims.
 
-OIDC also standardizes a **UserInfo endpoint** (`/userinfo`) that accepts the access token and returns additional user claims. This is useful when the ID token is kept small and you need supplemental profile data.
+The critical distinction: the `access_token` is for calling APIs on behalf of the user; the `id_token` is for establishing who the user is in your system. Mixing these up is a common mistake—never use an `access_token` as proof of identity.
 
-## Concrete Mental Model
+### Mental Model
 
-Think of OAuth like a valet key — it grants limited access to a specific resource. OIDC is the valet key *plus a driver's license*: you know both what the key can do and who it belongs to.
+Think of OIDC as a notarized letter. OAuth hands you a key card (access token) to enter rooms. OIDC hands you a passport (ID token) that says who you are, issued and cryptographically signed by a trusted authority. Your app validates the passport locally—no need to call the IdP on every request.
 
-The ID token is that license. It's issued by the authorization server, cryptographically signed, and carries enough information for your app to establish a session without asking the user to log in again.
+### Practical Scenarios
 
-## Practical Scenarios
+**Backend:** When building a service that accepts logins via Google, GitHub, or an enterprise SSO (Okta, Azure AD), you receive the authorization code, exchange it for tokens, validate the `id_token`'s signature and claims (`iss`, `aud`, `exp`), then upsert the user into your database using `sub` as the stable key. Never use `email` as the primary key—users can change emails, and some IdPs reuse them.
 
-**Backend:** You're building an API that accepts requests from a mobile app using Google Sign-In. The app sends an ID token in the `Authorization` header. Your server fetches Google's JWKS, verifies the token signature and `aud` claim (to confirm the token was issued for *your* app), extracts the `sub` as a stable user identifier, and either creates or fetches the user record. No session needed on the API side — stateless authentication with verified identity.
+**Fullstack:** In a Next.js or similar app, libraries like `next-auth` handle the OIDC flow for you, but understanding what's underneath matters when things break. When a user hits a protected route, the app checks the session (typically a server-side cookie wrapping the ID token claims), and your API routes trust the session rather than re-validating the JWT on every call. Where it gets interesting: handling token refresh, logout propagation (OIDC's front-channel/back-channel logout specs), and what "session expiry" means when your IdP's token and your app's session have different lifetimes.
 
-**Fullstack:** You're implementing SSO across multiple internal tools using a self-hosted provider (Keycloak, Auth0, etc.). Each app initiates the OIDC authorization code flow. After the redirect, you exchange the code for tokens, validate the ID token, and hydrate the session. Because all apps trust the same issuer, a user logged into Tool A doesn't re-authenticate for Tool B — the provider issues a new ID token silently if a valid session exists. This is **Single Sign-On**, and OIDC is the mechanism that makes it work reliably across different origins and tech stacks.
+### Where This Differentiates You
 
-The main thing to internalize: OIDC is not a separate protocol — it's OAuth 2.0 with a defined identity contract layered on top. If you already understand OAuth flows and JWT verification, OIDC is just the standardized answer to "okay, but *who* authorized this?"
+In design discussions, the senior move is knowing when *not* to reach for OIDC—if you're building internal service-to-service auth, you want OAuth client credentials, not OIDC. And when you do use OIDC, understanding the security surface (token leakage, `nonce` replay protection, PKCE for public clients) separates engineers who wire up a library from those who can reason about the trust model.

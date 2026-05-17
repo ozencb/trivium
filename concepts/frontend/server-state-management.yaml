@@ -1,0 +1,15 @@
+id: server-state-management
+title: Server State Management
+category:
+  - Frontend
+  - Architecture
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - hydration
+dependents:
+  - react-server-actions
+brief: Client-side libraries (React Query, SWR) that treat server data as a first-class cache, handling stale-while-revalidate, background revalidation, and optimistic mutations automatically.

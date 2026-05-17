@@ -1,51 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Component Composition Patterns
+Component composition patterns are techniques for sharing behavior and state between components without coupling them through inheritance or bloated prop interfaces. They matter because as UIs grow, the naive approaches — prop drilling or monolithic components — collapse under their own weight.
 
-Components in a UI library or app need to share behavior, state, and rendering without becoming tightly coupled. Composition patterns are the set of architectural techniques that let you express *what* a component does separately from *how it looks* — and they're the difference between a component library that's pleasant to use and one that requires forking every time product needs something slightly different.
+**The core mechanism**
 
-### The Core Mechanism
+The fundamental insight is that components are functions, and functions compose. Instead of a parent component knowing everything about its children, you invert the relationship: the parent provides a "slot" or callback, and children decide what to put there. This keeps the knowledge of *behavior* separate from the knowledge of *rendering*.
 
-The fundamental tension: a component has some logic or state that multiple callers need, but each caller wants to control the rendered output differently. Naive solutions (boolean props, `renderX` props, conditional branches) accumulate and become unmaintainable. Composition patterns solve this by inverting control — the component provides the logic/state; the consumer decides the structure.
+Three patterns operationalize this:
 
-Three patterns dominate:
+**Render props** — a component accepts a function as a prop and calls it with internal state. The component owns the behavior (scroll position, mouse coordinates, toggle state), and the consumer owns the rendering. Nothing is hidden; nothing is assumed.
 
-**Compound components** share implicit state through context. `<Select>` and `<Option>` don't pass data via props — they communicate through a provider/consumer relationship the user never sees. The consumer gets a declarative, HTML-like API.
+**Compound components** — a parent component manages shared state and exposes child components that implicitly participate in it (e.g., `<Select>` + `<Select.Option>`). The children look like standalone elements but are wired together through context. The key invariant: the *structure* of the component tree carries semantic meaning.
 
-```jsx
-<Tabs defaultIndex={0}>
-  <TabList>
-    <Tab>Overview</Tab>
-    <Tab>Details</Tab>
-  </TabList>
-  <TabPanels>
-    <TabPanel>...</TabPanel>
-    <TabPanel>...</TabPanel>
-  </TabPanels>
-</Tabs>
-```
+**Slots** — a component defines named regions (via `children`, named props, or explicit slots in Vue/Web Components) that consumers fill. The parent doesn't care what goes in; the consumer doesn't care how the parent lays it out.
 
-**Render props / children-as-function** expose internal state to the consumer so they can render whatever they want:
+**Mental model**
 
-```jsx
-<DataFetcher url="/api/users">
-  {({ data, loading }) => loading ? <Spinner /> : <UserTable rows={data} />}
-</DataFetcher>
-```
+Think of it like Unix pipes. Each stage does one thing, passes data along, and has no opinion about what came before or after. Component composition is the UI equivalent: behavior flows through the tree without any single component needing to understand the whole pipeline.
 
-**Slot pattern** (passing components as props): instead of `showHeader={true}`, accept `header={<CustomHeader />}`. This is increasingly common with the `children` prop and React's composition model — it completely decouples rendering from behavior.
+**Where this shows up in practice**
 
-### Why It Matters in Practice
+*Frontend:* Building a design system with a `<Modal>` that needs to work in dozens of contexts — confirmation dialogs, forms, media viewers. A compound component lets consumers control header, body, and footer independently without the Modal having 40 props. A render prop `<Tooltip>` can share hover logic while different consumers render entirely different popups.
 
-**Frontend:** Design systems are the clearest use case. A `<Modal>` that owns open/close state but accepts a `trigger` prop and `content` slot handles 90% of product requirements without change. When you see a component with 15 boolean props, that's composition patterns not being applied.
+*Fullstack:* When server components (Next.js App Router) and client components need to coexist, slots are the primary boundary mechanism — server components pass pre-rendered subtrees as children into client components, avoiding client-side re-fetching. Understanding slots as a deliberate inversion of control (not just "children") explains why this works without breaking hydration.
 
-**Fullstack:** Server components (Next.js App Router) formalize this — server components handle data fetching and pass server-rendered content as children to client components that own interactivity. This is the slot pattern at the architecture level, not just component level.
+**Why it differentiates senior engineers**
 
-### The Mental Model
-
-Think of it as separating the "smart" part (state, data, behavior) from the "dumb" part (pixels). Composition patterns are the contracts that let these two halves snap together in different configurations. The consumer owns the shape; the component owns the logic.
-
-The practical rule: if you're adding a prop to make a component render differently in two places, consider whether the consumer should own that rendering instead.
+Junior engineers reach for props. Mid-level engineers reach for context. Senior engineers recognize when the *structure* of the component tree should carry the abstraction, not runtime data. In design discussions, knowing which pattern to apply — and *why* a render prop beats a hook in some cases — is what separates people who can articulate tradeoffs from people who just copy patterns.

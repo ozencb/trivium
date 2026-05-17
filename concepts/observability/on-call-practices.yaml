@@ -1,0 +1,17 @@
+id: on-call-practices
+title: On-Call Practices
+category:
+  - Observability
+  - Reliability
+roles:
+  - sre
+  - backend
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - alerting
+  - incident-response
+dependents: []
+brief: The operational model for staffing incident response—covering runbook-driven triage, paging thresholds, rotation design, and toil reduction—to balance reliability against engineer burnout.

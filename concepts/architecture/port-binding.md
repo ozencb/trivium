@@ -1,28 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Port Binding
 
-An application should be **self-contained and expose its functionality by binding to a port itself** — not by relying on an external runtime to inject a web server around it. This is what makes an app independently deployable and composable.
+Port binding means the application itself owns and opens its network listener — it doesn't get plugged into an external web server at deploy time. The app reads a port from the environment and binds to it directly, making the network interface part of the application artifact, not the infrastructure configuration.
 
-### The core mechanism
+### The Core Idea
 
-The old model: you write a WAR file, drop it into Tomcat, Tomcat handles HTTP. The app is not a server — it's a plugin into one. Port binding flips this. Your app imports an HTTP library (Express, Gin, Django, whatever), starts listening on a port at boot, and that's it. The app *is* the server.
+Traditional deployment models (PHP behind Apache, Ruby behind Passenger, Java WAR files in Tomcat) inverted this: the web server process managed the socket, and your code was loaded as a plugin or module into it. Port binding flips this. Your app starts an HTTP server internally — Express, Gunicorn, Jetty — and owns the socket from line one of boot. The port number itself comes from `PORT` in the environment, following 12-Factor's config principle.
 
-The port itself is just a number. In development it's `localhost:8080`. In production, the platform (Kubernetes, Fly.io, Railway) maps an external address to that port — the app doesn't care. It just binds and listens.
+This isn't just aesthetic. When the app owns its port, it has no runtime dependency on external server infrastructure. You can run it anywhere a port is available — laptop, container, VM — without configuring an Apache virtualhost or an nginx `location` block just to get started.
 
-This also means one process can consume another's port binding as a backing service. Your API talks to Redis on `localhost:6379` without knowing or caring whether that's a local process, a container sidecar, or a managed cloud service with a port-forwarded tunnel in front of it.
+### Concrete Model
 
-### Mental model
+Think of it as: **a service is a process + a port**. That process can be anything that listens — HTTP, gRPC, raw TCP. The port is its public address. Route traffic to `localhost:3000` during dev, to `10.0.1.5:3000` in staging, to an internal load balancer in prod — the app code doesn't change.
 
-Think of your app as a vending machine. It doesn't need to be installed inside a department store to function — it brings its own coin slot. You plug it in anywhere (power = network), and it's ready. The "coin slot" is the port binding. The store's layout (platform routing) decides what address customers use to reach it, but the machine itself owns its interface.
+This is also why services can chain: Service A's `DATABASE_URL` is just `http://service-b:5432`. Service B is itself port-bound, so it's composable as a backing service for others.
 
-### Practical scenarios
+### Backend Reality
 
-**Backend:** When you switch from running Flask behind Gunicorn-inside-uWSGI to just `uvicorn main:app --port 8000`, you're applying port binding. The app owns its concurrency model and network interface. This also means you can run two instances on different ports for local testing without any server config changes.
+In practice this means your Go service calls `http.ListenAndServe(":"+os.Getenv("PORT"), handler)` and that's the whole server setup. No external process manager wires up the socket. The tradeoff: you're now responsible for graceful shutdown, TLS termination decisions, and connection limits — things a dedicated web server used to abstract. Most teams push TLS termination to a sidecar or load balancer and keep the app speaking plain HTTP internally.
 
-**DevOps:** Port binding is the contract between your app and the container runtime. `EXPOSE 8080` in a Dockerfile and `containerPort: 8080` in a Kubernetes pod spec are both expressing the same thing — "the app will bind here, route traffic to this address." Without this model, you can't do horizontal scaling cleanly: the orchestrator needs to know where each instance is listening to load-balance across them.
+### DevOps Perspective
 
-It's also why environment-based port injection (`PORT=8080 node server.js`) is the right pattern — the platform can assign any port it wants, the app reads it, binds there, and the platform handles the rest.
+Port binding is what makes containers composable. Docker's `-p 8080:3000` is just mapping the host port to the container's self-bound port. Kubernetes `containerPort` is documentation of the same thing. Without port binding, you'd need a web server installed in every image and configured per-deploy. With it, the image is self-sufficient — deploy it anywhere, expose whatever port you want externally, the app doesn't care.
+
+The common pitfall: hardcoding port `8080` instead of reading from the environment. Fine locally, breaks in orchestrators that assign ports dynamically or run multiple instances on the same host.

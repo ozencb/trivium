@@ -1,20 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**SharedArrayBuffer lets multiple Workers read and write the same memory region — Atomics makes that safe.**
+**SharedArrayBuffer lets multiple Web Workers read and write the same memory region directly — no message passing, no copying.** The tradeoff is that shared mutable state across threads reintroduces data races, which is exactly what the postMessage model was designed to avoid.
 
-Normal `postMessage` between Workers copies data. For large payloads (image buffers, audio frames, simulation state), copying is too expensive and the round-trip latency kills throughput. SharedArrayBuffer sidesteps this entirely: you allocate a chunk of memory once and hand every Worker a view into that same physical buffer. No copying, no serialization.
+## The core mechanism
 
-The problem that creates: two Workers can now race. Worker A reads a value, Worker B reads the same value, both increment it, both write back — you've just lost an increment. This is the classic read-modify-write race, and JavaScript's event loop model gives you zero protection here because Workers are genuinely parallel threads.
+Normally, `postMessage` serializes data (structured clone) and transfers ownership — one thread has it, then another does. `SharedArrayBuffer` breaks this model: all workers hold a reference to the *same underlying memory*. Reads and writes are not serialized; they happen concurrently at the hardware level.
 
-**Atomics** is the fix. It provides operations that the CPU guarantees are indivisible — `Atomics.add`, `Atomics.compareExchange`, `Atomics.load`, `Atomics.store`, etc. No other thread can observe a half-finished operation. It also gives you `Atomics.wait` and `Atomics.notify` — essentially a mutex/condition variable: one Worker blocks on a memory address until another Worker notifies it. This is the mechanism WebAssembly uses to implement its memory model, which is why understanding this unlocks Wasm threading.
+This creates a classic race condition problem. If two workers both do `buffer[0] += 1`, they each read the value, increment it locally, then write back — and you may end up with one increment instead of two. This is not hypothetical; it happens.
 
-**Concrete mental model:** treat SharedArrayBuffer like a shared whiteboard in a room full of people. Without Atomics, everyone reads and writes whenever they want — chaos. With Atomics, you've established a rule: to change a number, grab the marker (compare-exchange), change it, put the marker down. Everyone else waits.
+`Atomics` solves this with CPU-level atomic operations — instructions the processor guarantees complete without interruption:
 
-**Frontend scenario:** you're writing a video editor. A decode Worker is filling a ring buffer with frames, and a render Worker is consuming them. SharedArrayBuffer holds the frame data. You use `Atomics.add` to advance the write pointer atomically and `Atomics.wait`/`Atomics.notify` to signal the render Worker when new frames are ready — all without copying frame data across the Worker boundary.
+- `Atomics.add(view, index, value)` — fetch-and-add, no torn reads/writes
+- `Atomics.compareExchange(view, index, expected, replacement)` — CAS (compare-and-swap), the foundation of lock-free algorithms
+- `Atomics.wait` / `Atomics.notify` — a futex-style blocking primitive for building mutexes
 
-**Fullstack scenario:** Node.js has had `worker_threads` with SharedArrayBuffer since v12. If you're building a high-throughput processing pipeline — say, transforming binary data from a socket before forwarding it — you can hand off chunks to a worker pool via shared memory instead of copying buffers through message channels. At scale, this meaningfully reduces GC pressure.
+The key invariant: Atomics operations on a given index are *sequentially consistent* relative to each other. Non-atomic reads/writes make no such guarantee.
 
-One practical caveat: `SharedArrayBuffer` requires cross-origin isolation (`COOP`/`COEP` headers) in browsers post-Spectre. If those headers aren't set, the constructor throws. Plan for this in deployment.
+## Mental model
+
+Think of it like a shared whiteboard with no locking. Without Atomics, two people can read "5", both write "6", and the net result is wrong. `Atomics.add` is like handing one person a marker that the other physically cannot grab until the first is done writing.
+
+## Where this actually matters
+
+**Frontend:** WASM-heavy workloads — physics engines, video codecs (FFmpeg.wasm), image processing pipelines. You offload computation to workers, but they need shared working memory without serialization overhead. SAB is also how Emscripten implements pthreads in the browser.
+
+**Fullstack (Node.js):** Worker threads in Node share memory the same way. SharedArrayBuffer plus Atomics lets you build actual shared state between Node workers — useful for caches, ring buffers, or coordination structures where copying is the bottleneck.
+
+## Common pitfalls
+
+- `SharedArrayBuffer` requires cross-origin isolation (`COOP`/`COEP` headers) — this was removed after Spectre and re-added with stricter requirements. Your server config needs `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
+- Mixing atomic and non-atomic accesses to the same index is undefined behavior by the memory model — always use Atomics consistently for a given location.
+- `Atomics.wait` blocks the calling thread; it's illegal on the main thread, only usable in workers.
+
+The direct payoff for understanding this: the WebAssembly linear memory model maps almost 1:1 onto SAB semantics, so this is the conceptual foundation you'll need when reasoning about WASM threading.

@@ -1,33 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Public Key Cryptography
 
-Two mathematically linked keys — one public, one private — let strangers establish trust and exchange secrets without ever sharing a password. It's the foundation of nearly every secure communication on the internet.
+Two mathematically linked keys — one public, one private — where anything encrypted with one can only be decrypted with the other. The breakthrough: two parties can establish a secure channel without ever exchanging a secret, solving the key distribution problem that plagued symmetric encryption.
 
-### The core idea
+### The Core Mechanism
 
-Symmetric crypto (shared secret) breaks down when two parties have never met: how do you share the secret without a secure channel to share it over? Public key crypto solves this with a **trapdoor function** — a math operation that's trivially easy in one direction and computationally infeasible to reverse.
+The math rests on **trapdoor functions**: operations trivially easy to compute in one direction, computationally infeasible to reverse without special knowledge. RSA uses the fact that multiplying two large primes is instant, but factoring the result back into those primes takes longer than the age of the universe at sufficient key sizes. Elliptic curve variants (ECDSA, Ed25519) use a different trapdoor — point multiplication on a curve — with smaller keys and equivalent security.
 
-In RSA, for example, multiplying two huge primes is fast. Factoring their product back into those primes is practically impossible at sufficient key sizes. Your private key is those primes; your public key is their product. The math binds them, but you can't derive one from the other in reasonable time.
+The key pair relationship: anything encrypted with the public key can *only* be decrypted with the private key, and vice versa. These aren't two locks on the same key — they're mathematically inverse operations that only work together.
 
-This asymmetry gives you two distinct primitives:
+### Mental Model
 
-- **Encryption**: anyone encrypts with your public key; only your private key decrypts it.
-- **Signing**: you sign with your private key; anyone with your public key can verify it was you, and the message wasn't tampered with.
+Think of a padlock and key. You hand out unlocked padlocks (public keys) to anyone. They lock a box and send it to you. Only your key (private key) opens it. Crucially, having the padlock tells you nothing about how to make the key.
 
-### Mental model
+For signing, the metaphor reverses: you lock something with your private key, and anyone with your public key can verify you locked it — proving it came from you without revealing how to impersonate you.
 
-Think of a physical padlock. You manufacture it, keep the key, and hand out unlocked copies to anyone. They can lock a box for you — only you can open it. Signing flips this: you lock something with your key, and the open padlock (public key) proves it came from you.
+### Practical Scenarios
 
-### Where you'll hit this
+**Backend:** When your service calls an external API using JWT authentication, the API provider publishes a public key. Your service uses it to verify the token's signature without the provider ever sending you the signing secret. No shared secret in your environment means no credential to rotate or leak.
 
-**Backend** — JWT signing with RS256 means your auth service signs tokens with its private key, and every downstream microservice verifies with the public key. No service needs the private key except the issuer — a breach of a resource server doesn't compromise signing authority.
+**SRE:** SSH key auth works the same way — the server stores your public key, you prove identity by signing a challenge with your private key. If the server is compromised, attackers get your public key, which is useless for impersonation. This is why `~/.ssh/authorized_keys` leaking is not a disaster, but your private key leaking is.
 
-**SRE** — SSH key auth is exactly this. `ssh-keygen` generates a keypair; you put the public key in `~/.ssh/authorized_keys` on the server. When you connect, the server challenges you to prove you hold the private key (via a signature), never requiring you to transmit it.
+**Fullstack:** TLS uses asymmetric crypto during the handshake to negotiate a symmetric session key. The server's certificate contains its public key; your browser encrypts a random value with it. Only the server can decrypt it. After that, both sides derive the same symmetric key and switch to faster AES for the actual data — asymmetric crypto is expensive, so you use it only to bootstrap trust.
 
-**Fullstack** — HTTPS relies on this during the TLS handshake. The server's certificate contains its public key. Your browser uses it to encrypt a session key (or verify a signature, depending on cipher suite), so only the server can read the establishment of the shared secret — after which you switch to symmetric encryption for speed.
+### The Invariant to Internalize
 
-The key insight: asymmetry separates identity verification from secret-sharing, which is what makes decentralized trust possible at internet scale.
+The private key never travels. It proves identity and establishes secrets without ever being shared. The public key is genuinely safe to distribute anywhere. Security comes entirely from the computational hardness of reversing the trapdoor — which is why key length and algorithm choice matter, and why 1024-bit RSA is now considered broken.

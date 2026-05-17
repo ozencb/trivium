@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Mutual TLS (mTLS)** extends standard TLS by requiring *both* sides of a connection to present and verify a certificate — not just the server. The result is cryptographic proof of identity in both directions, not just encryption.
+## Mutual TLS (mTLS)
 
-## The Core Mechanism
+Standard TLS proves the server is who it claims to be — your browser trusts the bank's certificate. mTLS extends that handshake symmetrically: the server also demands a certificate from the client, so both sides cryptographically prove identity before exchanging a single byte of application data.
 
-In regular TLS, the client verifies the server's certificate but the server doesn't verify the client. The server trusts whoever shows up and provides a valid username/password or token. mTLS adds a second handshake step: the server sends a `CertificateRequest`, the client responds with its own certificate, and the server validates it against a trusted CA before the connection is established. If the client cert is missing, expired, or signed by an untrusted CA, the TLS handshake fails — no TCP data flows at all.
+### The Mechanism
 
-This means identity is verified at the transport layer, before any application-level logic runs.
+The standard TLS handshake adds one extra round-trip for mTLS: after the server sends its certificate, it sends a `CertificateRequest`. The client responds with its own certificate, then signs a digest of the handshake transcript with its private key. The server verifies that signature against the client certificate's public key. If either side can't verify the other, the handshake fails — no connection, no fallback.
 
-## Mental Model
+What this gives you isn't authentication layered on top of an open channel — it's authentication *as* the channel. There's no separate login step, no bearer token to steal in transit, no session to hijack. The identity is baked into the transport.
 
-Think of regular TLS like showing ID to enter a building — the guard checks *your* badge, but you don't verify the guard is legitimate. mTLS is a mutual badge check: the guard shows their credentials too, and you both need to be in the same authorization system (same CA) for either of you to proceed.
+### Concrete Mental Model
 
-The "same CA" part is load-bearing. In practice this means you run an internal PKI (often via something like CFSSL, Vault PKI, or cert-manager) that issues short-lived certs to every service. The CA itself is the source of trust, not the certificates directly.
+Think of it like two employees badging into a secure facility: the door (server) checks your badge, but you also check that the door is a real door and not someone running an access-control scam. Both parties present credentials to a shared authority (a Certificate Authority) that both trust.
 
-## Practical Scenarios
+In practice, each service gets a certificate signed by an internal CA. When Service A calls Service B, B rejects connections from anything that doesn't hold a cert from that CA. You don't need to embed API keys or tokens anywhere — the cert itself is the credential.
 
-**Backend:** When service A calls service B internally, mTLS lets service B reject the connection if service A's cert isn't valid — no API key, no JWT, no middleware check needed. The identity proof happens before the HTTP request is even parsed. This is the foundation for service-to-service auth in microservice architectures.
+### Where This Shows Up
 
-**SRE:** mTLS gives you a hard perimeter that doesn't depend on network topology. Even if an attacker gets onto the internal network, they can't impersonate a service without a valid cert from your CA. Revocation (via CRL or short-lived certs + no renewal) lets you immediately cut off a compromised service identity.
+**Backend:** In microservice architectures, mTLS is the enforcement mechanism behind zero-trust networking. Instead of trusting calls that arrive inside your VPC, you verify every caller explicitly. If your `payment-service` gets compromised, it can't impersonate `auth-service` because it doesn't hold auth's private key.
 
-**DevOps:** The hard part isn't mTLS itself — it's certificate lifecycle management. You need automated issuance, rotation, and distribution. Tools like cert-manager in Kubernetes or Vault agent sidecars handle this. Without automation, cert expiry becomes an incident trigger. Service meshes (Istio, Linkerd) abstract all of this away by handling mTLS transparently via sidecar proxies, so application code never touches certificates at all.
+**SRE:** Certificate rotation becomes your operational burden. Short-lived certs (24–72 hours) limit blast radius if a key leaks, but require reliable automated issuance (SPIFFE/SPIRE, Vault PKI, or a service mesh's built-in CA). A failed rotation that takes down inter-service communication at 3am is a classic mTLS war story — plan your rotation before you need it.
 
-## The Zero-Trust Connection
+**DevOps:** Service meshes like Istio and Linkerd implement mTLS transparently via sidecar proxies, so your application code doesn't change. But "transparent" doesn't mean free — you need to reason about certificate issuance, CRL/OCSP revocation, and what happens when the control plane is temporarily unreachable.
 
-mTLS is the enforcement mechanism behind zero-trust's "never trust, always verify" principle. Once every service has a cryptographic identity and all connections are mutually authenticated, "is this request coming from the internal network" stops being a meaningful security boundary — which is the whole point.
+### The Senior-Engineer Signal
+
+Where this separates candidates in design discussions: knowing that mTLS doesn't solve authorization (a valid cert proves identity, not permission), and that certificate management complexity often makes API gateway + JWT the right call for external traffic. mTLS shines for internal east-west traffic at scale, not as a universal hammer.

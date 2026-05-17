@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Backpressure
 
-When a consumer can't keep up with a producer, backpressure is the mechanism by which the consumer signals that fact upstream — so the system can slow down, buffer, or shed load rather than silently fall over.
+When a consumer can't process data as fast as a producer generates it, *something* has to give. Backpressure is the mechanism by which that fact propagates upstream — so the producer slows down rather than the system silently accumulating debt that eventually crashes it.
 
 ### The core mechanism
 
-The fundamental problem: production and consumption rates are independent. A message broker, stream processor, or API can receive data far faster than it can process it. Without backpressure, you get one of two bad outcomes: unbounded buffer growth (eventually OOM) or silent message drops.
+The fundamental invariant backpressure enforces: **producers can only send as fast as consumers can receive**. The implementation varies, but the shape is always the same — the consumer exposes some signal ("I'm ready," "I have N slots," "pause") and the producer is obligated to honor it.
 
-Backpressure makes the mismatch *explicit and actionable*. The consumer exposes its capacity — either by pulling work when ready (pull-based, like Kafka's consumer poll loop) or by sending explicit signals upstream to pause/slow (push-based, like TCP's receive window or gRPC flow control). The producer then has a choice: block, buffer to a limit, drop with a policy, or reject at the edge.
+TCP is the canonical example. The receiver advertises a *window size* — the number of bytes its buffer can hold. The sender cannot transmit beyond that window. When the receiver is slow, the window shrinks to zero and the sender blocks. No explicit coordination needed; the protocol enforces the invariant mechanically.
 
-The key insight is that backpressure converts a capacity problem into a *control flow problem*. You're not just hoping buffers hold — you're actively propagating the constraint back to where load originates.
+In higher-level systems (message queues, async streams, service calls), backpressure is often absent by default and must be deliberately designed in. A queue with unbounded capacity gives producers no resistance — they keep enqueuing, memory grows, and the crash comes later rather than immediately. That's worse: the failure is delayed, harder to attribute, and arrives at peak load.
 
 ### Mental model
 
-Think of a garden hose connected to a fire hydrant. Without a valve, the hose bursts. Backpressure is the valve: downstream pressure signals upstream to regulate flow. The valve doesn't make more water fit through the hose — it just ensures the hose doesn't get destroyed by demand it can't handle.
+Think of it as a feedback loop. Without backpressure: producer → unbounded buffer → consumer. With backpressure: producer ← signal ← consumer, where the signal is "I'm processing, hold on." The buffer exists but is bounded; hitting that bound is the signal.
 
-### Practical scenarios
+### In practice
 
-**Backend:** An API gateway receives 10k RPS but your downstream service handles 2k. Without backpressure, you queue requests until memory explodes or start timing out silently. With it, you reject at the gateway with `429 Too Many Requests` and surface the constraint to the caller — who can retry with backoff rather than hammering harder.
+**Backend**: Reactive Streams (Project Reactor, RxJava) build backpressure into the programming model — a subscriber *requests* N elements, and the publisher emits at most N. gRPC bidirectional streaming uses flow control credits. Without this, a fast upstream service will OOM a slow downstream one under load.
 
-**SRE:** You're on-call and a processing service's consumer lag on Kafka is climbing. That lag *is* backpressure materializing as a queue. The question becomes: is this a temporary spike (buffer it), a sustained overload (scale consumers), or a bad actor (apply rate limiting upstream)? Understanding backpressure helps you diagnose which — and why adding more producers without scaling consumers just makes the lag worse.
+**SRE**: Queue depth is a backpressure proxy metric. A monotonically growing queue means backpressure isn't working — the producer is winning. Load shedding (rejecting requests with 429/503) is a blunt backpressure mechanism: you're signaling upstream "slow down" by making the cost visible immediately rather than absorbing it invisibly.
 
-**Data:** A Flink or Spark Streaming job reads from Kafka faster than it can write to a slow sink (say, a database under load). Backpressure in Flink propagates from the sink operator backward through the pipeline, throttling the source read rate. Without this, intermediate state buffers grow unboundedly. With it, the pipeline self-regulates — at the cost of reduced throughput, which is the correct tradeoff.
+**Data**: Spark Structured Streaming has an explicit `spark.streaming.backpressure.enabled` setting that throttles ingestion based on processing rate. Without it, a burst in Kafka can overwhelm the executor, causing GC pressure and job failures. Kafka itself doesn't do backpressure — consumers lag — which is why consumer lag monitoring is critical.
 
-Backpressure doesn't solve capacity limits — it makes them visible and controllable, which is the prerequisite for handling them well.
+### Why ignoring it cascades
+
+Absent backpressure, slow consumers cause buffer bloat, which causes latency spikes, which cause timeouts upstream, which cause retries, which increases load, which slows the consumer further. Each tier amplifies the problem for the one above it. The system doesn't degrade gracefully — it falls off a cliff.

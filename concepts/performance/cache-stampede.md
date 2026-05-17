@@ -1,35 +1,24 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Cache Stampede** (also called "thundering herd") happens when a cached value expires and multiple concurrent requests all miss simultaneously, each independently hitting the backing store to recompute the same value — hammering your database with N identical queries instead of one.
+## Cache Stampede
 
-## The Mechanism
+When a popular cache key expires, every concurrent request that was relying on it simultaneously discovers a miss and races to recompute the same value — each one independently hitting the database or origin service. Under high traffic, a single expiration event can translate to hundreds of identical expensive queries landing at once on a system that was only ever designed to handle one.
 
-The problem is a race condition baked into naive caching: read-miss → compute → write. When a popular key expires, every request that arrives before the first writer finishes populating the cache sees a miss. With high traffic, that's potentially thousands of concurrent DB queries for the same data.
+**The core problem** isn't the miss itself — it's that cache invalidation is a binary state change visible to all readers at the same instant. The moment TTL hits zero, the protection disappears for everyone simultaneously. This is fundamentally different from a cold cache warming up, where load arrives gradually. A stampede is a sharp, synchronized spike.
 
-It's not just a traffic spike problem. A single heavily-trafficked key expiring at an inconvenient moment can take down a database that's otherwise handling load fine.
+**Mental model:** Imagine 500 requests per second hitting a product page. Your cache holds the result for 60 seconds. When that key expires, all 500 in-flight requests see a miss in the same millisecond window and fan out to the DB. Your query that normally runs once per minute now runs 500 times in under a second.
 
-## Mental Model
+**Common mitigations:**
 
-Imagine a shared whiteboard with the answer to a hard math problem. When someone erases it, the next 500 people who need the answer all start solving it from scratch simultaneously — instead of one person solving it while the others wait.
+*Probabilistic early expiration (PER)* — instead of expiring hard at TTL, each read has a small random chance of recomputing slightly before expiry. The probability increases as the key approaches its deadline. This naturally staggers recomputation without coordination. The formula used in practice: recompute if `current_time - (beta * log(rand())) > expiry_time`. One process refreshes the cache ahead of time while others still serve the stale value.
 
-## Core Patterns to Prevent It
+*Lock-based (mutex/semaphore)* — on a miss, one process acquires a lock and recomputes; others either wait or serve stale data. Serving stale is almost always the right call — a slightly outdated value beats a thundering herd. This is sometimes called "stale-while-revalidate."
 
-**1. Probabilistic early expiration (PER)**
-Rather than waiting for hard expiry, proactively recompute with increasing probability as the key approaches its TTL. Each request computes: `if random() < β * ttl_remaining then recompute`. One request wins the race before expiry; the rest keep reading the stale-but-valid value.
+**For backend engineers:** The most common real-world pitfall is cache keys tied to cron-style TTLs where thousands of entries expire at the same wall-clock second (e.g., everything cached at startup with `ttl=3600` all expires at T+1h simultaneously). Add jitter to TTLs at write time — `ttl = base_ttl + rand(0, base_ttl * 0.1)`.
 
-**2. Locking / mutex on miss**
-On cache miss, acquire a distributed lock. Only the lock-holder queries the DB; other requests either wait or serve stale data. Works well but adds latency on lock contention and requires careful timeout handling.
+**For SREs:** Cache stampedes look like sudden, correlated DB CPU spikes with no obvious upstream cause. They often follow deploys (cache flush) or scheduled jobs that touch shared data. If your on-call runbook says "increase cache TTL" to fix DB load, a stampede is the likely culprit. Monitoring the ratio of cache miss rate to DB query rate makes these events visible before they become incidents.
 
-**3. Stale-while-revalidate**
-Serve the expired value immediately, trigger async background recomputation. Zero added latency for readers; the key never has a "hard" miss window. Tradeoff: callers must tolerate briefly stale data.
-
-## Practical Scenarios
-
-**Backend:** Your `/api/product/{id}` caches expensive DB joins with a 5-minute TTL. At peak traffic, when that key expires, you suddenly hit the DB with 2,000 concurrent queries for the same row. Fix: add a per-key mutex (Redis `SET NX PX`) — the first miss acquires the lock, recomputes, and releases; others either spin briefly or return stale data.
-
-**SRE:** Cache stampede is a common cause of "mysterious" DB CPU spikes that happen on a regular interval — suspiciously aligned with your TTL values. If you see periodic load spikes on your database metrics with no corresponding traffic spike, check your cache TTL distribution. Randomizing TTL jitter (e.g., `base_ttl + rand(0, 30s)`) spreads expirations so no single second sees a mass expiry.
-
-The underlying discipline: treat cache expiry as a distributed coordination problem, not just a storage concern.
+The fix is almost never "make the cache bigger" — it's ensuring that expiration is a gradual, distributed event rather than a synchronized one.

@@ -1,59 +1,42 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Dynamic Import** lets you load JavaScript modules on-demand at runtime rather than upfront at parse time — the key motivation being that you shouldn't pay the cost of loading code the user may never need.
+## Dynamic Import
 
-## The Core Mechanism
+`import()` lets you load a JavaScript module on demand at runtime instead of at parse time — the practical payoff is that your users don't download code they haven't asked for yet.
 
-Static `import` statements are resolved and executed before your module runs. The browser/Node has to fetch, parse, and evaluate every imported module synchronously as part of the module graph. Dynamic import — `import()` — is a runtime expression that returns a Promise. It defers that entire process until the call site executes.
+### The core mechanism
 
-```js
-// Static: resolved at parse time, always loaded
-import { heavyParser } from './parser.js';
+Static `import` statements are resolved and evaluated before any code runs. The module graph is fully determined at parse time, which is why bundlers can tree-shake and analyze it statically — but it also means everything gets bundled together.
 
-// Dynamic: resolved at call time, only when needed
-const { heavyParser } = await import('./parser.js');
-```
-
-The distinction matters because bundlers (Webpack, Vite, Rollup) treat dynamic imports as **split points**. A static import gets merged into the main bundle. A dynamic import gets emitted as a separate chunk that the browser fetches only when that `import()` call runs.
-
-## Mental Model
-
-Think of static imports as declaring dependencies at the top of a function signature — they're always there. Dynamic import is like lazy initialization: you instantiate the dependency the first time you actually need it, not before.
-
-## Practical Scenarios
-
-**Frontend — route-based code splitting:**
-In an SPA, you don't need the `/admin` bundle when the user lands on `/home`. With dynamic import, your router only fetches each route's bundle when navigating to it:
+`import()` is different: it's a language primitive (not a function, despite the syntax) that returns a `Promise<ModuleNamespace>`. The module isn't fetched or evaluated until that expression is hit at runtime. Bundlers like Vite, webpack, and Rollup treat every `import()` call as a **split point** — they automatically extract the target module (and its dependency subtree) into a separate chunk that gets fetched on demand.
 
 ```js
-const AdminPage = React.lazy(() => import('./AdminPage'));
+// This chunk is loaded immediately
+import { format } from 'date-fns';
+
+// This chunk is only fetched when the user navigates here
+const { Chart } = await import('./chart-library');
 ```
 
-React's `lazy()` is just a thin wrapper around `import()`. The browser fetches `AdminPage.[hash].js` on first navigation to `/admin`, not on initial load.
+The returned module namespace object is identical to what you'd get from a static import — `default`, named exports, everything.
 
-**Frontend — feature gating:**
-A rich text editor or data visualization library might be 300KB. If it's behind a button click, you can defer loading until the user actually opens that feature:
+### Where this actually matters
 
-```js
-button.addEventListener('click', async () => {
-  const { Chart } = await import('./chart-lib.js');
-  new Chart(canvas, data);
-});
-```
+**Route-based splitting** is the canonical use case. In React Router, Next.js's `<Link>`, or Vue Router, each route can lazily load its component. A user hitting `/dashboard` never downloads the `/settings` bundle. React's `lazy()` is just a thin wrapper around `import()`.
 
-**Fullstack — Node.js conditional loading:**
-In a Next.js API route or an Express server, you might only need a PDF generation library on specific endpoints. Dynamic import lets you avoid that module being loaded into every worker:
+**Interaction-triggered loading** is underused but powerful. A rich text editor, a date picker with a large locale library, a chart — these don't need to be in the initial bundle. Load them when the user actually opens that panel or clicks that button.
 
-```js
-export async function POST(req) {
-  const { generatePDF } = await import('./pdf-generator.js');
-  return generatePDF(await req.json());
-}
-```
+**Conditional loading** is another pattern: load a heavy analytics or monitoring library only in production, or load a polyfill only when the browser needs it.
 
-## What This Unlocks
+### Pitfalls
 
-Dynamic import is the primitive that makes **code splitting** possible. Code splitting is the practice of deliberately breaking your bundle into chunks so the browser loads only what's needed for the current context — dynamic import is *how* you express those split boundaries to the bundler. Without it, you'd have one giant bundle regardless of what the user is actually doing.
+The main trap is **waterfall loading**: if component A lazy-loads B, and B lazy-loads C, you've created sequential round trips. Bundler `prefetch` hints (`/* webpackPrefetch: true */` or Vite's `import(...).then()` with `<link rel="modulepreload">`) let you start the fetch during idle time before the user triggers it.
+
+The other trap is **overly granular splitting**. Splitting every small component creates a flood of tiny HTTP requests. The split boundary should be at natural breakpoints — routes, heavy third-party libs, rarely-used features — not at the component level.
+
+### For fullstack engineers
+
+In Node.js/server contexts, `import()` is how you dynamically load plugins, conditionally require heavy dependencies only when a specific endpoint is hit, or load environment-specific config modules. The semantics are identical; the network latency concern just shifts to disk I/O.

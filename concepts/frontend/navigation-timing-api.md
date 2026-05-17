@@ -1,49 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Navigation Timing API
 
-The Navigation Timing API exposes a detailed timestamp breakdown of every phase in a page load — DNS lookup, TCP handshake, TTFB, DOM parsing, load event — directly from the browser. It's how you move from "the page feels slow" to "the page is slow because DNS took 400ms and TTFB was 800ms."
+The Navigation Timing API exposes a high-resolution timestamp for every discrete phase a browser goes through to load a page — DNS lookup, TCP handshake, TLS negotiation, redirect chains, server response, DOM parsing, and more — all accessible from JavaScript after the fact. It's how you stop guessing whether "slow page loads" are a network problem, a TTFB problem, or a client-side rendering problem, using data from actual users rather than synthetic Lighthouse runs.
 
-### Core Mechanism
+### The Core Mechanism
 
-The API gives you a single `PerformanceNavigationTiming` entry (accessible via `performance.getEntriesByType('navigation')[0]`). It's a timeline of monotonic timestamps covering the full navigation lifecycle:
+The browser populates a `PerformanceNavigationTiming` entry (a subclass of `PerformanceResourceTiming`) on the global performance timeline. Unlike the old `window.performance.timing` object (deprecated), this entry is accessed via `PerformanceObserver` or `performance.getEntriesByType('navigation')`. Every timestamp is in milliseconds relative to the time origin, and the phases are additive — `connectEnd - connectStart` gives you TCP handshake time, `responseStart - requestStart` gives you TTFB, and so on.
 
-```
-fetchStart → domainLookupStart → domainLookupEnd
-          → connectStart → secureConnectionStart → connectEnd
-          → requestStart → responseStart → responseEnd
-          → domInteractive → domContentLoadedEventEnd
-          → domComplete → loadEventEnd
-```
+Key timestamps to know:
 
-Each timestamp is a `DOMHighResTimeStamp` relative to the page's time origin. The useful signal comes from *subtracting* them:
+- `fetchStart` — when the browser actually starts the navigation (post-redirect, post-cache-check)
+- `domainLookupStart/End` — DNS resolution window
+- `connectStart/End` + `secureConnectionStart` — TCP + TLS
+- `requestStart` / `responseStart` — wire time to first byte
+- `responseEnd` — full response received
+- `domContentLoadedEventEnd` — parser done, deferred scripts run
+- `loadEventEnd` — everything including images, subresources
 
-```js
-const nav = performance.getEntriesByType('navigation')[0];
+### Concrete Mental Model
 
-const ttfb = nav.responseStart - nav.requestStart;
-const dnsLookup = nav.domainLookupEnd - nav.domainLookupStart;
-const tcpHandshake = nav.connectEnd - nav.connectStart;
-const domProcessing = nav.domComplete - nav.responseEnd;
-```
-
-This entry extends `PerformanceResourceTiming`, so it fits naturally into the `PerformanceObserver` pipeline you already know — observe `'navigation'` type entries the same way you'd observe `'resource'`.
-
-### Mental Model
-
-Think of it as a network waterfall chart (like the one in DevTools Network tab) but available programmatically at runtime, from real users' browsers. DevTools shows you *your* load on *your* machine. Navigation Timing gives you the same data from every user session.
+Think of it as a flight's black box for a single page load. The airport departure board (Lighthouse) tells you the scheduled time; Navigation Timing tells you exactly when the plane left the gate, when it hit the runway, when it lifted off, and when it landed — for every flight, not just a test run.
 
 ### Practical Scenarios
 
-**Frontend:** Build a lightweight RUM snippet that fires on `load`, captures the navigation entry, and sends derived metrics (TTFB, DNS, DOM interactive time) to your analytics endpoint. This is what Datadog RUM and Sentry Performance do under the hood.
+**Frontend:** You notice your SPA's "page transitions" feel slow on mobile. Navigation Timing reveals `responseStart - fetchStart` is 400ms — DNS is re-resolved on each hard navigation because you're not preconnecting to your API origin. Fix: add `<link rel="preconnect">`.
 
-**Fullstack:** TTFB (`responseStart - requestStart`) is your server's responsibility. If it's high, the problem is backend — SSR render time, DB queries, or cold starts — not asset delivery. Navigation Timing lets you triage network vs. server vs. client-side parsing without guessing.
+**Fullstack:** Your server-side rendered pages look fast in staging but slow in prod. Comparing `responseStart - requestStart` across RUM data shows P95 TTFB spikes to 3s during peak hours — backend queuing, not network. Navigation Timing isolated the layer.
 
-**SRE:** Set up alerting on p95 TTFB degradation using aggregated RUM data. A spike in `connectEnd - connectStart` across users might reveal a TCP saturation issue at the load balancer before any synthetic monitor catches it, since synthetics run from known locations on fast connections.
+**SRE:** You roll out a CDN change and want to verify it improves edge cache hit rates. Tracking `connectEnd - fetchStart` in your RUM pipeline before and after shows TCP time dropped by 60% for users in Southeast Asia. Real validation, not synthetic.
 
-### One Gotcha
+### Common Pitfalls
 
-`redirectStart`/`redirectEnd` will be zero if the redirect crosses origins (due to the Timing-Allow-Origin header restriction). Cross-origin redirects are a common source of phantom "fast" numbers that don't match user experience.
+- `secureConnectionStart` is `0` on cache hits (no TLS needed) — don't subtract it blindly
+- Single-page app route changes don't create new navigation entries; those need `PerformanceObserver` watching `navigation` type entries or you track them manually
+- The entry isn't available synchronously at page load — read it after `load` fires, or use a `PerformanceObserver`

@@ -1,38 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Code Splitting
 
-Code splitting is the practice of breaking your JS bundle into multiple smaller chunks that are fetched on demand instead of all at once. The motivation is straightforward: a user hitting `/login` shouldn't have to download the code for your analytics dashboard, admin panel, and every chart library you've ever imported.
+Modern bundlers like webpack or Vite pack your entire application into one (or a few) JavaScript files by default. That's fine at small scale, but once your app grows, a user hitting `/login` downloads code for the dashboard, the admin panel, and the charting library they'll never touch in that session. Code splitting breaks that monolithic bundle into chunks that load on demand.
 
-### The Core Mechanism
-
-When a bundler (Webpack, Vite, Rollup) encounters a dynamic `import()` call, it treats that as a **split point** and emits a separate chunk file. The main bundle gets a small loader that fetches the chunk over the network when that `import()` actually executes at runtime.
-
-The bundler does the hard work statically: it traces the full import graph from each split point, figures out what belongs in each chunk, and handles shared dependencies by de-duplicating them into common chunks. That's why `import('./AdminPanel')` automatically pulls in everything `AdminPanel` transitively imports — unless those things already live in another chunk, in which case they go into a shared chunk instead.
-
-The key mental model: **`import()` is the seam you hand the bundler**. Everything reachable from that call, not already in the main bundle, becomes its own chunk.
-
-### Concrete Example
+**The core mechanism:** Bundlers analyze your `import()` calls at build time and emit separate chunk files. The dynamic import becomes a network fetch at runtime — the browser only requests that chunk when execution reaches that `import()`. The bundler also handles deduplication, so shared dependencies (like React itself) go into a shared chunk loaded once.
 
 ```js
-// Static import — goes into main bundle unconditionally
-import HeavyEditor from './RichTextEditor'
+// Without splitting: UserDashboard is in your main bundle always
+import UserDashboard from './UserDashboard';
 
-// Dynamic import — bundler emits a separate chunk
-const RichTextEditor = lazy(() => import('./RichTextEditor'))
+// With splitting: a separate chunk, fetched only when this runs
+const UserDashboard = lazy(() => import('./UserDashboard'));
 ```
 
-In the second case, the bundler emits `RichTextEditor.[hash].js`. `React.lazy` calls `import()` when the component first renders, which triggers the network fetch. Until then, nothing is loaded.
+React's `lazy` + `Suspense` is the most common pattern, but the underlying primitive is just `import()`. Routers like React Router or TanStack Router have route-level splitting built in — each route becomes a chunk, which is usually the right granularity to start with.
 
-### Practical Scenarios
+**Mental model:** Think of it like a library with books on shelves. Without splitting, every visitor carries every book to their table when they walk in. With splitting, they only grab the books relevant to what they're researching, and the library fetches others as needed.
 
-**Frontend SPA**: The highest-leverage application is route-level splitting. Each route becomes a split point, so users only load JS for pages they actually visit. A React app with 10 routes and no splitting might ship an 800KB main bundle; route-splitting can cut initial load to 60–100KB and defer the rest. Most routers (React Router, TanStack Router) have built-in support for this pattern.
+**Frontend:** The highest-ROI split is route-level. A 2MB bundle becomes ten 200KB chunks — most users only ever load 2-3 of them. Beyond routes, consider splitting heavy third-party deps used in only one area: PDF renderers, rich text editors, chart libraries. The anti-pattern is over-splitting: if every component is a lazy chunk, you trade one big waterfall for many small ones, and the overhead of round-trips kills perceived performance.
 
-**Fullstack (Next.js, Remix)**: The framework handles route splitting automatically, but component-level decisions still matter. A `<PDFExporter>` or `<MapView>` used in one specific route shouldn't load on every render of that route if the user might never trigger it — lazy-load it behind the user action that needs it.
+**Fullstack (Next.js, Remix, etc.):** Frameworks handle route splitting automatically, but you still own component-level decisions. Server components change the calculus — a heavy component rendered server-side never ships its JS to the client at all, which can be better than lazy loading it. Know which budget you're optimizing: bundle size (client) vs. render time (server).
 
-### The Tradeoff to Watch
+**Common pitfalls:**
+- Lazy loading above the fold — Suspense fallbacks are jarring when the user sees them immediately on page load; split below the fold or prefetch aggressively
+- Not prefetching on hover/focus, so the chunk fetch happens only after the click, adding latency
+- Forgetting that splitting shifts load time, it doesn't eliminate it — the chunk still needs to download, parse, and execute
 
-Over-splitting creates waterfall problems. Each chunk is an additional network round-trip, and if chunk A loads then triggers chunk B then triggers chunk C, you've replaced one large bundle with a request chain that's slower. Bundlers expose chunk size hints (`minSize`, `maxSize`) and you can use `webpackChunkName` (or Rollup's `manualChunks`) to group related modules into fewer, better-sized chunks. The goal isn't the smallest chunks — it's the right chunks loaded at the right time.
+The right time to reach for this is when your main bundle exceeds ~150-200KB gzipped, or when profiling shows significant JS parse time on initial load.

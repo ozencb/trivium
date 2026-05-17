@@ -1,48 +1,45 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Saga Pattern
 
-A Saga is a sequence of local transactions coordinated to achieve what would otherwise require a distributed transaction — without the locking and tight coupling that 2PC brings. The key insight is that you trade atomicity for eventual consistency, using **compensating transactions** to undo work when something fails downstream.
+The Saga pattern solves a hard constraint: you need atomicity across multiple services, but distributed locks (2PC) are expensive, fragile, and break under partial failure. Sagas trade isolation for availability — each step commits locally and publishes an event, with compensating transactions to reverse committed work if a later step fails.
 
-### Core Mechanism
+### The Mechanism
 
-Each step in a saga performs a local transaction and then either emits an event or calls the next service. If step *n* fails, the saga executes compensating transactions for steps *1 through n-1* in reverse order to restore consistency.
+A saga is a sequence of local transactions. Each service owns its step: commits to its own database, then emits an event or message. Two coordination styles exist:
 
-Two implementations exist:
+- **Choreography**: each service listens for upstream events and reacts. Decentralized, but hard to observe and reason about.
+- **Orchestration**: a central coordinator (often a state machine) tells each service what to do and handles failures. More operational visibility, clearer failure semantics.
 
-- **Choreography**: Services react to events directly. No central coordinator — each service knows what events to emit and what to listen for. Looser coupling, but causality is harder to trace.
-- **Orchestration**: A saga orchestrator (a dedicated service or workflow engine) tells each participant what to do and handles failures explicitly. Easier to reason about, clearer failure handling, but the orchestrator becomes a coordination bottleneck.
+When a step fails, compensating transactions run in reverse order. These aren't rollbacks — they're new forward-moving transactions that undo business effects. A cancelled reservation doesn't erase the record; it creates a cancellation event.
 
 ### Concrete Example
 
-You're building an e-commerce checkout flow. A single "place order" operation touches three services: inventory, payment, and fulfillment.
+Order fulfillment across four services:
 
-```
-1. Reserve inventory         → success
-2. Charge payment card       → success  
-3. Create fulfillment order  → fails (warehouse system down)
-```
+1. **Order Service** — creates order (pending)
+2. **Inventory Service** — reserves stock
+3. **Payment Service** — charges card
+4. **Shipping Service** — schedules delivery
 
-Now you need to roll back:
-```
-3'. (nothing to undo)
-2'. Refund the charge
-1'. Release the inventory reservation
-```
+If payment fails at step 3, the saga runs compensations: release the inventory reservation (step 2), then mark the order as failed (step 1). Each compensation must be idempotent — network retries are a given.
 
-Each compensating transaction must be **idempotent** — you may retry them, and executing twice should produce the same outcome as once.
+### What Seniors Know That Juniors Miss
 
-### Practical Considerations for Backend Work
+Sagas are **ACD, not ACID**. They're atomic (either all steps complete or compensations run), consistent, and durable — but not **isolated**. Two concurrent sagas can observe each other's intermediate state. A customer might briefly see an order as "reserved" that ultimately gets cancelled. This is a real design constraint, not a theoretical one — you have to decide whether that's acceptable for your domain, and often it is.
 
-**Saga state needs to be persisted.** If your orchestrator crashes mid-saga, it must be able to resume. You typically store saga state in a database with each step transition, which means your saga is itself a stateful workflow.
+This means you can't blindly apply saga to every distributed transaction. Some business invariants genuinely require isolation (financial ledgers with strict balance constraints, for instance). When a team says "we'll just use sagas everywhere," that's a flag — they're often ignoring the dirty-read problem.
 
-**Compensations aren't always perfect.** Canceling a shipped package isn't a true rollback — it's a semantic undo. Design compensations to be "good enough" rather than perfectly reversible.
+### In Practice
 
-**Idempotency keys matter everywhere.** When retrying a step after a crash, the downstream service must handle duplicate requests gracefully. This is where your existing knowledge of idempotency keys pays off directly.
+In backend systems, sagas show up in:
+- **Order management** (e-commerce, marketplace, travel booking)
+- **Financial workflows** (money transfers, loan processing)
+- **Account provisioning** (creating a user across auth, billing, and notification services)
 
-**Choreography vs. orchestration in practice**: Choreography works well for simple linear flows; orchestration is worth the overhead once you have branching logic, parallel steps, or complex failure handling. Temporal, AWS Step Functions, and Conductor are common orchestration choices.
+The orchestration style maps cleanly to tools like Temporal, AWS Step Functions, or a hand-rolled state machine in a database. Choreography fits simpler, well-understood flows where you want less coupling.
 
-The tradeoff vs. 2PC is explicit: you give up synchronous atomicity in exchange for availability and decoupling, and you accept that the system may be transiently inconsistent between steps.
+The interview-worthy insight: sagas don't eliminate consistency problems, they make them explicit and manageable. You're accepting eventual consistency and compensability as design constraints upfront, which forces clearer domain modeling around what "undo" means for each business operation.

@@ -1,32 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Eventual Consistency
 
-Eventual consistency is a replication model where writes are accepted immediately on one node and propagated to other replicas asynchronously — meaning all replicas will converge to the same value *given no new updates*, but reads may return stale data in the interim. It's the deliberate trade-off you make when you choose availability and partition tolerance (the AP side of CAP) over strong consistency.
+When you choose AP over CP in CAP terms, you're accepting that replicas can diverge temporarily — eventual consistency is the guarantee that they *will* converge, given no new writes and enough time. It's not a weak guarantee so much as a different contract: trading synchronous coordination cost for availability under partition.
 
-### The Core Mechanism
+**The core mechanism**
 
-When a write hits a node, it doesn't block waiting for all replicas to acknowledge it. The write succeeds locally, and replication happens out-of-band. This means two things: reads can return stale values, and two replicas can receive conflicting concurrent writes.
+Strong consistency requires coordination before acknowledging a write — typically a quorum or leader commit. Eventual consistency skips that: writes land on any available replica immediately and propagate asynchronously. The convergence happens through *anti-entropy* processes: background reconciliation that gossips state between nodes, detects divergence, and resolves it.
 
-The hard part isn't the "eventually" — it's what happens when writes conflict. Systems need a resolution strategy: last-write-wins (using wall clocks, risky due to clock skew), vector clocks (track causal ordering across nodes), or CRDTs (data structures designed to merge deterministically). The choice of conflict resolution is where eventual consistency gets genuinely complex.
+The critical question is *how* conflicts resolve. Most systems pick one of three strategies:
+- **Last-Write-Wins (LWW)**: highest timestamp wins. Simple, lossy — concurrent writes from two clients silently discard one.
+- **Vector clocks**: track causal history per key. Detect true conflicts (concurrent writes with no causal relationship) vs. stale reads. Shifts resolution burden to the application.
+- **CRDTs** (Conflict-free Replicated Data Types): data structures mathematically guaranteed to merge commutatively and associatively. No conflicts by design — counters, sets, registers. The convergence is built into the type.
 
-### Mental Model
+**Mental model**
 
-Think of it like git. Each developer has a full local copy. They commit independently. Eventually, after pushing and pulling, everyone converges. Merge conflicts are the conflict resolution problem. You can work offline (high availability) but you might make decisions based on a stale branch.
+Think of DNS. You update an A record; it propagates over minutes or hours across resolvers worldwide. During propagation, different clients see different IPs. Eventually everyone agrees. No coordinator gates the update — availability is prioritized, and the system converges through TTL expiry and cache refresh. DNS is eventually consistent and mostly nobody cares, because the staleness window is acceptable.
 
-The analogy breaks down in one key way: in distributed systems, you usually can't ask the user to resolve merge conflicts.
+**Where it matters in practice**
 
-### Practical Scenarios
+*Backend*: Cassandra and DynamoDB default to eventual consistency. Read at `ONE` consistency level and you might get a stale replica. If you're building a counter, inventory system, or anything where concurrent writes conflict, you need to consciously pick a conflict model — or you'll silently lose data under concurrent load.
 
-**Backend:** DynamoDB and Cassandra default to eventual consistency. A user's shopping cart, a "like" counter, a user profile — these tolerate stale reads. You choose strong consistency (paying latency + availability cost) only for things like inventory counts or payment state.
+*SRE*: Replication lag in Postgres streaming replication is eventual consistency. Replica reads during high-write periods return stale data. The failure mode isn't errors — it's silently returning old rows. Monitoring replication lag as a SLI matters more than most teams realize until an incident forces it.
 
-**SRE:** Replication lag is your eventual consistency health metric. If replica lag spikes, your "eventually" becomes "very slowly" — which breaks SLOs for anything read-sensitive. You'll also see this in cache invalidation: your Redis cache is an eventually consistent view of your DB; invalidation strategy is just your replication protocol.
+*Fullstack*: "Like" counts, view counters, feed rankings — all typically eventually consistent. The pattern is optimistic UI: apply the update client-side immediately, fire the request, accept that the server-side count might lag. Users tolerate this. What they don't tolerate is losing a cart item or a financial transaction — which is where you need to step back to stronger guarantees.
 
-**Fullstack:** The classic footgun is read-your-writes violations. User posts a comment, gets redirected, and hits a replica that hasn't synced yet — the comment appears missing. The fix is routing the user's reads to the same node they wrote to (sticky sessions or primary reads) for a short window after a write.
+**The real pitfall**
 
-### Connection Forward
-
-Eventual consistency makes conflict resolution a first-class concern — you can't avoid thinking about what happens when two nodes see conflicting writes. That's where vector clocks, CRDTs, and application-level merge logic come in. It also forces you to design UI and API semantics around the possibility of stale reads, which is where read-your-writes consistency (a weaker guarantee than strong, stronger than eventual) becomes a useful middle ground.
+"Eventual" has no time bound in the formal definition. It converges *if* writes stop. In practice, under continuous write load, replicas can stay diverged indefinitely. This is where understanding your system's anti-entropy rate and replication topology matters — and why "eventually consistent" is a starting point for reasoning, not the end of it.

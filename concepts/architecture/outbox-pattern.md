@@ -1,42 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Transactional Outbox Pattern
 
-The pattern solves the dual-write problem: when you need to update a database *and* emit an event, you can't do both atomically across two systems — so you engineer it so you only have to do one.
+The dual-write problem is where most distributed systems quietly break: you save an order to Postgres, then publish an `OrderCreated` event to Kafka — and if the app crashes between those two, you've got data that diverged silently. The Transactional Outbox Pattern closes that gap by making event publishing part of the same ACID transaction as your domain write.
 
-### The Core Mechanism
+### The Mechanism
 
-Instead of publishing to a message broker directly, you write the event into an **outbox table** in the same database, within the same transaction as your business write. A separate relay process reads from that table and forwards messages to the broker.
-
-This collapses a distributed coordination problem into a local one. Your database's ACID guarantees do the hard work: either both the business record and the outbox row commit, or neither does. The cross-system reliability problem shifts to the relay — which is easier to reason about because it's a dedicated, retryable process with a single job.
-
-The relay has two common implementations:
-- **Polling**: reads unprocessed rows on an interval, publishes, marks them done
-- **CDC-based**: tails the database's transaction log (e.g., via Debezium) and reacts to inserts in the outbox table — this is the natural on-ramp to Change Data Capture
-
-### Concrete Example
-
-An order service processes a checkout:
+Instead of publishing directly to a message broker, you write the event to an `outbox` table in the same database transaction as your domain record. A separate process — a relay — polls that table (or reacts to CDC) and publishes the events to the broker, marking them as sent. The invariant is: if the transaction committed, the event will eventually be delivered. If it rolled back, neither the domain record nor the outbox row exists.
 
 ```sql
 BEGIN;
-  INSERT INTO orders (id, user_id, total) VALUES (...);
-  INSERT INTO outbox (id, event_type, payload, processed)
-    VALUES (gen_uuid(), 'OrderPlaced', '{"orderId": ...}', false);
+  INSERT INTO orders (id, status) VALUES ($1, 'placed');
+  INSERT INTO outbox (aggregate_id, event_type, payload)
+    VALUES ($1, 'OrderCreated', $2);
 COMMIT;
 ```
 
-The relay picks up the unprocessed outbox row, publishes to Kafka, then marks it `processed = true`. If the relay crashes after publishing but before marking it done, it re-publishes on retry — so downstream consumers need to handle duplicates (idempotency), but that's a far more tractable problem than preventing message loss.
+The relay is now responsible for at-least-once delivery, not your application code. You've moved from "maybe published" to "will be published."
 
-### Where It Shows Up
+### The Tricky Parts
 
-**Backend:** Any microservice architecture where a state change needs to trigger downstream effects — inventory updates, notification sends, audit trails. Without the outbox, you're gambling that your broker publish and DB commit don't diverge during a crash window.
+**At-least-once, not exactly-once.** The relay can publish before it marks the row sent, then crash and republish. Consumers must be idempotent — this is non-negotiable and often underestimated.
 
-**Data:** When building event streams for analytics or OLAP pipelines, the outbox is a clean, queryable staging area. CDC tooling can consume it without needing access to your core business tables, giving you a reliable integration point that doesn't couple your schema to your pipeline.
+**Relay design matters.** Polling adds latency and database load. CDC (Change Data Capture) — reading the database's write-ahead log — is lower latency and doesn't require polling queries, but adds operational complexity. Tools like Debezium sit in this space.
 
-### The Trade-off to Keep in Mind
+**Ordering.** Per-aggregate ordering is usually achievable (poll by `aggregate_id` + sequence). Global ordering is harder and often not worth pursuing.
 
-You're trading broker coupling for database coupling — the outbox table lives in your service's DB. This is usually the right call, but it does mean the relay adds write amplification (two writes per operation) and you need to manage outbox cleanup to avoid unbounded table growth.
+### Practical Scenarios
+
+**Backend:** Any time you're mutating state and need a downstream system to react — order service emitting to fulfillment, payment service notifying notifications service. Particularly critical when the domain DB and broker are separate systems (always).
+
+**Data:** Outbox is a reliable way to stream operational data into a data warehouse or analytics pipeline without dual-writing from application code. The relay feeds Kafka, Kafka feeds your lakehouse. Compare this to querying prod directly or building fragile ETL on top of polling.
+
+### Why It Matters in Senior Conversations
+
+When someone proposes "just publish after the commit," the outbox pattern is the correct pushback — and knowing *why* (the window between commit and publish, the crash scenarios) signals you've operated distributed systems under real conditions. It also sets up the natural next question: if you're already reading the WAL for CDC, do you even need an outbox table, or can CDC capture the domain table's events directly? That's where this pattern bleeds into CDC design, and being fluent in both is what separates "knows the pattern" from "understands the tradeoffs."

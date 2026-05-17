@@ -1,45 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## React Transitions API
 
-React Transitions lets you classify state updates by urgency — marking some as "can wait" so React can keep the UI responsive while heavier renders happen in the background. The problem it solves: before this API, all state updates competed equally for the render pipeline, so a slow re-render would block fast interactions like keystrokes.
+`useTransition` and `startTransition` let you mark a state update as "deferrable" — React will start rendering it but yield to more urgent work (like keystrokes or clicks) if they arrive mid-render. Without this, a single expensive state update blocks the main thread until it finishes, causing visible input lag.
 
-### Core mechanism
+### The core mechanism
 
-The API sits on top of Concurrent Rendering's ability to maintain multiple in-progress render trees. When you wrap a state update in `startTransition`, React splits work into two lanes:
-
-1. **Urgent**: applied immediately, keeps the current committed UI intact
-2. **Transition**: rendered in the background, interruptible
-
-The critical behavior is **interruption**. If a new urgent update arrives while a transition is mid-render, React discards the in-progress work and starts over. This is why transitions feel "free" — they don't block anything, and stale renders get thrown away automatically.
+React's concurrent renderer can pause, abandon, and restart renders. But it needs to know *which* renders are worth interrupting. By default, everything is treated as equally urgent. `startTransition` is your signal: "this update matters, but not more than user input."
 
 ```js
 const [isPending, startTransition] = useTransition();
 
-// input update: urgent (user sees their keystroke immediately)
-setInputValue(e.target.value);
-
-// filter update: transition (can be deferred, can be interrupted)
-startTransition(() => {
-  setQuery(e.target.value);
-});
+function handleSearch(query) {
+  setInputValue(query);                    // urgent — updates the input immediately
+  startTransition(() => {
+    setFilteredResults(heavyFilter(query)); // deferred — can be interrupted
+  });
+}
 ```
 
-`isPending` goes `true` while the transition render is in-flight, giving you a hook to show a subtle loading state without a full skeleton.
+The input stays responsive while the filtered list renders in the background. If the user types again before the list finishes, React throws away the in-progress render and starts fresh with the latest value. `isPending` gives you a signal to show a loading indicator without committing to a spinner lifecycle.
 
-### Mental model
+### What's actually happening
 
-Imagine two queues at a deli counter. Urgent updates jump to the front. Transitions wait in the regular line — and if they're still waiting when something urgent arrives, they lose their spot and have to re-queue with the new data. You never serve stale work.
+React doesn't move work to a worker thread — it's still single-threaded. What changes is the *priority lane*. Transition updates render at a lower priority lane. When higher-priority work arrives, React saves its progress, handles the urgent update, then resumes (or discards and restarts) the deferred work.
 
-### Practical scenarios
+### When to reach for it
 
-**Frontend — search/filter UIs:** The canonical case. A controlled input + a large filtered list. Mark the list re-render as a transition. The input stays crisp at 60fps; the list catches up when React has spare time. Without this, even a 100ms render noticeably lags keystrokes.
+**Frontend:** Route transitions with heavy component trees, search-as-you-type with expensive filtering/sorting, tab switches that unmount/remount large subtrees. If you've ever added a debounce to "fix" lag, transitions are often the right fix instead — debounce hides the problem, transitions let React *interrupt* it.
 
-**Frontend — tab/view switching:** User clicks a tab that renders a complex chart or table. Wrap the "active tab" state update in `startTransition`. The tab highlights immediately (urgent), the content renders without blocking interaction. `isPending` lets you dim or overlay the panel while it loads.
+**Fullstack:** Combined with Suspense and server components, transitions are how Next.js App Router keeps navigation snappy. When you navigate, React starts rendering the new route in the background (transition) while keeping the current page interactive until the new one's ready.
 
-**Fullstack — route transitions with Suspense:** In Next.js App Router or React Router with `startTransition`-wrapped navigation, React keeps the current route visible while the new route's data fetches and renders in the background. This is why Next.js wraps `router.push` in a transition internally — it avoids flashing to a loading skeleton on every navigation when the new page is fast enough to render before the user notices.
+### Common pitfalls
 
-The practical rule: any update that's triggered by user input but drives a render that isn't the direct acknowledgment of that input is a transition candidate.
+- **Wrapping the wrong update**: Both state updates in the example above need to exist — the input value *outside* the transition (urgent), the expensive result *inside*. Wrap too much and the input feels sticky.
+- **Expecting immediate commits**: Transition updates don't flush synchronously in tests. Use `act` with async or `waitFor`.
+- **Using it for async work**: `startTransition`'s callback must be synchronous. For async data fetching, pair it with Suspense — the transition keeps things smooth while Suspense handles the pending state.
+
+Reach for this when you have a render that's legitimately expensive and user-triggered, and you'd rather React deprioritize it than block input.

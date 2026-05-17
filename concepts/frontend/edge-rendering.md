@@ -1,32 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Edge Rendering
 
-Edge rendering is SSR moved out of your origin datacenter and into the CDN nodes that are already close to your users — so the HTML generation happens ~20ms away instead of ~200ms away.
+Edge rendering is SSR executed not on a centralized origin server but on nodes distributed globally — the same infrastructure that serves CDN assets, now running your rendering logic. The motivation is simple: even fast SSR is slow if the request travels 200ms to a datacenter before a byte is returned.
 
-### The core mechanism
+**The core mechanism**
 
-Traditional SSR has a fixed latency floor: your user in Tokyo makes a request, it travels to your US-East origin, the server renders HTML, and the response travels back. Even a fast server can't escape physics.
+Traditional SSR: user request → origin server (possibly far away) → renders HTML → response. CDN caching helps for static or cache-friendly content, but personalized responses (auth state, locale, A/B variants, cart data) can't be served from cache — they require an origin hit every time.
 
-Edge rendering runs that same rendering logic on distributed compute nodes (Cloudflare Workers, Vercel Edge Functions, AWS Lambda@Edge, etc.) — the same infrastructure that's been serving static assets from CDN pops for years. The difference from a CDN cache is that this compute is *dynamic*: it can fetch data, personalize content, and stream HTML, not just return a cached file.
+Edge rendering moves the render itself to the CDN node. Frameworks like Next.js (with Vercel Edge Runtime), Remix, and Cloudflare Workers let you mark routes as "edge" — they execute in V8 isolates (not Node.js) at the CDN PoP closest to the user. Request hits London PoP, renders there, returns in 20ms instead of 200ms.
 
-The constraint is the runtime. Edge environments are intentionally stripped-down — no Node.js APIs, limited memory, short execution windows. You get a V8 isolate (or WASM), fetch, and not much else. This forces you to think differently about what work happens at the edge vs. what stays at origin.
+**Mental model**
 
-### Mental model
+Think of it as turning every CDN node into a thin app server. The tradeoff is the runtime: no native modules, limited APIs, cold-start-sensitive (though isolates start faster than containers), and no filesystem access. You're writing code that runs in a browser-like environment, not a full server.
 
-Think of it as a franchise model. Your origin is corporate HQ — it has everything but it's slow to reach. Edge nodes are franchise locations: limited menu, but one is always nearby. For most requests (read-heavy pages, personalized headers, A/B variants), the franchise location is plenty. For complex operations (heavy DB writes, third-party integrations with beefy SDKs), you still route to HQ.
+**Where this matters in practice**
 
-### Practical scenarios
+*Frontend:* Per-user personalization — rendering different nav states, locale-specific content, or feature flags without a client-side flash. Edge middleware for auth redirects (Next.js `middleware.ts` running at the edge) is a common entry point.
 
-**Frontend:** Frameworks like Next.js and Remix let you annotate specific routes as edge-rendered. You'd move your marketing pages and product listing pages to the edge — they're read-heavy, benefit most from low latency, and their data requirements are simple enough for fetch-based edge code.
+*Fullstack:* The boundary question becomes interesting. Databases aren't globally distributed the way edge nodes are, so edge-rendered pages that hit a single Postgres instance in `us-east-1` gain latency on the render but lose it on the DB query. You need edge-compatible data layers — Cloudflare D1, PlanetScale's edge-compatible driver, or regional read replicas — to realize the full benefit.
 
-**Fullstack:** Personalization without the flash. Instead of shipping a generic page and hydrating user-specific content client-side (causing layout shift), you render the personalized HTML at the edge using a cookie or geo header. The user gets a tailored response with no visible loading state.
+*DevOps:* Cold start monitoring matters. Isolates are fast but not free, and bundle size directly impacts startup. Workers have strict CPU time limits (10–50ms on Cloudflare). You're debugging in a constrained environment without the observability tooling you'd have on a normal server.
 
-**DevOps:** Edge rendering shifts your scaling model. You're no longer capacity-planning a fleet of origin servers for peak traffic — the CDN provider scales that for you. But you gain a new ops concern: cold start behavior, edge-to-origin latency for data fetching, and observability across 200+ PoPs instead of 3 regions.
+**When to reach for it**
 
-### The gotcha
+Reach for edge rendering when you need personalized SSR with latency SLAs you can't meet from a single origin, and your data access patterns can tolerate — or be adapted to — distributed edge constraints. Don't reach for it when your rendering is data-heavy with a single DB, when you rely on native Node.js modules, or when CDN caching already solves your TTFB problem.
 
-Edge rendering doesn't eliminate your origin — it adds a layer in front of it. If your rendering logic needs data from a database that's only in us-east-1, you've moved the compute closer but the data is still far. The full benefit requires either globally distributed data (PlanetScale, Turso, D1) or aggressive caching at the edge layer.
+The senior-engineer signal in interviews: knowing that edge rendering shifts the bottleneck from network latency to data locality, and being able to articulate when that tradeoff is worth it.

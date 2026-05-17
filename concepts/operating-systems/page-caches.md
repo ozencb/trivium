@@ -1,28 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Page Cache
+The OS treats free RAM as a transparent cache layer between your process and the disk — every file read goes through it, and the kernel manages population and eviction automatically without any application awareness.
 
-The kernel caches file I/O in RAM so repeated reads skip the disk entirely. This happens automatically, transparently, and consumes all available "free" memory — by design.
+**Mechanism**
 
-### The mechanism
+When you call `read()` on a file, the kernel checks if those file blocks are already mapped into the page cache (backed by physical RAM pages). On a miss, it reads from disk into cache pages, then copies to your buffer. On a hit, it copies directly from RAM — no disk I/O. Writes in write-back mode update the cache page and mark it dirty; the kernel flushes to disk asynchronously via `pdflush`/`writeback` threads.
 
-When you call `read()` on a file, the kernel checks an in-memory index keyed by `(inode, byte offset)`. On a hit, it copies from RAM. On a miss, it reads from disk, stores those pages in the cache, then copies to your buffer. Writes go to the cache first (marking pages "dirty"), and a background kernel thread (`writeback`) flushes them to disk asynchronously.
+The critical invariant: cache pages are indexed by `(inode, offset)`, so two processes reading the same file share the same physical pages. The OS doesn't double-buffer.
 
-The critical insight: the page cache isn't a separate layer bolted onto virtual memory — it *is* virtual memory. The kernel uses the same physical pages for both. When you `mmap()` a file, you're mapping page cache pages directly into your address space. No copy. That's the entire reason mmap can outperform `read()` for large files.
+Free RAM is just unused cache. On Linux, `free` showing near-zero "free" memory with high "buff/cache" is not memory pressure — it's the system working correctly. The kernel will evict clean cache pages under actual memory pressure with zero cost (dirty pages require a flush first).
 
-### Mental model
+**Concrete model**
 
-Treat RAM as a transparent LRU cache for the disk, managed entirely by the kernel. The kernel will greedily fill all available RAM with cached file pages. On Linux, `free -h` shows this as "buff/cache" — that memory isn't wasted, it's working. The OS evicts pages under memory pressure, prioritizing resident application data over cached file data.
+Think of it as a hash map keyed by file block address, stored in RAM. First read = cache miss → disk read + populate. Every subsequent read = cache hit → memcpy speed (~10GB/s vs ~500MB/s for NVMe, orders of magnitude worse for spinning disk).
 
-### Practical implications
+**Backend**
 
-**Backend**: When Postgres says a query is fast despite low `shared_buffers`, the OS page cache is often the reason — the kernel has those table/index pages cached from a prior scan. You're getting two cache layers: Postgres's buffer pool (userspace, smarter eviction policy) sitting on top of the kernel's page cache (kernel space, LRU). Over-sizing `shared_buffers` relative to your working set can actually *hurt* if it crowds out page cache for other processes.
+This is why cold-start latency on a fresh deploy or after a restart differs dramatically from steady-state. A Go or Java service reading config files, templates, or static assets pays full disk cost once, then operates at memory speed. If your benchmark shows "slow first request, fast subsequent" — you're seeing cache warm-up. Applications that `mmap` files (common in databases) exploit this directly: the OS page fault mechanism *is* their caching layer.
 
-**SRE**: Post-deploy slowness isn't just JIT warmup — it's cold page cache. After a restart, every file read goes to disk until the OS repopulates the cache. If you're capacity-planning and see "free" RAM on a production box, check `/proc/meminfo`'s `Cached` field — that RAM is load-bearing. Shrinking it (e.g., adding a memory-hungry sidecar) has a real latency cost on the first traffic wave. Tools like `vmstat 1` and `iostat` will show the disk reads spike during warmup in ways that don't show up in app-level metrics.
+**SRE**
 
-### Why this unlocks what comes next
+`/proc/meminfo`'s `Cached` field tells you how warm your cache is. After a host restart or failover, services that read large datasets (logs, config, ML model weights) will have cold caches — expect elevated latency until they warm. This is why rolling restarts in stateful clusters need careful pacing. Tools like `vmtouch` let you explicitly warm or evict specific files, useful for pre-warming before a traffic shift or verifying what's actually cached. `sar -B` and `page-cache-hit-rate` from `bcc-tools` give you miss rates in production.
 
-Database buffer pools exist because the kernel's LRU eviction is access-pattern-agnostic — it can't distinguish a one-time sequential scan from a hot index page. A DB can pin critical pages and implement smarter policies. And `mmap` performance makes sense once you see that it's just removing the copy step between the page cache and your address space.
+**Connection forward**
+
+Database buffer pools (Postgres `shared_buffers`, InnoDB buffer pool) are essentially application-managed page caches. They exist because the kernel's LRU eviction policy doesn't understand query access patterns — a sequential scan shouldn't evict hot index pages. Understanding the OS page cache makes it clear why databases tune their own buffer pools rather than relying on the kernel's.

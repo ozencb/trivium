@@ -1,36 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Mutexes and Locks
 
-A mutex (mutual exclusion lock) ensures that only one thread can execute a block of code at a time. You need one whenever multiple threads share mutable state — without it, interleaved reads and writes produce results that are neither thread's intention.
+A mutex (mutual exclusion lock) is a token — only one thread holds it at a time, and holding it is the prerequisite for touching shared state. The guarantee isn't magic: it's a hardware-backed compare-and-swap that makes "check if free, then claim it" atomic, so two threads can't both win the race.
 
-### The Core Mechanism
+**The core mechanism**
 
-A mutex has two operations: **acquire** (lock) and **release** (unlock). When a thread acquires a mutex, it "owns" it until it releases it. Any other thread that tries to acquire the same mutex while it's held will **block** — the OS suspends it and parks it in a wait queue. When the owner releases, the OS picks a waiting thread, marks it runnable, and hands it the lock.
+A mutex is essentially a boolean in memory with atomic semantics. `lock()` spins or parks the calling thread until it can atomically flip the state from "free" to "held." `unlock()` flips it back and wakes a waiting thread. Everything between those two calls is a *critical section* — serialized, which is exactly the point.
 
-The critical insight: the acquire/release operations themselves must be atomic. CPUs expose instructions like `CMPXCHG` (compare-and-exchange) that do a conditional write in a single, uninterruptible step. The mutex is essentially a flag stored in memory, and the atomicity of toggling that flag is what makes the whole thing work. The OS-level blocking layer is just an optimization so waiting threads don't burn CPU spinning.
+Two properties matter beyond the basic acquire/release:
 
-**Mental model:** a single-occupancy bathroom. The lock on the door is the mutex. Only one person inside at a time. If occupied, you wait in the hallway. No explicit coordination — the mechanism itself enforces the invariant.
+- **Re-entrancy**: a re-entrant mutex lets the *same* thread acquire it multiple times without deadlocking itself. A non-re-entrant one will deadlock if you call a locked function from another locked function in the same thread. Most language-level mutexes are re-entrant; POSIX `pthread_mutex_t` defaults to non-re-entrant.
+- **Granularity**: a coarse lock protects a large structure simply but creates a bottleneck. A fine-grained lock (e.g., per-row instead of per-table) increases throughput but multiplies the surface area for bugs — specifically deadlocks, because now acquisition *order* matters.
 
-### What Mutex, What's Not
+**The deadlock invariant**
 
-A mutex protects a **critical section** — the block between acquire and release. The section should be as short as possible. Long critical sections mean long waits; contention tanks throughput.
+Deadlock happens when thread A holds lock 1 and waits for lock 2, while thread B holds lock 2 and waits for lock 1. The fix is enforcing a *total ordering* on lock acquisition: always acquire lock 1 before lock 2, everywhere. Violating this — even once, in one code path — is enough.
 
-Two variants worth knowing:
-- **Read/Write locks (RWMutex):** multiple readers can hold simultaneously, but a writer gets exclusive access. Useful when reads dominate.
-- **Recursive (reentrant) mutexes:** the same thread can acquire it multiple times without deadlocking. Not available in all languages — Go's `sync.Mutex` is non-reentrant by design.
+**Concrete mental model**
 
-### Practical Scenarios
+Think of a single-stall bathroom. The lock on the door *is* the mutex. Anyone can try the handle, but only one person gets in. The critical section is whatever happens inside. Granularity is analogous to whether you lock the whole building vs. just the stall — finer granularity means more throughput but you now have to reason about the ordering of multiple doors.
 
-**Backend:** a connection pool. When a goroutine wants a connection, it needs to atomically check availability and take one. Without a mutex, two goroutines see the same slot as available and both grab it. A mutex around the "check + take" sequence collapses that race.
+**Where this surfaces in practice**
 
-**Backend / Fullstack:** in-memory rate limit counters. You're tracking request counts per user in a map. Concurrent increments to the same counter race without locking — the map itself isn't thread-safe, and even if it were, read-increment-write across three steps isn't atomic. A mutex (or `sync/atomic` for simple integers) fixes both.
+*Backend*: connection pool management, cache invalidation (read-modify-write on a shared map), in-process job queues. Any time you're protecting a shared data structure across goroutines, threads, or async workers — even if just a counter — you need a mutex or a lock-free alternative.
 
-**Fullstack:** shared cache invalidation. When a background job refreshes a cache while request handlers are reading it, an RWMutex lets reads proceed concurrently but gives the writer clean exclusive access during the swap.
+*Fullstack*: less common client-side, but Node.js's single-threaded model hides this until you hit shared state across worker threads (`SharedArrayBuffer` + `Atomics`), or in WebAssembly modules with threading. Server-side, anywhere request handlers share mutable state (caches, rate limit counters in memory) brings mutex semantics back in.
 
-### Where This Leads
-
-Mutexes introduce a new class of failure: **deadlock**, when two threads each hold a lock the other needs and neither can proceed. That's the direct next concept. Understanding how lock acquisition order determines deadlock risk is what motivates Two-Phase Locking in databases — and understanding the cost of contention is what motivates lock-free data structures that replace mutexes with CAS loops entirely.
+Understanding this is the foundation for recognizing deadlocks when two locks interact, and for appreciating why lock-free data structures (which replace locks with atomic CAS loops) exist — they trade implementation complexity for eliminating contention entirely.

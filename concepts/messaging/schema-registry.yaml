@@ -1,0 +1,16 @@
+id: schema-registry
+title: Schema Registry
+category:
+  - Messaging
+  - Data Governance
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - pub-sub-pattern
+  - kafka-partitioning
+dependents:
+  - data-contracts
+brief: A centralized store for Avro/Protobuf/JSON Schema definitions that enforces compatibility rules, preventing producers from publishing messages that break existing consumers.

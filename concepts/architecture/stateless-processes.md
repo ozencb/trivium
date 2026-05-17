@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Stateless processes** treat each request as if the application has never seen the caller before — all state lives in an external store, never in process memory. This is what makes horizontal scaling trivial: any instance can handle any request.
+## Stateless Processes
 
-## The Core Idea
+Stateless processes treat each request as self-contained: the process holds no memory of prior requests, and any state that must persist lives outside the process boundary entirely. The payoff is that you can route any request to any instance — no sticky sessions, no warm-up dependencies — which makes horizontal scaling a mechanical operation rather than a coordination problem.
 
-A stateless process holds no in-memory data that needs to survive beyond a single request/response cycle. It reads what it needs from an external source (database, cache, object store), does work, writes results back, and discards everything. The process itself is disposable.
+### The core mechanism
 
-The contrast is a stateful process: one where session data, user context, or computed state lives in the application's heap. That process becomes a *snowflake* — routing logic has to pin users to specific instances (sticky sessions), and losing the process means losing data. Scale out to 10 instances and suddenly you have a distributed state consistency problem you didn't ask for.
+The invariant is strict: **nothing stored in memory or on local disk can be assumed to survive to the next request.** This means no in-process caches that serve as a source of truth, no local filesystem writes that a later request depends on reading, no session objects hanging off a global map. State lives in an external backing service — a database, Redis, object storage — which the process reads from and writes to per-request.
 
-## Concrete Mental Model
+This isn't just about HTTP sessions. It applies to any inter-request dependency. A process that builds an in-memory index on startup and answers queries against it is stateful in this sense, even if the index is read-only. If the process crashes and a replacement doesn't rebuild it identically, you have hidden state.
 
-Think of a stateless process like a pure function at the infrastructure level. Given the same inputs (request + external state), it produces the same output, regardless of which physical machine runs it. You can spin up 50 of them, kill 40, and the survivors just pick up the load without needing to "catch up."
+### Mental model
 
-A stateful process is more like a closure that captured a reference to mutable data — correct while it lives, but brittle and non-portable.
+Think of a process instance as a pure function with side effects: given a request and credentials to reach external state, it produces a response. Two instances given the same inputs should be substitutable. The external store is the single source of truth; instances are ephemeral compute.
 
-## Practical Scenarios
+The Twelve-Factor App frames this as "backing services" (factor IV) and "stateless processes" (factor VI) working in concert — stateless processes only work if you have somewhere trustworthy to offload state.
 
-**Backend:** The typical refactor is pulling session state out of `HttpSession` or in-process caches and pushing it into Redis or a DB. A common trap: JWT validation looks stateless (the token is self-contained), but if you're maintaining a token revocation list in memory, you've smuggled state back in. The revocation list belongs in Redis.
+### Practical scenarios
 
-**SRE:** Stateless services are what make graceful rolling deploys low-drama. No instance carries unique data, so you can terminate pods mid-flight during a deploy without user-visible state loss — the next request hits a new pod and reconstructs context from the store. Incident response also gets easier: restart the pod, it's clean.
+**Backend:** Web API servers are the canonical case. User session data goes in Redis or JWTs (stateless by cryptographic verification). File uploads go to object storage, not `/tmp`. In-memory caches are acceptable as performance hints — but if a cache miss falls back to the database correctly, the cache is not load-bearing state.
 
-**DevOps:** Autoscaling policies are only safe when processes are stateless. A scale-in event (removing instances) on a stateful service risks data loss or orphaned sessions. With stateless services, you can aggressively scale down without ceremony — no drain logic, no graceful shutdown rituals beyond finishing in-flight requests.
+**SRE:** Stateless services simplify incident response dramatically. A pod OOMKilled or a VM terminated? Replace it — no data loss, no need to drain sessions before termination, no "but that instance has in-flight work" anxiety. You get clean rollouts: spin up new instances, cut traffic, terminate old ones.
 
-## The Tradeoff to Know
+**DevOps:** Autoscaling becomes a policy, not a project. When load spikes, you add instances without coordinating state migration. Deployment pipelines don't need warm-up windows or session affinity rules. Stateless also makes multi-region simpler: any region can serve any request if the backing services are reachable.
 
-Statelessness shifts complexity from the application tier to the data tier. Your external stores (Redis, Postgres, S3) now carry the load your app processes shed. They need to be highly available and fast, otherwise you've traded local latency for network latency on every request. This is worth it — external stores can be managed independently, replicated, and backed up — but it's not free.
+### The common trap
+
+Developers often introduce implicit state: a library that caches config in a module-level variable, a framework that stores per-request context in a thread-local, a background job system that enqueues in-process. These don't look like state until an instance is replaced and behavior changes. Audit your dependencies for statefulness, not just your own code.

@@ -1,44 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Server-Side Rendering (SSR)** means the server generates complete HTML for each request and sends it to the browser, rather than sending a bare JS bundle and letting the browser build the page. The payoff is faster first-paint and content that's immediately indexable—no waiting for JS to execute.
+## Server-Side Rendering
 
-## The Core Mechanism
+SSR means your server executes application code, renders a complete HTML document, and sends it over the wire — the browser gets a fully-formed page it can display immediately, without waiting for JavaScript. The motivation is simple: browsers can paint HTML in microseconds, but fetching, parsing, and executing a JavaScript bundle takes hundreds of milliseconds on real hardware.
 
-In a traditional SPA, the browser receives something like:
+**The core mechanism**
 
-```html
-<div id="root"></div>
-<script src="bundle.js"></script>
-```
+In a pure client-side app (CSR), the server sends a nearly-empty HTML shell plus a JS bundle. The browser then downloads the bundle, executes it, makes API calls, and finally renders content — the user stares at a blank or spinner-covered screen until all of that completes. With SSR, the server runs the same rendering logic (in Node.js, Go, Ruby, etc.), inlines the resulting HTML, and ships it in the initial response. Time-to-first-meaningful-paint collapses because there's no JS dependency on the critical path.
 
-The page is blank until the JS downloads, parses, executes, fetches data, and renders. That's 3-5 sequential round trips before the user sees anything.
+The key invariant: **the server must know at request time what to render**. This means SSR is inherently request-scoped — the server sees the URL, cookies, headers, and can query databases or call services synchronously before producing the HTML. That's its power and its cost.
 
-With SSR, the server runs your rendering logic (React, Vue, etc.) *before* responding. It executes the component tree, fetches whatever data it needs, and serializes the result as HTML. The browser receives a fully-formed document:
+**Mental model**
 
-```html
-<div id="root">
-  <h1>Dashboard</h1>
-  <ul><li>Item 1</li>...</ul>
-</div>
-```
+Think of CSR as a flat-pack furniture box: the browser receives raw materials and assembles them locally. SSR is receiving furniture pre-assembled — heavier to ship, but immediately usable.
 
-The browser paints immediately. JS still loads afterward to make the page interactive—that's hydration—but the visual content is already there.
+**Practical scenarios**
 
-## Mental Model
+*Frontend:* E-commerce product pages, marketing sites, news articles — anything where initial load speed directly affects conversion or bounce rate. SSR means search engines get real content (not JS-dependent rendered content) and users on slow connections see something useful fast.
 
-Think of it like the difference between a restaurant and a meal kit. SPA is a meal kit: you receive raw ingredients (JS bundle) and cook everything yourself (client-side rendering). SSR is a restaurant: the kitchen (server) does the work, and you get a finished plate.
+*Fullstack:* SSR blurs the line between frontend and backend. In Next.js, `getServerSideProps` runs server-side on every request, giving you access to databases and secrets that never touch the client. You own the full request lifecycle — authentication, data fetching, rendering — in one place. The tradeoff is server load: unlike static files, SSR responses can't be edge-cached without care, and slow data fetches block time-to-first-byte.
 
-## Where It Matters in Practice
+**Where senior engineers focus**
 
-**Frontend:** The main win is perceived performance and SEO. For a product landing page or content-heavy site, SSR means search crawlers and users both see real content immediately. Without it, Google's crawler might index an empty shell.
+The subtle trap is treating SSR as a binary choice. Real systems often mix strategies: SSR the shell and above-the-fold content, stream progressive chunks as data arrives (streaming SSR), and hydrate interactivity client-side afterward. Understanding SSR deeply means knowing *why* it helps (critical rendering path), not just *that* it helps — so you can make the right tradeoff when a page is behind auth (caching doesn't save you), when data is highly dynamic (SSR adds latency), or when you need global edge distribution (static generation beats SSR on cost and speed).
 
-**Fullstack:** SSR lets you move data-fetching logic to the server, closer to your database or internal APIs—avoiding the extra network hop from browser → API → database. In Next.js terms, `getServerSideProps` runs on the server, fetches from your DB directly, and ships pre-populated HTML. No public API endpoint needed just to render a page.
-
-**The tradeoff:** SSR adds server load. Every request triggers a render cycle instead of just serving static files. You're trading infrastructure complexity for faster first-paint and simpler data access patterns. This is why static generation (pre-rendering at build time) exists as a middle ground—but that's a separate topic.
-
-## Why This Unlocks Other Concepts
-
-Streaming SSR extends this by flushing HTML in chunks as data resolves, rather than waiting for everything. Hydration is what happens *after* SSR—attaching event listeners to the server-rendered HTML. Static Site Generation is SSR run at build time instead of per-request. Understanding SSR's basic contract (server renders → sends HTML → client hydrates) is the foundation for all of them.
+SSR is the foundation that makes streaming, hydration, and hybrid rendering patterns legible — each is a refinement of the same core question: who renders what, and when.

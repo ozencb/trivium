@@ -1,33 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## React Fiber Architecture
+React Fiber is React's from-scratch rewrite of its reconciliation engine, shipped in React 16. The core problem it solved: the old "stack reconciler" walked the entire component tree synchronously, meaning a large render could block the main thread for hundreds of milliseconds and make the UI feel frozen.
 
-Fiber is React's internal reconciliation engine, rewritten in React 16 to replace a recursive, uninterruptible call stack with a linked-list-based work loop that can pause, prioritize, and resume rendering mid-flight. The core motivation: the old reconciler had to finish a full tree update in one synchronous shot, which caused frame drops on complex trees.
+**The core mechanism**
 
-### The Core Mechanism
+Fiber turns the component tree into a linked list of "fiber nodes" — one per component instance. Each node tracks the component type, its props/state, its effect list, and crucially, pointers to its parent, child, and sibling. This structure lets React pause in the middle of a tree walk, store exactly where it stopped, and resume later.
 
-Before Fiber, reconciliation was a depth-first recursive walk — once started, the JS engine owned the call stack until it finished. Fiber breaks that work into discrete units. Every component instance becomes a **fiber node**: a plain object that stores the component type, its props/state, a reference to its DOM node, and — crucially — pointers to its parent, first child, and next sibling. This gives React its own traversal structure that doesn't rely on the native call stack.
+Work happens in two phases:
+1. **Render phase** (interruptible): React builds a "work-in-progress" tree by cloning and diffing fiber nodes. This can be paused, thrown away, or restarted. Side effects don't run here.
+2. **Commit phase** (synchronous): Once the full work-in-progress tree is ready, React flushes all DOM mutations and effects in one uninterrupted pass. This phase cannot be paused — partial commits would leave the UI inconsistent.
 
-React's **work loop** processes one fiber at a time, then checks if there's higher-priority work or a deadline to yield. This is cooperative multitasking, not preemption — React voluntarily gives up control to let the browser paint or handle input.
+The scheduler assigns each unit of work a *lane* (a priority bitmask). User input is high-priority; background data fetching is low. React can interrupt low-priority work when something urgent arrives, completing the urgent work first before resuming.
 
-Rendering is split into two phases:
+**Mental model**
 
-1. **Render phase** (interruptible): React walks the fiber tree, diffs, and marks nodes with effect tags (insert, update, delete). No DOM mutations happen yet. This can be paused.
-2. **Commit phase** (synchronous): React flushes all collected effects to the DOM in one pass. This cannot be interrupted — a half-applied DOM is worse than a delayed one.
+Think of the old reconciler as a recursive depth-first function call — you can't pause a call stack mid-flight. Fiber replaces that with an explicit loop over a work queue. React controls the loop, so it can yield back to the browser between iterations: "I've done 5ms of work, let me check if there's user input before continuing."
 
-React also maintains **two fiber trees**: the *current* tree (what's on screen) and the *work-in-progress* tree (what's being built). Once the render phase completes, React swaps them with a pointer flip — O(1) "commit."
+**Where this surfaces in practice**
 
-### Mental Model
+*Frontend*: `useTransition` and `useDeferredValue` are direct expressions of Fiber's priority system. Wrapping a state update in `startTransition` tells React "this can yield to more urgent renders." Without Fiber, this API literally couldn't exist. If you've ever wrapped a search input update in `startTransition` to keep keystrokes responsive while filtering a large list, you're exploiting Fiber's scheduling.
 
-Think of it like a diff queue processed by a scheduler, not a function that runs to completion. Each fiber is a "resumable task". React can dequeue, process partway, and re-enqueue with preserved state — something impossible with a recursive call stack.
+*Fullstack (Next.js, RSC)*: React Server Components stream chunks of UI progressively. Fiber's commit phase is what makes it safe to receive and "hydrate" partial trees — React can hold a subtree in the work-in-progress phase until its data arrives (via Suspense), then commit it atomically. This is why Suspense boundaries act as the unit of "what can stream independently."
 
-### Practical Relevance
-
-**Frontend**: `useTransition` and `useDeferredValue` are direct products of Fiber's priority system. When you wrap a state update in `startTransition`, you're telling the scheduler this work is low-priority — the UI stays responsive while React builds the new tree in the background. Without Fiber, there's no "background" to work in.
-
-**Fullstack**: In Next.js App Router with React Server Components, the server streams a fiber-compatible payload to the client. The client's Fiber scheduler can interleave hydration of that stream with user interactions — so a slow RSC payload doesn't block button clicks. The architecture only works because Fiber decouples "receiving work" from "committing it."
-
-Understanding Fiber is what makes Concurrent Rendering and Suspense non-magical: Suspense just throws a Promise, Fiber catches it, parks that subtree, and resumes when the Promise resolves — all within the same scheduling primitives.
+**The key invariant to internalize**: the render phase may run multiple times for the same update (it can be discarded and restarted), but the commit phase runs exactly once per completed render. This is why effects and mutations belong in the commit phase — and why effect cleanup matters more than most people think.

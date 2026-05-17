@@ -1,56 +1,52 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## `will-change` CSS Property
 
-`will-change` is a hint to the browser that an element is about to be transformed, allowing it to promote that element to its own compositor layer *before* the animation starts — eliminating the layer-creation cost that would otherwise cause jank on the first frame.
+`will-change` is a hint to the browser that a specific property on an element is about to be animated. The browser uses this to promote the element to its own GPU compositor layer *before* the animation begins, eliminating the costly mid-flight reclassification that causes first-frame jank.
 
-### Core Mechanism
+### The core mechanism
 
-Without `will-change`, when you trigger a CSS transform or opacity animation, the browser must:
-1. Recognize the element needs its own layer
-2. Rasterize and upload it to the GPU
-3. *Then* start compositing
+Without `will-change`, the render pipeline during an animation start looks like: main thread detects the property change → decides to promote the element → uploads the layer to GPU → compositor thread takes over. That first segment — promotion and upload — is expensive and happens on the critical path of the first frame.
 
-That first-frame cost shows up as a stutter. `will-change: transform` tells the browser to do steps 1–2 during idle time, so by the time the animation fires, the layer is already on the GPU and compositing can begin immediately.
+`will-change` moves promotion to an earlier, idle moment. When the animation actually fires, the layer is already resident on the GPU. The compositor thread — which runs independently from the main thread and doesn't care if your JS is blocking — can drive the animation at full frame rate from the very first frame.
 
-Internally, this is the same promotion that `transform: translateZ(0)` (the old hack) triggers — but without the side effects of creating a bogus 3D rendering context. `will-change` is the clean API for what that hack was doing accidentally.
+This is specifically why `transform` and `opacity` are the "cheap" animation properties: they're the only ones the compositor thread can handle without touching layout or paint. `will-change` just ensures that thread is holding the element before you need it.
 
-### Mental Model
-
-Think of it like pre-loading a video asset vs. streaming it. Without `will-change`, the browser streams the layer to the GPU on demand. With it, you're telling the browser: "cache this ahead of time, I'll need it soon."
+### Concrete example
 
 ```css
-.modal-overlay {
-  will-change: opacity;   /* compositor knows this will animate */
-  opacity: 0;
-  transition: opacity 200ms ease;
+.drawer {
+  will-change: transform;
+  transform: translateX(-100%);
+  transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.modal-overlay.visible {
-  opacity: 1;
+.drawer.open {
+  transform: translateX(0);
 }
 ```
 
-The transition fires with zero layer-promotion overhead because the browser already prepared the layer.
+Without `will-change`, the first frame of that slide-in often stutters because promotion happens inline. With it, the browser promotes during idle time (typically after paint), so the transition starts smooth.
 
-### Practical Scenarios
+### Practical scenarios
 
-**Frontend:** Sticky nav bars, sidebars that slide in/out, carousels, parallax layers — anything with a user-triggered enter/exit animation where the first frame matters. Apply `will-change` on hover or via JS before the animation triggers, not statically on every element at paint time.
-
-**Fullstack:** If you're rendering server-side and hydrating, heavy use of `will-change` in static CSS can cause memory bloat — the browser holds promoted layers even when they're idle. A common pattern is setting it via JS right before the animation and removing it in the `transitionend` handler:
+**Frontend:** Any UI element with a predictable trigger — modals, drawers, dropdowns, tooltips — benefits from `will-change` applied on hover or just before the interaction fires. The canonical pattern is adding it via JS a frame before the animation starts and removing it after:
 
 ```js
 el.style.willChange = 'transform';
-el.addEventListener('transitionend', () => {
-  el.style.willChange = 'auto';
-}, { once: true });
+requestAnimationFrame(() => el.classList.add('open'));
+el.addEventListener('transitionend', () => el.style.willChange = 'auto', { once: true });
 ```
 
-### What to Watch Out For
+**Fullstack:** If you're rendering server-side and have persistent UI chrome — sidebars, sticky headers, notification toasts — it's reasonable to declare `will-change` in static CSS, since these elements animate on nearly every page interaction.
 
-Layer promotion isn't free — each promoted element consumes GPU memory. Slapping `will-change: transform` on everything is a common mistake that can make performance *worse* on memory-constrained devices (mobile). Use it surgically: only on elements that actually animate, ideally applied just before the animation and removed after.
+### Pitfalls worth knowing
 
-The browser already applies its own heuristics for what to promote; `will-change` is for cases where those heuristics fire too late.
+- **Don't spray it everywhere.** Each promoted layer consumes GPU memory. Applying `will-change: transform` to 50 list items means 50 GPU textures sitting allocated.
+- **Animating the wrong properties nullifies it.** `will-change: width` doesn't help because `width` forces layout — no amount of GPU promotion saves you from a reflow.
+- **Static declarations have a cost.** A `will-change` in CSS that never triggers an animation is pure waste. Prefer JS-driven application when the trigger is discrete (a click, a hover state).
+
+Think of it less as "make my animation faster" and more as "I know what's coming — here's a heads-up so you're not caught off guard."

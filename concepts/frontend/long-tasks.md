@@ -1,15 +1,15 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-The Long Tasks API lets you detect when the browser's main thread is blocked for 50ms or longer — the threshold where user interactions start feeling unresponsive.
+## Long Tasks API
 
-## Core Mechanism
+The Long Tasks API surfaces any task running on the main thread for more than 50ms—the threshold where users start perceiving lag. It exists because the browser's main thread is single-threaded: while JavaScript is executing, it can't respond to input events, and that gap between input and response is exactly what degrades perceived performance.
 
-The browser runs JavaScript, style recalculation, layout, and paint on a single main thread. When any continuous chunk of work holds that thread for >50ms, input events queue up behind it. A user clicking a button during a 200ms JS task waits the full duration before their click is even acknowledged — that's the source of "jank."
+### The mechanism
 
-The Long Tasks API (part of PerformanceObserver) surfaces these blocking periods as `PerformanceLongTaskTiming` entries. Each entry gives you the duration and an `attribution` array pointing to which browsing context (frame, script, etc.) caused it.
+The browser exposes this through `PerformanceObserver` with the `"longtasks"` entry type. Each entry gives you the task's duration, start time, and an `attribution` array pointing to the frame or script that triggered it.
 
 ```js
 const observer = new PerformanceObserver((list) => {
@@ -17,23 +17,23 @@ const observer = new PerformanceObserver((list) => {
     console.log('Long task:', entry.duration, entry.attribution);
   }
 });
-observer.observe({ type: 'longtask', buffered: true });
+observer.observe({ type: 'longtasks', buffered: true });
 ```
 
-The `buffered: true` flag captures tasks that already ran before your observer was registered — important if you're measuring page load.
+The `attribution` is where it gets useful—it tells you *where* the task originated (which iframe, script URL, or document) rather than just that something was slow.
 
-## Mental Model
+### The mental model
 
-Think of the main thread as a single-lane road. Long tasks are trucks that block all traffic behind them. The Long Tasks API is a traffic camera that logs every truck that takes more than 50ms to clear the intersection. It doesn't fix the congestion — it tells you *where* and *when* it's happening.
+Think of the main thread as a single cashier at a grocery store. A long task is someone paying with exact change from the bottom of their bag for 3 minutes. The person behind them presses a button (clicks a UI element), but nothing happens until that transaction finishes. The Long Tasks API tells you exactly when that 3-minute transaction happened and approximately who caused it.
 
-## Practical Scenarios
+The 50ms cutoff maps to the RAIL model's interaction budget: a response should begin within 100ms of input, and if you're spending 50ms+ on a task, you've probably eaten that budget.
 
-**Frontend:** You're investigating why your React app scores poorly on INP (Interaction to Next Paint). Long Tasks API in a RUM (real user monitoring) setup lets you correlate task durations with specific user flows — e.g., "the filter dropdown causes a 180ms task on every interaction." Without it, you're guessing from DevTools profiles taken in controlled conditions, not real user sessions.
+### Where you'll actually use this
 
-**Fullstack:** You're building a Next.js app with heavy client-side data processing after SSR hydration. Long Tasks API lets you measure whether your hydration phase is crossing 50ms thresholds on low-end devices. You can send these metrics to your observability backend alongside server-side traces, creating a complete picture from server response to interactive UI.
+**Frontend:** The most common culprit is synchronous work kicked off by a user interaction—event handlers that do heavy DOM operations, third-party scripts that parse large JSON on load, or React reconciliation triggered by a state update that rerenders too much. You'll see a spike in longtask entries right as your INP (Interaction to Next Paint) metric degrades. This is the API that tells you *which* work to break up with `setTimeout` yielding or move to a Web Worker.
 
-## What It Doesn't Tell You
+**Fullstack:** When a page hydrates after SSR, the hydration process itself often registers as a long task—especially in apps with large component trees or complex initial state. If you're seeing high TTI (Time to Interactive) on your server-rendered pages, longtask data helps you pinpoint whether it's hydration, data parsing, or a third-party tag loading synchronously.
 
-Long Tasks API gives you timing and rough attribution, not a stack trace. You'll know *that* a script caused a long task, not *which function* within it. That's where profiling with DevTools or combining this with User Timing API marks (`performance.mark`) fills the gap.
+### What it doesn't tell you
 
-This API is the detection layer — `requestIdleCallback` and task scheduling (breaking work into chunks) are the remediation layer once you know what to fix.
+It flags that *something* ran long, but the attribution is coarse. You'll usually need to pair it with a profiler trace or `performance.measure()` calls to narrow down the specific function. It's a signal, not a diagnosis—treat it as the alarm, then use DevTools' Performance panel as the investigation.

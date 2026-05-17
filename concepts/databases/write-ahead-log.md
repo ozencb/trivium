@@ -1,28 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Write-Ahead Log (WAL)** is a durability mechanism that persists a description of every change *before* applying it to data files. The "before" is the whole point: it lets you reconstruct the correct database state after a crash, even if the actual data pages never made it to disk.
+## Write-Ahead Log (WAL)
 
-## The Core Mechanism
+WAL solves a core tension in durable storage: you need atomicity and crash safety, but flushing every data page to disk on each commit is prohibitively slow. The solution is to write a compact, sequential record of *intent* before touching the actual data pages — the log becomes the source of truth, and data pages become a lazily-updated projection of it.
 
-You already know that the buffer pool defers writes — dirty pages sit in memory and get flushed lazily. The problem is that a crash can happen between when a transaction commits and when its pages reach disk. Without something else, that committed data is gone.
+### The Invariant
 
-WAL solves this by flipping the write order. Before a transaction commits, the database writes a log record to a sequential append-only file: what changed, on which page, what the before-value was, what the after-value is. Only after that log record is `fsync`'d to disk is the commit acknowledged to the client. The actual data page can still be dirty in the buffer pool — that's fine. On crash, the engine replays the log (redo) and rolls back incomplete transactions (undo).
+The rule is strict: **a log record must reach durable storage before its corresponding data page modification can be considered committed**. That's it. This single invariant is what makes crash recovery possible. If the database crashes mid-operation, the log tells you exactly what happened and what didn't — you either redo completed-but-not-flushed operations, or undo uncommitted ones.
 
-The log is sequential and append-only by design. Sequential disk writes are drastically faster than the random I/O that updating scattered data pages would require. You're trading two writes (log + eventual data page) for durability, but the log write is fast enough that it barely shows up in latency.
+### Why It Actually Works
 
-## Mental Model
+Each log record carries a **Log Sequence Number (LSN)** — a monotonically increasing identifier. Each dirty page in the buffer pool tracks the LSN of the most recent WAL record that touched it (`pageLSN`). On crash recovery, the database walks the log, compares `pageLSN` against what the log says should be there, and replays the delta. Postgres, MySQL InnoDB, and SQLite all implement variations of this (Postgres calls its recovery algorithm similar to ARIES).
 
-Think of it like a ledger at a bank. Before the teller moves money between accounts, they record the transfer in the ledger. If the power goes out mid-transfer, they don't guess at the account balances — they replay the ledger. The ledger *is* the authoritative record; the account balances are just a derived view.
+The reason this is faster than synchronous page flushes: log writes are **sequential**. Appending to a log is one `fsync` at the end of a segment, not random I/O scattered across a 16KB-page heap. You trade expensive random writes for cheap sequential ones, deferring the actual page flushes to background checkpointing.
 
-## Practical Angles
+### Concrete Mental Model
 
-**Backend:** Every production database you've used runs on WAL. In Postgres, `wal_level`, `synchronous_commit`, and `checkpoint_timeout` are tuning knobs that trade durability guarantees against write throughput. Turning off `synchronous_commit` (async mode) means WAL records aren't fsynced before ACK — you get faster writes but risk losing the last few transactions on crash.
+Think of it like a bank ledger. Before a teller moves cash between drawers, they write the transaction in the ledger. If the power goes out mid-transfer, you reconstruct the correct state from the ledger — you don't try to infer it from the physical state of the cash drawers.
 
-**Data:** WAL is what makes Change Data Capture (CDC) possible. Tools like Debezium or Kafka Connect tail the WAL directly to stream every row-level mutation without polling. Logical replication in Postgres (`wal_level = logical`) is literally publishing WAL records in a decoded format.
+### Practical Angles
 
-**SRE:** WAL lag is a first-class operational metric. On a streaming replica, "replication lag" means the standby is behind the primary's WAL position. If WAL accumulates faster than replicas consume it, you'll hit `max_wal_size` limits and risk forced checkpoints — or worse, the primary holding WAL segments indefinitely, eating disk. This is why monitoring `pg_replication_slots` and replica lag are table stakes for any Postgres deployment you care about.
+**Backend**: If you're using Postgres and seeing commit latency spikes, `wal_sync_method` and `synchronous_commit` are your levers. Disabling `synchronous_commit` trades durability guarantees for throughput — the server acknowledges commits before the WAL flushes, which is fine for some workloads and dangerous for others.
 
-Understanding WAL directly unlocks how crash recovery and replication work — both are just different consumers of the same log.
+**Data**: CDC tools (Debezium, logical replication) work by *tailing the WAL*. The WAL isn't just for recovery — it's a complete, ordered change history. This is why WAL-based replication is more reliable than trigger-based approaches; you're reading the true source of mutation order.
+
+**SRE**: Checkpoint frequency directly impacts recovery time. A database that hasn't checkpointed in an hour may need to replay an hour of WAL on restart. Tuning `checkpoint_completion_target` and monitoring checkpoint lag matters for RTO. Also: WAL segment accumulation during high write volume or replication lag can fill disks silently.
+
+Understanding WAL is the prerequisite for reasoning clearly about replication lag, point-in-time recovery, and why crash recovery is bounded and deterministic rather than fuzzy.

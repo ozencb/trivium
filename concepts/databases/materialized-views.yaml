@@ -1,0 +1,16 @@
+id: materialized-views
+title: Materialized Views
+category:
+  - Databases
+  - Performance
+roles:
+  - backend
+  - data
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - query-optimization
+  - database-transactions
+dependents: []
+brief: Pre-computed query results stored as physical tables and refreshed on schedule or incrementally, trading storage for fast read performance on expensive aggregations and joins.

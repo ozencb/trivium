@@ -1,39 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## LSM-Trees (Log-Structured Merge-Tree)
+## LSM-Trees
 
-LSM-Trees solve a fundamental bottleneck: random writes to disk are orders of magnitude slower than sequential writes. Instead of updating data in-place like a B-Tree, LSM-Trees convert all writes into sequential appends, trading read complexity for dramatically higher write throughput.
+LSM-Trees solve a fundamental storage problem: random writes to disk are slow, but your data still needs to be queryable. The core insight is to convert all writes into sequential I/O by buffering in memory and flushing sorted immutable files, accepting that reads become more expensive as a result.
 
-### Core Mechanism
+### The Mechanism
 
-Writes never go directly to disk structures. Instead:
+Every write hits an in-memory sorted structure called the **MemTable** (typically a red-black tree or skip list). Simultaneously, it's appended to a **Write-Ahead Log** (WAL) for durability — sequential I/O, essentially free. When the MemTable fills, it's flushed to disk as an **SSTable** (Sorted String Table): an immutable, sorted, sequential file. This flush is also sequential.
 
-1. **MemTable** — every write lands in an in-memory sorted structure (usually a red-black tree or skip list), plus a WAL for crash recovery.
-2. **Flush** — when the MemTable hits a size threshold, it's written to disk as an **SSTable** (Sorted String Table): immutable, sorted, compact. This is one sequential write.
-3. **Levels** — SSTables accumulate in levels (L0, L1, L2...). L0 is raw flushes; deeper levels are progressively larger and denser after compaction.
-4. **Compaction** — background process merges SSTables, deduplicates keys (later version wins), and removes tombstones. This is where write amplification actually lives.
+The problem is that reads now require checking the MemTable plus potentially every SSTable on disk. This is read amplification. The solution is **compaction**: a background process that merges SSTables, deduplicates (keeping the latest version of each key), and removes tombstones for deleted keys. LevelDB/RocksDB use a leveled approach where L0 allows overlapping key ranges but L1+ enforce the invariant that SSTables within a level have non-overlapping ranges — this bounds how many files you scan per read.
 
-**Reads** check MemTable first, then each SSTable level newest-to-oldest. This is where Bloom filters come in — each SSTable carries one so you can skip files that definitely don't contain the key, avoiding most unnecessary disk reads.
+This is where your bloom filter knowledge matters directly: each SSTable carries a bloom filter so reads can skip files that definitely don't contain the key. Without this, read amplification would make LSM-Trees impractical for point lookups.
 
 ### Mental Model
 
-Imagine writing to a notebook instead of directly editing a sorted binder. When the notebook fills, you sort it and file it as a pamphlet. Periodically, you merge pamphlets to eliminate duplicates and keep the archive manageable. Finding something means checking your notebook first, then the pamphlets in order — more steps than a binder, but writing is vastly faster.
+Think of it as the difference between writing in a scratch pad (MemTable) and periodically organizing notes into sorted filing cabinets (SSTables), with a librarian (compaction) periodically consolidating cabinets and discarding duplicates. You never erase anything in-place — you only append and merge.
 
-### Practical Connections
+Contrast with B-Trees, which update pages in-place on disk. B-Trees are well-suited for read-heavy or mixed workloads because the tree structure gives O(log n) point lookups. LSM-Trees win when write volume is high enough that random I/O becomes the bottleneck.
 
-**Backend:** RocksDB (Meta, TiKV, CockroachDB's storage layer), LevelDB, Cassandra, and ScyllaDB all use LSM-Trees. When you hear "Cassandra is write-optimized," this is why — it never does in-place updates, so it handles write-heavy workloads without the random-I/O penalty B-Trees pay. The flip side is read latency is higher for cold data, and compaction can cause latency spikes.
+### Where This Shows Up
 
-**Data engineering:** Time-series DBs (InfluxDB, RocksDB-backed Kafka log compaction) lean heavily on LSM because data arrives in high-volume sequential bursts. Understanding compaction strategies (leveled vs. size-tiered) matters when tuning these systems — leveled compaction reduces read amplification, size-tiered optimizes write throughput.
+**Backend:** Any time you're choosing a storage engine for a write-heavy service — event ingestion, audit logging, time-series data — you're implicitly making this tradeoff. Cassandra, RocksDB (used inside MySQL MyRocks, TiKV, CockroachDB), and InfluxDB all use LSM-Trees. When you hear "write amplification factor of 10x" in a database tuning conversation, that's the compaction overhead being quantified.
 
-### The Key Tradeoffs
+**Data:** Column stores used in analytics pipelines (like Parquet on top of object storage) share DNA with SSTables — immutable sorted files that get merged. Understanding LSM-Trees makes the design of Hudi, Delta Lake, and Iceberg's merge-on-read vs. copy-on-write strategies immediately intuitive.
 
-| | LSM-Tree | B-Tree |
-|---|---|---|
-| Write | Sequential, fast | Random, slower |
-| Read | Multiple SSTables to check | Single tree traversal |
-| Space | Temporary duplicates until compaction | In-place, compact |
-
-Understanding LSM-Trees is the prerequisite for reasoning about SSTable layout and why compaction strategies exist — those aren't implementation details, they're how you control the write/read amplification tradeoff at runtime.
+The senior-engineer differentiator here is knowing *why* the tradeoff exists — not just "LSM for writes, B-Tree for reads," but that you're trading write amplification during compaction for eliminating random-write I/O on the hot path, and that compaction tuning (level multiplier, compaction strategy) is where most production performance problems live.

@@ -1,0 +1,16 @@
+id: crdt
+title: CRDTs
+category:
+  - Distributed Systems
+  - Consistency Models
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - eventual-consistency
+  - vector-clocks
+dependents:
+  - conflict-resolution
+brief: Data structures whose merge operations are commutative, associative, and idempotent, guaranteeing all replicas converge to the same state without coordination or conflict resolution logic.

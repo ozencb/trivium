@@ -1,0 +1,15 @@
+id: api-keys
+title: API Keys
+category:
+  - Security
+  - Authentication
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - tls-handshake
+dependents:
+  - rate-limiting
+brief: Long-lived opaque tokens that identify API callers, simpler to issue than OAuth tokens but lacking short TTLs and user delegation, making rotation and scoping critical for security.

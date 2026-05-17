@@ -1,50 +1,47 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Media Session API
 
-The Media Session API lets your web app integrate with the OS-level media controls — the ones that appear in lock screens, notification trays, and via hardware media keys — so users can control playback without having the tab focused.
+The browser has long been able to play audio and video, but it was historically a black box to the OS—your custom music player had no way to tell the lock screen what's playing or respond to the user pressing "next track" on their headphones. The Media Session API closes that gap: it lets you push metadata to the platform and register handlers for playback actions the OS or browser chrome exposes.
 
-### The core mechanism
+**The core mechanism**
 
-Browsers have a concept of a "media session" that gets activated when your page plays audio or video. By default, the browser exposes minimal info ("a tab is playing audio"). The API gives you two levers:
-
-1. **Metadata** — tell the OS what's actually playing (title, artist, album, artwork)
-2. **Action handlers** — intercept OS-level control events (play, pause, next track, seek, etc.)
+The API hangs off `navigator.mediaSession`. You set `metadata` (title, artist, album, artwork) and register action handlers for things like `play`, `pause`, `nexttrack`, `previoustrack`, `seekto`, and `seekbackward`/`seekforward`. The platform calls your handlers when the user interacts with OS-level controls—lock screen buttons on iOS/Android, the media notification on desktop Chrome, hardware media keys on keyboards.
 
 ```js
 navigator.mediaSession.metadata = new MediaMetadata({
-  title: 'Across the Universe',
-  artist: 'The Beatles',
-  album: 'Let It Be',
-  artwork: [{ src: '/album-art.jpg', sizes: '512x512', type: 'image/jpeg' }]
+  title: 'Episode 42',
+  artist: 'Some Podcast',
+  artwork: [{ src: '/cover.jpg', sizes: '512x512', type: 'image/jpeg' }]
 });
 
 navigator.mediaSession.setActionHandler('nexttrack', () => {
   playNext();
 });
 
-navigator.mediaSession.setActionHandler('seekto', ({ seekTime }) => {
-  audioEl.currentTime = seekTime;
+navigator.mediaSession.setActionHandler('seekto', (details) => {
+  audio.currentTime = details.seekTime;
 });
 ```
 
-Without this, pressing the hardware "next track" key on a keyboard while your music app is playing does nothing. With it, that key fires your handler.
+You also update `navigator.mediaSession.playbackState` (`'playing'` / `'paused'` / `'none'`) and call `setPositionState()` to keep the scrubber in sync with actual playback position.
 
-### Mental model
+**Where this matters in practice**
 
-Think of it as a contract between your app and the OS media layer. The OS says "I'll show your media in the notification tray and route hardware key events to you — but you have to tell me what's playing and handle the events." The API is that handshake.
+For a frontend engineer building a podcast player, music app, or video streaming UI: without this, when a user locks their phone mid-episode, the lock screen shows no controls. With it, they get artwork, a progress bar, and skip buttons—indistinguishable from a native app.
 
-### Practical scenarios
+For fullstack work, the session metadata doesn't go to the server—it's purely client-side browser-to-OS plumbing. The practical consideration is that your client state management needs to stay in sync: if the user skips a track via the lock screen, your React/Vue state has to update, not just the `<audio>` element.
 
-**Frontend (music/podcast player):** A Spotify-like PWA needs this to feel native. Users expect to skip tracks from their AirPods or lock screen. Without `setActionHandler('nexttrack', ...)`, those controls are dead. You also want to call `navigator.mediaSession.setPositionState()` so the progress bar in the OS widget reflects actual playback position.
+**Common pitfalls**
 
-**Fullstack (video platform):** Your server streams video, your client plays it. The Media Session API lets you pull episode metadata from your API and surface it in the OS player widget. When a user pauses from the lock screen, your handler fires, you update your analytics/watch-position endpoint — the OS gesture triggers your business logic cleanly.
+- Handlers aren't registered automatically—you have to call `setActionHandler` or the OS control simply doesn't appear. Many devs forget `seekto` and wonder why the lock screen scrubber is dead.
+- `setPositionState` needs to be called on every meaningful position change (seek, playback rate change), not just once.
+- Browsers only activate the session when media actually plays. Setting metadata before playback starts does nothing until the audio plays.
+- Safari on iOS has partial support—test there explicitly.
 
-**Background tabs:** This is where it really earns its keep. Users routinely background media tabs. Without Media Session, those users have no way to control playback except switching back to the tab. With it, your app stays controllable from wherever the user is.
+**When to reach for it**
 
-### Worth knowing
-
-Browser support is broad (Chrome, Firefox, Safari), but Safari has some quirks with `seekto` and `seekforward`/`seekbackward` handling. The API is synchronous-feeling but the actual event delivery from hardware keys can have slight OS-level delay — don't design UX that's latency-sensitive to it.
+Any web app where users are likely to leave the tab: podcasts, music, long-form video, audiobooks. If your users are playing media and doing other things on their device simultaneously, this API is the difference between feeling native and feeling broken.

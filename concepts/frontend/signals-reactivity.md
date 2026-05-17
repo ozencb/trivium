@@ -1,45 +1,42 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Signals-Based Reactivity
 
-Signals are reactive primitives that wrap values and automatically track who reads them — so when a value changes, only the code that actually depends on it re-runs, not a broader component tree or diff cycle.
+A signal is a value container that automatically tracks which computations read it and re-runs only those computations when the value changes. Unlike coarser models (React's component re-render, for example), signals give you surgical updates — the dependency graph is built at runtime, not defined by you.
 
 ### The Core Mechanism
 
-A signal has three parts working together:
+Three primitives compose the model:
 
-1. **A signal** — a value wrapper with get/set. Reading it in a reactive context registers a subscription.
-2. **A derived/computed value** — a function whose result recalculates when its signal dependencies change.
-3. **An effect** — a side-effectful function that re-runs when its dependencies change.
+1. **Signal** — a value with a read trap. When something reads the signal, it registers itself as a subscriber.
+2. **Effect** — a computation that runs in a tracked context. Any signal read inside it creates a live dependency edge.
+3. **Computed** — a derived value, itself a signal, lazily re-evaluated only when its upstream signals change.
 
-The key insight is *automatic dependency tracking*. You don't declare `[count]` as a dependency list like React's `useEffect`. Instead, the runtime tracks which signals were *read* during execution and wires up subscriptions automatically. Change a signal, and only its direct subscribers re-execute — not their parents, not sibling branches.
-
-```js
-const count = signal(0);
-const doubled = computed(() => count.get() * 2);
-
-effect(() => console.log(doubled.get())); // runs when doubled changes
-
-count.set(5); // logs 10 — only this effect ran
-```
+The tracking is implicit. When you call `count()` inside an effect, the signal doesn't just return the value — it looks at the currently-executing context and adds it to a subscriber list. When `setCount(n)` fires, the signal walks that list and queues re-evaluation. This is why signals feel "magical": the subscription graph emerges from normal function calls.
 
 ### Mental Model
 
-Think of it like a spreadsheet. Cell A1 holds a value. Cell B1 has a formula `=A1*2`. You don't "subscribe" B1 to A1 — the spreadsheet engine tracks the dependency when the formula runs. Change A1, and B1 updates. Nothing else does.
+Think of a spreadsheet. Cell A1 holds a number. Cell B1 contains `=A1 * 2`. When A1 changes, the spreadsheet knows B1 is dirty because it recorded the dependency when B1's formula was first evaluated. Signals are exactly this — a programmable spreadsheet engine where the "cells" are arbitrary computations, not grid coordinates.
 
-React's model is more like: "something changed somewhere in this subtree, re-render the subtree and diff against the previous output." Signals skip the subtree entirely — they push updates directly to granular dependents.
+```js
+const count = signal(0);
+const doubled = computed(() => count() * 2); // reads count → subscribes
+effect(() => console.log(doubled()));        // reads doubled → subscribes
 
-### Why It Matters in Practice
+count.set(5); // triggers doubled → triggers effect → logs 10
+```
 
-**Frontend:** In frameworks like SolidJS, Vue 3, or Angular 16+, signals mean a deeply nested component can update a displayed value without triggering re-renders up the tree. A counter 10 levels deep updates its DOM node directly. This eliminates a major class of performance problems — no memoization, no `useMemo`/`useCallback` wrestling, no accidental re-renders.
+### Practical Scenarios
 
-**Fullstack:** Signals show up in reactive query patterns — think TanStack Query's reactive cache, or server-sent state updates that propagate only to the UI slices that actually care about a given resource. The same push-to-subscriber model applies: you're not re-fetching everything, you're updating a signal and letting the dependency graph do the rest.
+**Frontend:** Signals shine in fine-grained UIs — dashboards, live feeds, form validation. In React, toggling a boolean re-renders the entire component subtree unless you memo aggressively. With signals (Solid.js, Vue refs, Preact Signals, Angular's new signals API), only the DOM node bound to that specific signal updates. No virtual DOM diffing, no reconciliation overhead.
 
-### The Tradeoff to Know
+**Fullstack:** Signals appear in reactive query caches (TanStack Query's internal invalidation model shares the intuition), and in server-sent event pipelines where a derived value (e.g., "online user count") is computed from multiple upstream sources and needs to propagate changes downstream without polling.
 
-Signals require a reactive runtime that intercepts reads. Code outside that runtime — plain functions, async boundaries, non-reactive contexts — breaks the subscription graph silently. This is the primary gotcha: reactivity is contagious and context-sensitive in ways that `useState` isn't.
+### Common Pitfalls
 
-Understanding this model is the foundation for grasping fine-grained reactivity — where entire rendering architectures are built around the granularity of these subscriptions.
+- **Reading outside a tracked context** creates no subscription — the read is passive, silent, and you won't see updates.
+- **Conditional reads** break the dependency graph. If `if (flag()) doSomething(signal())` never hits the `signal()` branch on first run, that dependency is never registered.
+- **Over-computing** in effects — effects should be side effects, not derivations. Derived values belong in `computed()` so they're memoized and lazily evaluated.

@@ -1,36 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-WebSockets give you a persistent, full-duplex TCP connection between client and server — solving the fundamental mismatch where HTTP's request/response model forces you to poll for state changes rather than receive them.
+## WebSockets
 
-## The Mechanism
+HTTP is fundamentally request-response: the client speaks, the server answers, the connection closes. When you need the server to push data unprompted — a chat message arriving, a stock price ticking, a collaborator's cursor moving — that model forces you into polling hacks that waste bandwidth and add latency. WebSockets solve this by reusing the HTTP connection but switching it into a persistent, bidirectional channel once the handshake completes.
 
-WebSockets start as HTTP. The client sends a regular GET with two key headers:
+**The actual mechanism**
 
-```
-Upgrade: websocket
-Connection: Upgrade
-Sec-WebSocket-Key: <base64-random>
-```
+The client sends a normal HTTP/1.1 request with two key headers: `Upgrade: websocket` and a `Sec-WebSocket-Key` (random base64 bytes). The server responds with `101 Switching Protocols` and a derived `Sec-WebSocket-Accept` (SHA-1 of the key + a magic string, base64-encoded). After that, the TCP connection stays open but the protocol has changed — both sides now exchange frames with 2–14 bytes of overhead instead of full HTTP headers. Frames have a type (text, binary, ping/pong, close) and a masking bit: client→server frames are masked to prevent transparent proxies from caching or corrupting them.
 
-The server responds with `101 Switching Protocols`, and from that point on the TCP connection is no longer HTTP — it's a framed binary protocol. Both sides can now send frames at any time without waiting for the other to request them.
+**Mental model**
 
-The framing layer is lightweight: each message has an opcode (text, binary, ping, close), a masking bit (client→server frames are always masked to prevent cache poisoning by proxies), and a payload length. That's mostly it. No headers per message, no content negotiation.
+HTTP is postal mail — you send a letter, wait for a reply. WebSockets are a phone call. Once the call connects, either party can speak at any time without the other having to prompt them.
 
-One important subtlety: the connection multiplexes over a single TCP connection, so head-of-line blocking applies. One large message can stall others. This is why some protocols layer their own message IDs on top.
+**Where it matters in practice**
 
-## Mental Model
+*Backend*: Connections are stateful and long-lived, which breaks the stateless HTTP mental model. The moment you run two server instances, you need sticky sessions or a pub/sub broker (Redis, Kafka) to route messages across nodes. You also own the connection lifecycle — heartbeats via ping/pong frames, detecting dead connections, clean shutdown. This operational weight is real.
 
-Think of HTTP as a letter — you send one, you get one back, the exchange is done. WebSockets are a phone call: the line stays open, either party speaks when they have something to say, and there's no per-utterance overhead.
+*Frontend*: The native `WebSocket` browser API is minimal: `onopen`, `onmessage`, `onerror`, `onclose`. Production apps almost always layer a library on top (Socket.IO, PartyKit) to get reconnection logic and backoff. A common design mistake is treating the WebSocket as a free-for-all message pipe — you need an application-level envelope (type + payload) from day one or the handler code becomes a mess.
 
-## Practical Scenarios
+*Auth*: Cookies attach automatically on the initial HTTP upgrade, so session-based auth works. JWTs are the gotcha — after the upgrade, there's no header mechanism, so people are tempted to pass tokens in the query string (logged by every proxy, don't do it). The correct pattern is to send a short-lived token in the first application message after `onopen`.
 
-**Backend:** You're managing a WebSocket connection per client, which means state in memory. This complicates horizontal scaling — if a user connects to server A, but an event happens on server B, B needs a way to fan that event to A's connection. Typical solution: a pub/sub layer (Redis, NATS) so all instances can broadcast to all connections regardless of which instance holds them.
+**When to reach for it (and when not to)**
 
-**Frontend:** The browser `WebSocket` API is straightforward, but you'll almost always want a library (Socket.IO, or a thin reconnection wrapper) because the native API gives you no reconnection logic. If the connection drops, you're on your own. Also: WebSockets don't automatically carry cookies or auth headers beyond the initial HTTP upgrade — you typically authenticate via a token in the URL or in the first message after connecting.
+Reach for WebSockets when you have sub-second latency requirements, need server-initiated push, or have genuine bidirectionality: collaborative editing, multiplayer games, live dashboards, chat.
 
-**Fullstack:** The interesting tension is between WebSockets and SSE (Server-Sent Events). SSE is unidirectional (server→client only), but it's HTTP — so load balancers, proxies, and auth all just work. For something like live notifications or dashboards where the client never pushes data, SSE is often less operationally painful. WebSockets earn their complexity when you need bidirectional flow: collaborative editing, multiplayer, chat.
-
-The persistent connection model is powerful but shifts your operational model — you're no longer stateless per request, and connection lifecycle (connect, reconnect, heartbeat, teardown) becomes explicit work you have to handle.
+Skip it for: infrequent server events (Server-Sent Events are simpler, unidirectional, auto-reconnect for free), fire-and-forget notifications (push notifications), or serverless environments where long-lived connections are either unsupported or expensive per-minute.

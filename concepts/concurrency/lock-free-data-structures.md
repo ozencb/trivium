@@ -1,46 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Lock-free data structures allow concurrent access without mutexes — threads make progress even if other threads are slow, paused, or crashed, eliminating contention-induced bottlenecks.
+## Lock-Free Data Structures
 
-## The Core Mechanism
+Most concurrent code serializes access to shared state with a lock — one thread enters, others wait. Lock-free structures eliminate that serialization entirely. Instead of mutual exclusion, they rely on atomic hardware instructions to make progress without any thread ever blocking another.
 
-The key primitive is **Compare-And-Swap (CAS)**, a CPU instruction that atomically does: "set this memory location to new value *only if* it currently holds expected value, and tell me whether it succeeded."
+**The core mechanism: Compare-And-Swap (CAS)**
 
-This lets you implement optimistic concurrency: read a value, compute a new state, then attempt to atomically swap it in. If another thread modified it between your read and your swap, CAS fails and you retry. No thread ever blocks — they either succeed or loop.
+CAS is a single CPU instruction: *compare the value at a memory address to an expected value; if they match, atomically write a new value and return success; otherwise, return failure.* This is the entire foundation.
 
-A lock-free linked list push looks roughly like:
+A lock-free operation works like an optimistic transaction:
+1. Read the current state.
+2. Compute a new desired state.
+3. CAS the old state to the new state.
+4. If CAS fails (someone else changed it), retry from step 1.
 
-```go
-func (s *Stack) Push(val int) {
-    new := &Node{val: val}
-    for {
-        top := atomic.LoadPointer(&s.head)
-        new.next = (*Node)(top)
-        if atomic.CompareAndSwapPointer(&s.head, top, unsafe.Pointer(new)) {
-            return  // won the race
-        }
-        // lost the race, retry
-    }
-}
-```
+The invariant is subtle but powerful: if a CAS fails, it means another thread succeeded — the system as a whole made progress. This is the formal definition of *lock-free*: at least one thread always makes progress, even if individual threads retry.
 
-No mutex. The `for` loop retries until this thread "wins" the CAS. Under low contention, that's almost always the first attempt.
+**Mental model: ticket dispenser**
 
-## Mental Model
+Imagine a lock-free counter. You read value `42`, compute `43`, then CAS `42 → 43`. If another thread did the same simultaneously and won, you'll see `43` instead of `42` and retry with `43 → 44`. Neither thread blocks; the slower one just loops once.
 
-Think of it like updating a shared Google Doc with optimistic locking: you load the current version, make your edit locally, then submit with "apply only if still version N." If someone else edited meanwhile, you get a conflict and re-fetch. Locks are like booking a conference room and blocking everyone else out — CAS is like making your change and only committing if the doc hasn't moved.
+Scale this up to a linked list. Pushing a node means reading the current head, pointing your new node at it, then CAS-ing the head pointer to your new node. A concurrent push by another thread will cause one of them to retry. No waiting — just a brief re-do.
 
-## Practical Backend Relevance
+**Why this matters for backend engineers**
 
-**High-throughput counters and metrics**: A lock-protected request counter under heavy load creates a serialization point. An atomic counter (which is essentially a single-register lock-free structure) scales linearly across cores.
+Lock-free structures pay off specifically when lock contention would otherwise be your bottleneck. In high-throughput systems — a metrics aggregator ingesting thousands of events per second, a work-stealing task scheduler, or a concurrent request counter — a mutex around every update becomes a serialization point that caps your throughput at one core's worth of work.
 
-**Work queues and thread pools**: Lock-free queues (MPMC — multiple producer, multiple consumer) let worker threads pull tasks without a mutex guarding the queue. Go's runtime scheduler uses this internally.
+The JVM's `ConcurrentLinkedQueue`, Go's `sync/atomic` package, and lock-free ring buffers in LMAX Disruptor all exploit this. When you see benchmarks showing near-linear throughput scaling on multi-core hardware, lock-free internals are usually why.
 
-**Reference counting in memory management**: `sync/atomic` or `std::shared_ptr` use CAS-based ref counts. Acquiring a resource doesn't block other threads from doing the same.
+**The tradeoff to articulate in interviews**
 
-**The tradeoff**: Lock-free is harder to reason about. The classic hazard is **ABA** — a pointer changes from A → B → A between your read and CAS, so CAS succeeds even though the structure mutated under you. Languages solve this with tagged pointers or hazard pointers. Also, under extreme contention, CAS retries thrash, and a mutex can actually outperform because it queues waiters instead of spinning.
+Lock-free is not always better. CAS loops waste CPU under very high contention (many threads retrying the same address). They also don't compose — two CAS operations on separate addresses can't be made atomic together without additional tricks (like double-CAS or hazard pointers). And the ABA problem — where a value changes from A to B back to A, fooling a CAS into thinking nothing changed — requires careful design (typically versioned pointers).
 
-Lock-free structures are the right tool when you need low-latency under high concurrency and the contention is predictable — not a blanket replacement for locks.
+Knowing when contention patterns justify this complexity, and when a well-tuned mutex is simply cleaner, is what separates engineers who understand concurrency primitively from those who only know the APIs.

@@ -1,41 +1,45 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-The Web Animations API (WAAPI) is a JavaScript interface that exposes the browser's animation engine directly, giving you programmatic control over animations with the same performance characteristics as CSS animations — without the CSS.
+The Web Animations API (WAAPI) gives you programmatic control over animations that run on the browser's compositor thread — the same thread CSS animations use — without the main-thread jank of `requestAnimationFrame`-driven loops. The key insight: you describe *what* to animate (keyframes + timing), hand it to the engine, and the engine handles scheduling and compositing.
 
-## Core Mechanism
+## Core mechanism
 
-CSS animations and transitions already run on the compositor thread (hence their performance advantage over JS-driven `requestAnimationFrame` loops). WAAPI doesn't bypass that — it *integrates with it*. When you call `element.animate()`, the browser schedules the animation through the same internal pipeline that handles `@keyframes`. You're not polling a frame loop; you're handing work to the rendering engine and getting back a handle (`Animation` object) to control it.
-
-That handle is the key difference from CSS. You get:
-- `animation.pause()` / `animation.play()` — runtime control
-- `animation.currentTime` — scrub to any point
-- `animation.playbackRate` — reverse or slow-motion in one line
-- `animation.finished` — a Promise that resolves on completion
+`element.animate(keyframes, options)` returns an `Animation` object backed by a native animation timeline. The browser runs this on the compositor thread, meaning it survives main-thread JS blocking. But unlike pure CSS, you get a live handle:
 
 ```js
-const anim = element.animate(
-  [{ opacity: 0, transform: 'translateY(20px)' }, { opacity: 1, transform: 'translateY(0)' }],
-  { duration: 300, easing: 'ease-out', fill: 'forwards' }
+const anim = el.animate(
+  [{ transform: 'translateX(0)' }, { transform: 'translateX(200px)' }],
+  { duration: 400, easing: 'ease-out', fill: 'forwards' }
 );
 
-anim.finished.then(() => element.classList.add('visible'));
+anim.pause();
+anim.currentTime = 200; // seek to midpoint
+anim.playbackRate = 2;  // double speed
+await anim.finished;    // Promise resolves on completion
 ```
 
-## Mental Model
+That `finished` Promise is underused but critical for sequencing — replaces the `animationend` event listener dance.
 
-Think of it as CSS `@keyframes` + `animation-*` properties, but constructed at runtime and returned as a controllable object. You get the perf of CSS with the dynamism of JS.
+## Mental model
 
-## Practical Scenarios
+Think of it as CSS animations with a remote control. CSS animations are "fire and forget" — you declare them, they run, you have no handle. `requestAnimationFrame` gives you full control but forces everything through JS. WAAPI sits in between: compositor-thread performance, but you can pause, seek, reverse, and chain.
 
-**Frontend:** Gesture-driven UI (drag to dismiss, pull to refresh) needs animations that track user input mid-flight. WAAPI's `currentTime` scrubbing lets you tie animation progress directly to a scroll offset or pointer position — something CSS alone can't do cleanly without `animation-delay` hacks or JS recalculating styles every frame.
+## Practical scenarios
 
-**Fullstack (data-driven UIs):** When rendering list updates from a server (new items, reordering), you often need staggered entrance animations keyed to dynamic data. WAAPI lets you loop over elements and animate each with a computed `delay` without injecting `animation-delay` into inline styles or maintaining a stylesheet per-component. The animation logic stays in JS where the data already lives.
+**Frontend:** Gesture-driven UI is the canonical use case. Swipe-to-dismiss, drag-and-drop snap-back, scroll-linked reveals. The ability to set `currentTime` directly lets you tie animation progress to scroll position or pointer coordinates without `rAF` loops that block layout. Also useful for orchestrating multi-step animations by chaining `finished` Promises rather than stacking `setTimeout` calls.
 
-## Where it fits vs. alternatives
+**Fullstack:** Less direct, but if you're building a component library or design system, WAAPI is the right foundation for motion primitives — you get deterministic, testable animations (you can manipulate `currentTime` in tests) rather than CSS class toggling with opaque timing. Also relevant if you're doing server-side rendering with hydration: WAAPI animations are applied imperatively after mount, so they don't conflict with SSR'd styles the way CSS-in-JS animation libraries sometimes do.
 
-Use CSS transitions when the trigger is a class toggle and you don't need runtime control. Use `requestAnimationFrame` when you need per-frame custom calculations (physics, canvas). Use WAAPI when you need keyframe-based animation *with* runtime control — seeking, pausing, reversing, chaining via `.finished`.
+## When to reach for it
 
-Browser support is solid (all modern browsers). The main gap historically was `KeyframeEffect` compositing options, but that's largely resolved.
+- You need to seek, pause, or reverse an animation based on user input
+- You need to sequence animations without `setTimeout` fragility
+- You're building something gesture-driven where animation progress maps to a continuous input value
+- You want CSS animation performance without losing JS control
+
+## Common pitfalls
+
+`fill: 'forwards'` leaves the animation in a "finished but holding" state — it doesn't commit styles to the element. If you later remove the animation, styles revert. Commit them manually with `getComputedStyle` then cancel, or use the Waapi `commitStyles()` method. Also: keyframe `offset` values must be between 0–1, not percentages like CSS.

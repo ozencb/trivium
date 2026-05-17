@@ -1,0 +1,15 @@
+id: gitops
+title: GitOps
+category:
+  - DevOps
+  - Deployment
+roles:
+  - devops
+  - sre
+lenses:
+  - practical
+prerequisites:
+  - infrastructure-as-code
+  - blue-green-deployments
+dependents: []
+brief: An operational model using Git as the single source of truth for cluster state, with automated reconciliation loops that continuously converge live infrastructure toward declared config.

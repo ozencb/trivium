@@ -1,38 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Two-Phase Commit (2PC)
 
-Two-Phase Commit is a distributed coordination protocol that ensures multiple nodes either all commit a transaction or all abort — giving you atomicity across systems that don't share memory or a transaction log.
+2PC is the classic answer to "how do I atomically commit a transaction across multiple nodes?" — either every participant commits or none do. It's the foundation of distributed transactions, but its failure modes explain why most modern systems avoid it.
 
-### The Core Mechanism
+### The Mechanism
 
-There's a single **coordinator** and one or more **participants**. The protocol runs in two rounds:
+The protocol has a **coordinator** orchestrating **cohorts** (the participant nodes) through two rounds:
 
-**Phase 1 — Prepare (Voting)**
-The coordinator sends a `PREPARE` message to all participants. Each participant checks whether it *can* commit: it acquires locks, writes to a write-ahead log, and persists enough state that it could commit later even after a crash. It votes `YES` or `NO`. If it votes `YES`, it's making a binding promise — it cannot unilaterally abort after this.
+**Phase 1 — Prepare:** The coordinator sends a `PREPARE` to all cohorts. Each cohort writes the transaction to its WAL (making it durable), acquires locks on affected rows, and votes `YES` or `NO`. A `YES` vote is a binding promise: "I can commit this and will hold my locks until told otherwise."
 
-**Phase 2 — Commit or Abort**
-If all votes are `YES`, the coordinator sends `COMMIT`. If any vote is `NO` (or a timeout occurs), it sends `ABORT`. Participants execute accordingly and release their locks.
+**Phase 2 — Commit/Abort:** If all votes are `YES`, the coordinator writes `COMMIT` to its own log, then broadcasts `COMMIT` to cohorts. If any `NO`, it broadcasts `ABORT`. Cohorts release locks and acknowledge.
 
-The critical insight: Phase 1 is about *capability and durability*, not execution. A `YES` vote means "I've done enough work that I can always commit if asked." This is what separates 2PC from a naive "ask everyone then decide" approach.
+The invariant: once a cohort votes `YES`, it has surrendered its autonomy. It cannot unilaterally abort. It must wait for the coordinator's decision, indefinitely if necessary.
 
-### Mental Model
+### The Mental Model
 
-Think of signing a contract simultaneously across time zones. Phase 1 is everyone saying "I've reviewed, initialed every page, and I'm holding my pen." Phase 2 is everyone signing on cue. If anyone drops their pen in Phase 1, you tear up all copies. The key is that once you've said you're ready, you're not allowed to change your mind unilaterally.
+Think of it like a wedding officiant asking "does anyone object?" If someone objects, the whole thing stops. If no one does, everyone is bound. But here's the problem: if the officiant passes out right after everyone says "I do" but before announcing "you're married," all guests are frozen in place — cannot leave, cannot proceed — until the officiant recovers. That freeze is the **blocking problem**.
 
-### Where It Gets Painful
+### Why It Breaks
 
-2PC has a well-known failure mode: **coordinator failure between phases**. If the coordinator crashes after collecting `YES` votes but before sending `COMMIT`/`ABORT`, participants are stuck holding locks indefinitely — they can't commit (no coordinator decision) and they can't abort (they promised they wouldn't). This is the "blocking" problem, and it's why 3PC and Paxos-based commit protocols exist.
+Coordinator failure after Phase 1 completion but before Phase 2 puts cohorts in an uncertain state. They've voted `YES` and are holding locks. They can't commit (never received the decision). They can't abort (they promised they wouldn't). The cohorts are **blocked** — live but stuck — until the coordinator recovers or a human intervenes. This isn't a theoretical edge case; any coordinator restart or network partition triggers it.
 
-### Practical Scenarios
+### Practical Relevance
 
-**Backend:** Any distributed saga that requires strict atomicity — e.g., deducting inventory in Service A and charging a payment in Service B as a single logical transaction. Most message brokers and databases that support XA transactions (PostgreSQL, MySQL, RabbitMQ with XA) implement 2PC under the hood.
+**Backend:** Distributed databases like CockroachDB and Spanner implement 2PC internally (often layered on Paxos for coordinator durability), which is why cross-shard writes are expensive. When you see latency spikes on multi-shard transactions, you're paying the lock-hold cost of Phase 1 wait time.
 
-**Data:** ETL pipelines writing to multiple sinks (a data warehouse + a cache + an audit log) where you need either all three updated or none. Also central to distributed databases like Google Spanner and CockroachDB, where cross-shard writes use a variant of 2PC coordinated by the transaction's leader.
+**Data:** ETL pipelines that write to multiple systems (e.g., updating a warehouse and a stream simultaneously) sometimes use 2PC via XA transactions. The blocking risk is why most data engineers prefer idempotent sagas with compensating transactions — fail fast and retry, rather than hold locks waiting for a coordinator that may never return.
 
-### Connection to What You Know
-
-If you understand Paxos or Raft, 2PC isn't about reaching consensus on a *value* — it's about reaching consensus on whether a *pre-determined action* can proceed. The decision is already known (commit or abort based on votes); the challenge is durability and delivery of that decision to all participants.
+**Interview signal:** Understanding that 2PC's problem is *blocking on uncertainty*, not just "coordinator failure," is what separates someone who's read about it from someone who's reasoned through distributed failure modes. Sagas trade atomicity for availability by replacing the "hold locks and wait" model with explicit compensation — a fundamentally different reliability contract.

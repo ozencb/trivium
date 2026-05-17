@@ -1,31 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**LCP measures when the largest visible element in the viewport finishes painting** — typically a hero image or heading. Google uses it as a proxy for "did the page feel loaded?" and weights it heavily in ranking.
+## Largest Contentful Paint Optimization
 
-## The Core Mechanism
+LCP measures when the browser paints the largest element visible in the viewport — typically a hero image, above-the-fold text block, or video poster — and Google's threshold for "good" is under 2.5 seconds. Optimizing it matters because LCP is the metric most correlated with users' perception of whether a page has loaded.
 
-LCP isn't one thing to optimize — it's four sequential sub-parts:
+### Core Mechanism
 
-1. **TTFB** — server response latency
-2. **Resource load delay** — gap between TTFB and when the browser *starts* fetching the LCP resource
-3. **Resource load time** — actual transfer duration
-4. **Element render delay** — gap between resource received and pixel painted
+The browser can't paint what it hasn't fetched, decoded, and laid out. LCP optimization is fundamentally about removing anything that delays those three steps for your largest element. The four main contributors to a slow LCP are: slow TTFB (server takes too long to respond), render-blocking resources (scripts/stylesheets that pause the parser before it can discover the LCP element), resource load delay (the LCP resource is discovered late in the waterfall), and resource load time itself (the asset is large or on a slow CDN).
 
-Most engineers instinctively attack #3 (compress the image, use WebP). But #2 is usually the silent killer. If your LCP image lives in a CSS background, behind a JS carousel, or has `loading="lazy"`, the browser can't discover it until late in the parsing/execution pipeline — burning 200–600ms before the fetch even starts.
+The key insight: the browser often discovers hero images late because they're in CSS (`background-image`) or in a `<img>` below the fold of the initial HTML. The preload scanner can't find what it can't see in markup.
 
-## Mental Model
+### Mental Model
 
-Think of it as a relay race. Compressing the image trains runner #3. But if runner #2 is standing at the wrong handoff point because the image URL only exists after JavaScript runs, you've wasted your effort on the wrong bottleneck. Use `PerformanceObserver` with `LargestContentfulPaint` entries and inspect the `loadStart` and `renderTime` timestamps — the gaps tell you exactly which leg is losing.
+Think of the browser as a pipeline with a bottleneck audit. You want to trace the critical path from "byte 0 of the HTML response" to "LCP element painted." Every hop adds latency: DNS → TLS → TTFB → HTML parse → LCP resource discovered → LCP resource fetched → decoded → layout → paint. Optimization means collapsing as many hops as possible.
 
-## In Practice
+### Concrete Example
 
-**Frontend:** The most impactful single change is usually adding `fetchpriority="high"` to the LCP `<img>` tag. This moves it to the front of the browser's resource queue, ahead of render-blocking stylesheets and other images. Never put `loading="lazy"` on an above-the-fold image. If the LCP element is a CSS background image, switch it to an `<img>` or use `<link rel="preload" as="image">` in `<head>` so the browser discovers it in the preload scanner pass.
+You have a hero `<img>` that's lazy-loaded by default via a library. The browser downloads 80KB of JS, executes it, then sets `src` on the image. That single decision adds ~300–600ms of JavaScript parse/execute time before the image even starts fetching. Fix: mark it `loading="eager"`, add `fetchpriority="high"`, and add a `<link rel="preload">` in `<head>` so the preload scanner finds it immediately.
 
-**Fullstack:** TTFB directly sets the floor for LCP. An SSR'd page with a 600ms server response cannot achieve a 2.5s LCP target if the hero image takes another 800ms to load — the math doesn't work. Edge caching or moving rendering to CDN edge nodes (Cloudflare Workers, Vercel Edge) collapses TTFB to 50–100ms, which can make the difference between "Good" and "Needs Improvement" even with unoptimized assets. Also: if you're doing SSR but your LCP image URL is injected client-side (e.g., pulled from a CMS API after hydration), you've negated the SSR benefit entirely — the browser sees no image in the initial HTML.
+### Frontend Patterns
 
-## The Non-Obvious Part
+- Use `fetchpriority="high"` on the LCP `<img>` and drop any lazy-load attribute on it.
+- Avoid CSS `background-image` for LCP elements — the browser discovers those only after CSSOM is built.
+- Serve images via a CDN with proper cache headers; consider AVIF/WebP with a `<picture>` fallback.
 
-LCP measurement stops at the first user interaction. So if your page shows a skeleton for 1.5s and then loads content, but the user scrolls before the content appears, Chrome records LCP from before the scroll — meaning your metrics can look better than the actual experience if users are impatient. Always cross-check field data (CrUX) against lab data (Lighthouse) to catch this.
+### Fullstack Patterns
+
+- TTFB is often the silent killer. Server-side streaming (React's `renderToPipeableStream`, Next.js App Router) lets the browser start parsing HTML before the full response is ready.
+- Use `<link rel="preconnect">` to the image origin in your document `<head>` if it's a third-party CDN.
+- For SSR apps, avoid waterfalling data fetches that delay the initial HTML flush — the LCP element can't be in HTML that hasn't been sent yet.
+
+### Common Pitfall
+
+Preloading works but can backfire: if you preload an image that ends up not being the LCP element (responsive images, viewport-dependent content), you've wasted bandwidth and potentially pushed the real LCP resource further down the queue.

@@ -1,41 +1,45 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Resource hints are declarative directives you embed in HTML (or HTTP headers) to tell the browser about resources it will need before it would otherwise discover them. The payoff is eliminating the latency gap between when the browser *could* start fetching something and when it *actually* does.
+## Resource Hints
 
-## The Core Mechanism
+The browser parses HTML top-to-bottom and only discovers resources when it encounters them — a script tag deep in the document, a font inside a CSS file, an image in a lazy-loaded component. Resource hints let you break that sequential dependency by telling the browser *declaratively* what it will need, before the parser gets there.
 
-Browsers process HTML top-to-bottom. They learn about a font inside a CSS file only after fetching and parsing that CSS—which they only learned about from a `<link>` tag in the HTML. By then, multiple round-trips have already happened. Resource hints short-circuit this discovery chain.
+### The core idea
 
-There are four main hints, each with a distinct scope:
+There are three distinct primitives:
 
-- **`preload`** — "I *will* use this resource on the current page, fetch it now at high priority." The browser fetches it and holds it in a preload cache until your HTML/JS requests it normally.
-- **`preconnect`** — "I'll be hitting this origin soon, warm up the connection." Handles DNS lookup, TCP handshake, and TLS negotiation upfront. Saves 100–300ms on the first request to a cold origin.
-- **`dns-prefetch`** — Cheaper version of preconnect: just resolve the DNS. Good when you're unsure whether you'll actually need the connection.
-- **`prefetch`** — "I'll probably need this on the *next* page." Low-priority fetch, stored in HTTP cache for future navigation.
+**`preload`** — fetch this resource now, at high priority, because it's needed for the current page. The browser downloads it immediately but doesn't execute it; you control execution separately. Use this for critical assets that are discovered late: a font loaded via CSS, a hero image set in JS, a script that's dynamically injected.
 
 ```html
-<link rel="preconnect" href="https://api.example.com">
-<link rel="preload" href="/fonts/inter.woff2" as="font" crossorigin>
-<link rel="prefetch" href="/js/dashboard-chunk.js">
+<link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 ```
 
-The `as` attribute on `preload` is not optional ceremony—it sets request priority and the correct `Accept` header, and prevents the browser from double-fetching when the resource is actually used.
+**`preconnect`** — establish the TCP connection, TLS handshake, and DNS lookup to a third-party origin ahead of time. The actual fetch happens later, but the expensive roundtrip overhead is already paid. Ideal for CDNs, API hosts, font providers.
 
-## Mental Model
+```html
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+```
 
-Think of it as giving your build crew a materials list before they start reading blueprints. Without hints, workers call for supplies only when they encounter a need mid-construction. With hints, supplies are already on-site.
+**`prefetch`** — fetch a resource for a *future* navigation, at low priority, using idle network time. The browser may or may not honor it depending on conditions. Use this speculatively — the next page a user is likely to visit.
 
-## Practical Scenarios
+### Mental model
 
-**Frontend:** Google Fonts injects a stylesheet which then declares the actual font files. Two redirects deep before the browser knows about the font binary. A `preload` on the `.woff2` URL—placed in your `<head>`—collapses that discovery chain and eliminates layout shift caused by late-loading fonts.
+Think of preload as "I need this now, go get it in parallel." Preconnect as "warm up the pipe to that server." Prefetch as "here's a tip about what I'll probably need later."
 
-**Fullstack/SSR:** Your server renders HTML that triggers API calls to `api.yourservice.com`. Add a `preconnect` to that origin in the initial HTML response (or better, as an HTTP `Link:` header so the browser sees it before parsing HTML at all). First API call skips connection setup entirely.
+The key distinction: preload is for the current page's critical path; prefetch is for the next page. Confusing them is the most common mistake — prefetch does nothing for current-page performance.
 
-**SPA routing:** Attach a `prefetch` for the next route's JS chunk when the user hovers a nav link. By the time they click, the chunk is already cached.
+### Practical scenarios
 
-## The Trap to Avoid
+**Frontend:** You're using a web font and notice layout shift because the font loads after CSS. A `preload` with `as="font"` moves the fetch to the very beginning of the document load, eliminating the flash of unstyled text. Same pattern for a hero image set via JavaScript — the browser can't discover it from the HTML, so you hint it explicitly.
 
-`preload` competes for bandwidth with everything else. Preloading resources you don't use on the current page actively hurts performance—you're front-loading bandwidth consumption for nothing. Treat it as a scalpel for your critical rendering path, not a bulk optimization.
+**Fullstack:** Your SSR app renders a page that always makes an API call to `api.yourdomain.com`. Add a `preconnect` in the `<head>` of your layout. By the time JS hydrates and fires the fetch, the connection is already open. On a cold 4G connection this can save 200-400ms before the first API request even starts.
+
+### Pitfalls
+
+- **Over-preloading kills itself.** Preloading 15 resources saturates bandwidth and harms the actual critical path. Reserve it for 2-3 truly critical late-discovered assets.
+- **Missing `as` attribute on preload** causes the browser to fetch at wrong priority and potentially fetch twice.
+- **Preload without use** triggers a console warning and wastes bandwidth — the browser fetched something you never consumed.
+- **`crossorigin` mismatch** on fonts causes a double-fetch silently. If the font request uses CORS, the preload must too.

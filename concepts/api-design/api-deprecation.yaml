@@ -1,0 +1,15 @@
+id: api-deprecation
+title: API Deprecation
+category:
+  - API Design
+  - Lifecycle
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - api-versioning
+dependents: []
+brief: The process of sunsetting API versions through Sunset headers, removal timelines, and migration guides while maintaining backward compatibility long enough for consumers to migrate.

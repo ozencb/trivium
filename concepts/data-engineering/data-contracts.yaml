@@ -1,0 +1,16 @@
+id: data-contracts
+title: Data Contracts
+category:
+  - Data Engineering
+  - Quality
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+  - career
+prerequisites:
+  - schema-registry
+  - api-versioning
+dependents: []
+brief: Formal agreements between data producers and consumers specifying schema, semantics, SLAs, and ownership that prevent silent breaking changes from corrupting downstream pipelines.

@@ -1,0 +1,21 @@
+id: pub-sub-pattern
+title: Publish-Subscribe Pattern
+category:
+  - Messaging
+  - Patterns
+roles:
+  - backend
+  - sre
+  - data
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - message-queues
+dependents:
+  - event-driven-architecture
+  - kafka-partitioning
+  - stream-processing
+  - fanout-pattern
+brief: A messaging topology where publishers emit events to named topics without addressing specific consumers, letting any number of independent subscribers react without coupling.

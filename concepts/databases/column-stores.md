@@ -1,32 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Columnar storage reorganizes how a database physically lays out data on disk — instead of storing all fields for a row together, it stores each column's values contiguously. This makes analytical queries over large datasets dramatically faster because you only read the columns you actually need.
+## Columnar Storage
 
-## The Core Mechanism
+Row-oriented databases store each record contiguously on disk—all fields of a row together. Columnar storage inverts this: each column is stored contiguously, so scanning a column means sequential reads with no wasted I/O on fields you don't need.
 
-In a traditional row-oriented store (Postgres, MySQL), a table row is a contiguous block on disk: `[id, name, age, salary, department, ...]`. To compute `AVG(salary)`, the engine reads every row in full, even though it only cares about one field.
+**The core mechanism**
 
-Columnar storage flips this. All salary values live together: `[50000, 72000, 91000, ...]`. Now `AVG(salary)` reads only that column's pages — potentially 10-100x less I/O depending on table width.
+When a query like `SELECT AVG(revenue) FROM orders WHERE year = 2024` runs on a row store, the engine reads every row into memory—including `customer_id`, `shipping_address`, `notes`, and everything else—then discards all but `revenue` and `year`. On a table with 50 columns, you're reading ~50× more data than necessary.
 
-Two additional properties compound this:
+In a column store, `revenue` and `year` live in separate byte arrays. The engine fetches only those two columns, reads them sequentially (friendly to prefetchers and OS page cache), and never touches the other 48. The I/O reduction is the entire point.
 
-**Compression**: Values in a column are often the same type and have similar cardinality. A `department` column with 5 distinct values across 10M rows compresses extremely well (run-length encoding, dictionary encoding). Row stores compress poorly because adjacent bytes are from different types.
+**Two invariants that make this work**
 
-**Vectorized execution**: Modern columnar engines (DuckDB, Snowflake, ClickHouse) process columns in batches — feeding tight loops of integers directly to SIMD instructions. No per-row dispatch overhead.
+1. **Compression is dramatically more effective per column.** A column of integers or a low-cardinality string column (e.g., `status` with 5 possible values) compresses at ratios impossible for mixed-type rows. Run-length encoding, dictionary encoding, and delta encoding all exploit this. Parquet files, for instance, often achieve 5–10× compression on real data.
 
-## Concrete Mental Model
+2. **SIMD and vectorized execution.** Because a column is a typed, densely packed array, the CPU can apply operations across many values per instruction. Aggregations and filters become tight loops on homogeneous memory—fundamentally different from row-by-row tuple processing.
 
-Think of a spreadsheet. Row-oriented = reading across rows. Columnar = reading down columns. If you need column D of 1M rows, row-oriented means skipping columns A, B, C for every single row. Columnar means one sequential read.
+**Mental model**
 
-## Where This Matters
+Think of a spreadsheet. A row store is like reading the file row by row. A column store is like reading the entire column A, then column B—except the file is physically laid out that way, so it maps directly to sequential disk reads.
 
-**Analytics / OLAP**: Any "give me aggregates over this dimension" query benefits enormously. Filter by country, group by product, sum revenue — each step touches 2-3 columns out of 50. Columnar makes this the fast path, not the slow one.
+**Where this matters in practice**
 
-**Backend data pipelines**: If you're writing ETL jobs that read Parquet files (columnar format), projection pushdown means your file reader literally skips byte ranges for unneeded columns before anything hits memory. A 200-column wide Parquet file read for 3 columns costs roughly what a 3-column file costs.
+*Data/analytics:* This is why Redshift, BigQuery, Snowflake, and ClickHouse are fast for OLAP workloads. The query `GROUP BY region, month` over a billion rows is feasible because you're reading ~2 columns, not 30.
 
-**The tradeoff**: Writes and point lookups are more expensive. To insert one row, you must append to N column files. To read a full row, you reassemble from N locations. This is why OLTP databases stay row-oriented — writes and primary key lookups dominate their workload.
+*Backend:* If you're designing a service that needs to answer aggregation queries over large append-only event logs, choosing columnar format (Parquet on S3, ClickHouse, DuckDB) versus a general-purpose RDBMS isn't just a performance choice—it's a 100× cost and latency difference at scale.
 
-Most production analytics systems today use columnar formats at rest (Parquet, ORC, Arrow) even when queried through SQL abstractions — the storage format is the performance lever, independent of the query interface.
+**The tradeoff that matters in interviews**
+
+Columnar storage is hostile to point lookups and writes. Fetching a single row requires reading from N separate column files and reconstructing it. Updates are expensive because changing one field touches one column's file. This is why hybrid approaches exist (like Snowflake's micro-partition clustering or Delta Lake's row group caching)—they amortize the write cost while preserving read efficiency. Knowing *why* the tradeoff exists, not just that it does, is what distinguishes an architectural answer from a trivia answer.

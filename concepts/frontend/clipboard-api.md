@@ -1,50 +1,42 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Clipboard API
 
-The Clipboard API gives JavaScript programmatic read/write access to the system clipboard — the same clipboard your OS exposes to native apps. It replaced the older, janky `document.execCommand('copy')` approach with an async, permission-based interface.
+The Clipboard API gives you async, permission-gated access to the system clipboard, replacing the old `document.execCommand('copy')` hack that required a selected DOM element and had no way to read structured data. The real shift is that it treats clipboard access as a first-class async operation with explicit user consent, not a side-effect of DOM manipulation.
 
-### Core mechanism
+**Core mechanism**
 
-The API lives on `navigator.clipboard` and has four methods: `writeText`, `readText`, `write`, and `read`. The text variants handle plain strings; `write`/`read` handle `ClipboardItem` objects that can carry multiple MIME types simultaneously (text, HTML, PNG, etc.).
-
-The critical design decision: **all reads are async and gated by permissions**. Writing is usually auto-permitted when triggered by a user gesture (click, keypress). Reading requires explicit user permission via the Permissions API — the browser will prompt the user. This asymmetry exists because silently reading clipboard contents is a privacy risk (passwords, sensitive data), while writing is less dangerous.
+The API lives on `navigator.clipboard` and has four methods: `writeText`, `readText`, `write`, and `read`. The text variants are straightforward. The interesting ones are `write` and `read`, which work with `ClipboardItem` objects — wrappers that map MIME types to `Blob`s. This means you can write `image/png` or `text/html` alongside `text/plain`, and the OS clipboard understands all of them. When a user pastes into Word, they get formatted content; into a terminal, plain text.
 
 ```js
-// Write — works with a user gesture, no prompt
-button.addEventListener('click', async () => {
-  await navigator.clipboard.writeText('copied!');
-});
-
-// Read — may trigger a browser permission prompt
-const text = await navigator.clipboard.readText();
-```
-
-For rich content, you construct a `ClipboardItem`:
-
-```js
-const html = new Blob(['<b>hello</b>'], { type: 'text/html' });
-const plain = new Blob(['hello'], { type: 'text/plain' });
 await navigator.clipboard.write([
-  new ClipboardItem({ 'text/html': html, 'text/plain': plain })
+  new ClipboardItem({
+    'text/html': new Blob(['<b>hello</b>'], { type: 'text/html' }),
+    'text/plain': new Blob(['hello'], { type: 'text/plain' }),
+  })
 ]);
 ```
 
-When the user pastes this in Word, it picks `text/html`. In a plain text editor, it falls back to `text/plain`. You're writing to the clipboard the same way native apps do.
+**The permission model**
 
-### Mental model
+Writing requires a transient user activation (button click, keypress) — no explicit permission prompt. Reading is more sensitive: the browser prompts the user, and the permission is `clipboard-read` in the Permissions API. This asymmetry trips people up. Copy works silently; paste requires either a user gesture *and* permission, or the browser will reject the promise.
 
-Think of it like writing a file with multiple extensions. The clipboard holds a "clipboard item" that bundles several representations of the same data. The consuming app picks whichever MIME type it understands.
+**Practical patterns**
 
-### Practical scenarios
+The most common use is "copy to clipboard" buttons — copy a code snippet, an API key, a URL. Use `writeText`, wrap in try/catch, update UI state on success. Don't forget: this only works in secure contexts (HTTPS or localhost).
 
-**Frontend:** "Copy to clipboard" buttons on code blocks (GitHub, documentation sites) — one click copies the raw code. You also see this in color pickers that copy hex values, or share flows that copy a pre-built URL.
+For rich copy (spreadsheet cells, styled text, images), you need `ClipboardItem`. This shows up in design tools (Figma-style), rich text editors, or anywhere you want paste to carry structure rather than just characters.
 
-**Fullstack:** Rich text editors (Notion, Google Docs) use `write`/`read` with `text/html` to preserve formatting across copy-paste within the same app. They intercept `paste` events, read the clipboard HTML, sanitize it server-side or client-side, then insert it into their own document model — avoiding the lossy plain-text round-trip.
+For paste handling — reading clipboard on user action — you can do things like "paste image" upload flows where users paste a screenshot directly into a form field. Listen for the `paste` event on the document or a focused element, then pull from `event.clipboardData` (synchronous, works everywhere) or `navigator.clipboard.read()` (async, needs permission).
 
-### Gotcha worth knowing
+**Common pitfalls**
 
-The API only works in secure contexts (HTTPS or localhost). In iframes, you need the `clipboard-read`/`clipboard-write` permissions policy set on the frame. And Safari has historically lagged on `ClipboardItem` support, so check caniuse if you need the rich-content variant.
+- `navigator.clipboard` is undefined in non-secure contexts and in some iframe sandboxes — always guard against it
+- Firefox has historically lagged on `ClipboardItem` support for non-text types
+- The `paste` event's `clipboardData` and `navigator.clipboard.read()` are two different systems; `clipboardData` is synchronous and available inside the event handler, while `navigator.clipboard.read()` is async and can be called anywhere (with permission)
+- Permission state doesn't persist the way you might expect — users can revoke it
+
+For most cases, `writeText` + `readText` covers everything you need. Reach for `ClipboardItem` when you're building anything that handles rich content.

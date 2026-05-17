@@ -1,44 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Image lazy loading** defers fetching images until they're near the viewport, cutting initial page load time and wasted bandwidth on images users never scroll to.
+## Image Lazy Loading
 
-## Core Mechanism
+The browser's default behavior fetches every `<img>` on page load regardless of whether the user will ever scroll to it. Lazy loading defers those off-screen requests until the image is near the viewport, cutting initial payload and speeding up LCP for content that actually matters.
 
-The naive mental model is "load images when they're visible," but the real behavior is more nuanced. You set a placeholder (empty `src`, a low-res blur, or a data URI) and store the real URL in `data-src`. An `IntersectionObserver` watches each image element with a `rootMargin` buffer — typically `200px` — so the real fetch starts *before* the image enters view, not after. This hides the latency from the user.
+### Core mechanism
 
-```js
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      const img = entry.target;
-      img.src = img.dataset.src;
-      observer.unobserve(img);
-    }
-  });
-}, { rootMargin: '200px' });
+There are two paths: the native `loading="lazy"` attribute and the manual Intersection Observer approach.
 
-document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
-```
+`loading="lazy"` is declarative and handled entirely by the browser. The browser maintains an internal distance threshold (typically a few hundred pixels, device and connection-speed dependent) and begins fetching images as the user scrolls toward them. Zero JS required.
 
-The `rootMargin` is the actual lever — too tight and users see images popping in; too loose and you've partially negated the benefit.
+The Intersection Observer path gives you explicit control: you observe a target element, fire a callback when it enters a root margin, then swap a `data-src` into `src` to trigger the fetch. This matters when you need custom thresholds, need to lazy-load background images (`background-image` in CSS isn't handled by native lazy loading), or need to support behavior in older browsers.
 
-## What It Actually Buys You
+### Mental model
 
-Initial page weight drops substantially. A product listing with 60 images where only 8 are above the fold means the browser skips 52 HTTP requests on load. Beyond bandwidth, it affects Core Web Vitals: fewer competing requests means LCP candidates (the hero image, typically) resolve faster because the network isn't saturated.
+Think of it like virtualizing a list. Instead of rendering 500 rows into the DOM upfront, you render only what's visible plus a small buffer. Lazy loading does the same for network requests: the image slots exist in layout, but the actual bytes are fetched on demand.
 
-The browser's native `loading="lazy"` attribute handles this without JS for most cases now, using a heuristic rootMargin that varies by connection speed. It's sufficient for most use cases, but gives you no control over thresholds, placeholder behavior, or the load trigger logic.
+### Practical scenarios
 
-## Practical Scenarios
+**Frontend:** An image-heavy editorial page or photo gallery is the canonical case. Native `loading="lazy"` on `<img>` tags takes 30 seconds to add and meaningfully reduces initial load time. One common pitfall: forgetting to set explicit `width` and `height` attributes. Without them, the browser can't reserve layout space and you get cumulative layout shift (CLS) as images load in—trading one performance problem for another.
 
-**Frontend:** In a photo gallery or infinite scroll feed, lazy loading is table stakes. The pattern to watch for: images inside CSS `display:none` containers still get observed by IntersectionObserver even though they're invisible — they might load before the user ever toggles that tab open. Sometimes intentional, sometimes not.
+**Fullstack:** When you're rendering product grids server-side, lazy loading pairs naturally with infinite scroll or paginated APIs. The images below the fold don't load until needed, but your SSR HTML still includes the `<img>` tags (with dimensions) so the layout is stable. If you're serving images through a CDN transform service (Cloudinary, imgix), lazy loading also reduces CDN egress costs—you stop paying for images users never reached.
 
-**Fullstack:** If you're generating pages server-side, above-the-fold images should get `loading="eager"` (or no attribute) and ideally a `fetchpriority="high"` hint. Blanket `loading="lazy"` on all images — a common copy-paste mistake — delays the LCP image and tanks your PageSpeed score. The server knows which images are above-the-fold at render time; the browser doesn't until layout runs.
+### When to reach for it
 
-## The Edge Cases Worth Knowing
-
-- Images inside `<picture>` with `srcset` need `loading="lazy"` on the `<img>`, not the source elements.
-- Lazy loading and `decoding="async"` are orthogonal — lazy controls *when* to fetch, async controls *when* to decode (off main thread). Use both.
-- SSR hydration mismatches can occur if you render `src=""` server-side but the client hydrates with the real src — some frameworks need explicit handling here.
+Default to `loading="lazy"` on any image not in the initial viewport—hero images and above-the-fold content should be `loading="eager"` (or omit the attribute). Reach for Intersection Observer when you need background-image lazy loading, fine-grained threshold control, or custom analytics on image visibility. Avoid lazy loading small icons or sprites; the overhead isn't worth it and it can hurt perceived performance for UI elements users expect immediately.

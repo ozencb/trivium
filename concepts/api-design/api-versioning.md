@@ -1,34 +1,26 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**API versioning is a contract management strategy** — it lets you evolve your API without breaking existing clients that depend on its current behavior.
+## API Versioning
 
-## The Core Idea
+Once a public API has consumers, any breaking change — removing a field, changing a response shape, tightening validation — can silently break clients you don't control. API versioning is how you ship those changes anyway, by giving clients a stable contract to pin against while you evolve forward.
 
-Every API is a contract. Once clients depend on it, you can't just change response shapes, rename fields, or remove endpoints without breaking them. Versioning gives you a way to introduce breaking changes by creating a parallel contract (`v2`) while honoring the old one (`v1`) for however long you need.
+**The core tension** isn't technical, it's operational: every version you keep alive is code you maintain, test, and debug in production. The goal isn't to version everything — it's to delay incompatibility as long as possible through additive changes, and version only when you genuinely can't avoid a break.
 
-The mechanism is straightforward: you isolate a "version" of your API surface — its endpoints, request/response schemas, and behavior — and route requests to the right version. The hard part isn't the routing; it's deciding what constitutes a "breaking" change and maintaining multiple live versions.
+**The main strategies:**
 
-## Versioning Strategies
+*URI versioning* (`/v1/users`, `/v2/users`) is the most common and the most visible. Easy to route, easy to cache, easy to test. The downside: it implies the whole resource is versioned, even if only one field changed.
 
-**URI versioning** (`/v1/users`, `/v2/users`) is the most common. It's explicit, cacheable, and easy to reason about in logs. The downside is it violates REST's principle that a URI should identify a resource, not a version of the API.
+*Header versioning* (`Accept: application/vnd.yourapi.v2+json` or a custom `API-Version: 2024-01`) keeps URLs clean and maps well to REST's content negotiation model. Stripe uses date-based header versioning — your account is pinned to the version active when you signed up, and you opt into newer behavior explicitly. This is elegant but harder to test in a browser and invisible to caches by default.
 
-**Header versioning** (`Accept: application/vnd.api+json; version=2`) is more RESTful but harder to test in a browser and invisible from the URL. It also requires clients to set headers correctly — which they often don't.
+*Query param versioning* (`/users?version=2`) is the least principled — it makes version a filter on a resource rather than a statement about the contract — but it's pragmatic for internal or low-stakes APIs.
 
-**Query param versioning** (`/users?version=2`) is easy to add but pollutes URLs and is often harder to deprecate cleanly.
+**The additive change principle** is what separates experienced API designers: before reaching for versioning, ask whether the change is actually breaking. Adding a new optional field, adding a new endpoint, or relaxing a constraint are all non-breaking. If you can make the change additive, you skip versioning entirely.
 
-Most teams pick URI versioning and accept the REST purist criticism because the operational clarity is worth it.
+**Backend:** When you do version, keep the version boundary at the routing/controller layer and share as much underlying service logic as possible. The failure mode is two parallel implementations that diverge silently — V1 gets a security fix, V2 doesn't. Version at the edge, not the domain.
 
-## Practical Scenarios
+**Fullstack:** On the client side, the discipline is never assuming a field exists without handling its absence — even within a single version, server-side deploys can race mobile app updates. That habit makes version migrations cheaper because your clients are already defensive.
 
-**Backend:** You're adding a new user model that replaces `full_name` with `first_name` + `last_name`. Without versioning, every client breaks simultaneously. With versioning, `v1` keeps serving `full_name` (you populate it by joining the two fields), `v2` returns the new shape. You can deprecate `v1` once clients migrate.
-
-**Fullstack:** You own both the API and the frontend, so you might think versioning is unnecessary. It's not — mobile clients on old app versions will call your API for months after you ship a new backend. If you deploy a breaking change, those users get errors. Versioning lets you decouple backend deploys from client releases.
-
-## What Actually Gets Versioned
-
-In practice, people version entire API paths rather than individual resources. This creates maintenance overhead: bug fixes often need to be backported to older versions, and shared business logic can't be cleanly isolated. Some teams use **expansion by default** — never removing fields, only adding new ones — to avoid versioning altogether. This works until it doesn't, and then you need versioning anyway.
-
-The connection to **API deprecation** is direct: versioning creates the machinery for deprecation. Without versioned endpoints, you can't announce "v1 sunsets in 6 months" — you have no `v1` to point at.
+**The interview signal:** Most candidates describe versioning as "just put /v2 in the URL." The real conversation is about deprecation timelines, sunset headers (`Sunset: Sat, 01 Jan 2028 00:00:00 GMT`), version discovery, and how you migrate clients off old versions before decommissioning. Having opinions about *when to version* and *how to kill old versions* is what reads as senior.

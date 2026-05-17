@@ -1,0 +1,16 @@
+id: full-text-search
+title: Full-Text Search
+category:
+  - Databases
+  - Search
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+dependents:
+  - vector-databases
+brief: Inverted-index retrieval that tokenizes, stems, and relevance-ranks document content to answer queries that exact-match B-tree indexes cannot satisfy.

@@ -1,40 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Rollback strategies are the set of mechanisms you use to revert a system to a known-good state after a bad deployment — because "undo" in production is never as simple as Ctrl+Z.
+## Rollback Strategies
 
-## The Core Mechanism
+Rollback is the ability to undo a deployment and return to the last known-good state. You need it because no deployment pipeline eliminates all production failures, and the cost of every minute in a degraded state is higher than the cost of building the escape hatch.
 
-A rollback isn't one thing. It's a spectrum of approaches, each with different speed, safety, and complexity tradeoffs. The key insight is that rollback difficulty is determined *before* you deploy, not after. The decisions you make about artifact versioning, state management, and traffic routing are what make rollback fast or catastrophic.
+### The Core Mechanism
 
-The main levers:
+The naive mental model is: "just redeploy the old image." That works for stateless services, and if you're already running blue-green, you literally just shift traffic back to the blue environment — near-zero-cost rollback. The old fleet never went away.
 
-**Traffic-level rollback** — redirect traffic back to the previous version without touching the running instance. If you're using blue-green, this is just flipping the load balancer back. Fast (seconds), but only works if the old version is still running.
+The hard part is **state**. Rollback gets expensive when the deployment changed something that can't be undone by swapping binaries:
 
-**Artifact rollback** — redeploy the previous container image or binary. Slower than traffic flipping (minutes), but doesn't require keeping old infrastructure warm.
+- **Database schema migrations** — if v2 added a `NOT NULL` column, rolling back to v1 means the app is now reading a schema it doesn't understand. The migration already ran; you can't un-run it by deploying old code.
+- **Message queue consumers** — if v2 changed the shape of events it produces, and those events are now in the queue, v1 consumers may not be able to parse them.
+- **External state mutations** — payments charged, emails sent, webhooks fired.
 
-**Feature-flag rollback** — disable a feature without deploying at all. The new code is in production but dormant. This is the fastest path, but requires you to have instrumented the feature with flags ahead of time.
+This is why experienced engineers often say "forward fix" rather than rollback: patch forward to v2.1 rather than revert to v1. It's frequently safer because you're not fighting the schema.
 
-**Configuration rollback** — revert a config change (env vars, feature flags, infra config) independently of code. Often overlooked but critical — a bad config push can cause just as much damage as bad code.
+### Concrete Mental Model
 
-## Concrete Example
+Think of rollback as a spectrum:
 
-Say you deploy v2 of a payment service. Within minutes, error rates spike. You have three options depending on your setup:
+1. **Traffic rollback** — flip the load balancer. Works instantly if infrastructure supports it (blue-green, canary weight to 0%). No state involved.
+2. **Deployment rollback** — redeploy previous artifact. Works for stateless services. Fast, but blocked by incompatible schema.
+3. **Data rollback** — reverse migrations, restore from snapshot. Dangerous, slow, and usually means accepting data loss. Last resort.
 
-1. **Blue-green**: flip the load balancer back to v1 in ~10 seconds. v2 is still running but gets no traffic.
-2. **No blue-green**: redeploy v1 image, wait for pods to cycle — maybe 3-5 minutes.
-3. **Feature flag on the new payment flow**: toggle it off instantly, no deploy needed.
+Most production rollbacks should be #1 or #2. If you're discussing #3, you're in incident recovery, not deployment strategy.
 
-The same failure, three very different recovery times.
+### Practical Scenarios
 
-## Practical Scenarios
+**SRE:** When you're on-call and a deploy just tanked error rates, your runbook shouldn't require thought. Blue-green means rollback is a one-line config change. Without that, you're digging through deployment tooling under pressure. The rollback path should be rehearsed, not improvised.
 
-**SRE context**: During an incident, rollback is a *mitigation*, not a fix. The SRE calculus is: "Is rolling back faster than hotfixing forward, and does it actually stop the bleeding?" If the bad code path only fires under specific conditions (a rare race condition, specific user segment), a rollback might be overkill. Feature flags let you be surgical. Also, know your rollback SLO — "we can rollback in under 5 minutes" needs to be tested regularly, not assumed.
+**DevOps:** The real discipline is making migrations rollback-compatible *before* you need to roll back. The expand-contract pattern (add new column nullable → backfill → make non-null across two separate deploys) is specifically designed so that either version of the app can run against either version of the schema. This is the prerequisite for safe blue-green with stateful services.
 
-**DevOps context**: Rollback capability is a deployment pipeline concern. You need immutable artifacts with clear versioning (so you can re-deploy an exact previous state), and your CD pipeline should make rollback a first-class operation — not something you figure out under pressure at 2am. Automated rollback triggers based on error rate thresholds (Argo Rollouts, Spinnaker) push this further.
+### Why It Matters in Interviews
 
-## Why This Matters for Database Migrations
-
-The hard constraint on rollback is state. Code is stateless and easy to swap. Databases aren't. Once you've run a migration that drops a column, there's no traffic-flip that saves you — which is exactly why forward-compatible migration patterns exist.
+Senior engineers are expected to immediately ask "what's the rollback story?" when reviewing a deployment design. Saying "we can just redeploy v1" without considering schema state is a red flag. The differentiated answer acknowledges the stateful constraints, names the tradeoffs between rollback and forward-fix, and proposes a migration strategy that keeps the option open.

@@ -1,30 +1,47 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Real User Monitoring (RUM)
 
-RUM is the practice of capturing performance and behavioral telemetry directly from real users' browsers in production. The point is simple: synthetic tests tell you what your app *should* do under controlled conditions; RUM tells you what it *actually* does across the full distribution of devices, networks, and geographies hitting your site.
+RUM captures performance metrics from actual user sessions in production and ships them to an analytics backend. The critical distinction from Lighthouse or synthetic testing: you're measuring what real people on real devices on real networks actually experience — which frequently diverges from lab results by 2–5x.
 
-### Core Mechanism
+### The Core Mechanism
 
-You inject a JavaScript snippet — either hand-rolled or via a library like `web-vitals`, Datadog RUM, or Sentry — that hooks into the browser APIs you already know: Performance Observer, Navigation Timing, Resource Timing, Long Tasks. The snippet collects events (Core Web Vitals, errors, custom marks) and batches them to a backend collector, usually via `sendBeacon` so it doesn't block unload.
+You attach a `PerformanceObserver` to watch for specific entry types (`largest-contentful-paint`, `layout-shift`, `first-input`, etc.) and accumulate them during the session. On page hide or unload, you beacon the payload using `navigator.sendBeacon()` — not `fetch` — because `sendBeacon` is specifically designed to survive tab close and page navigation without blocking.
 
-The data you receive isn't a single score — it's a distribution. Your lab LCP might be 1.8s, but RUM shows P75 is 3.9s for mobile users in certain regions. That gap is invisible until you're measuring real sessions.
+```js
+const vitals = {};
+new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    vitals.lcp = entry.startTime;
+  }
+}).observe({ type: 'largest-contentful-paint', buffered: true });
 
-A useful mental model: think of RUM as distributed tracing, but for the browser. Instead of tracing a request through microservices, you're tracing user experience from navigation start through every meaningful interaction.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    navigator.sendBeacon('/analytics', JSON.stringify(vitals));
+  }
+});
+```
+
+The `buffered: true` flag is easy to miss but essential — it lets you observe entries that fired before your observer was registered.
+
+### What Separates Senior Thinking Here
+
+Raw averages are useless. You want p75 and p95 distributions segmented by device class, connection type, geography, and route. An LCP of 2.1s average can mask a p95 of 8s on low-end Android — which is the reality for a significant user segment. Google's Core Web Vitals assessment uses p75 for exactly this reason.
+
+Attribution matters too. Knowing LCP is slow tells you nothing actionable. You need the element that triggered it, the page/route, whether it was a cache hit, and the resource that blocked it. Libraries like `web-vitals` (from the Chrome team) surface `attribution` objects specifically for this.
+
+Also: sample your data. At any meaningful scale, capturing 100% of sessions creates noise and backend costs with no marginal insight. 10–20% sampling is standard.
 
 ### Practical Scenarios
 
-**Frontend**: You ship a new infinite scroll component. Lighthouse looks fine. But RUM shows INP spiking for users on mid-tier Android devices because your scroll handler is doing layout-triggering work on the main thread. You'd never catch that in a lab test run against a high-end MacBook. RUM lets you set alerts on metric regressions per-route, not just globally.
+**Frontend:** When a product manager asks why conversion dropped after a deploy, RUM lets you correlate the INP regression on the checkout page with the deploy timestamp — something no synthetic test would catch because it only reproduced on mid-tier devices.
 
-**Fullstack**: You make a backend change that increases DB query latency by 150ms. Server p99 is technically within SLO. But RUM shows that LCP for the product detail page — which depends on that query — jumped 400ms for real users, because server-think-time sits in the critical rendering path. RUM gives you the user-facing consequence of backend decisions that latency dashboards alone won't surface.
+**Fullstack:** TTFB from RUM versus your server's p99 latency tells you whether slowness is server-side or in the network/DNS path. If server logs look fine but RUM TTFB is high, you're looking at a CDN or routing issue.
 
-**SRE**: You can define frontend SLOs backed by RUM data — e.g., "P75 LCP under 2.5s for 95% of sessions per 28-day window." A deploy that keeps your servers green but degrades real user experience is still an incident. RUM feeds your error budget the same way server-side metrics do, just from a different vantage point.
+**SRE:** RUM is a leading indicator for incident impact. Server error rates spike immediately; RUM degradation sometimes precedes that or captures user-perceived slowness that server metrics miss entirely.
 
-### Implementation Detail Worth Knowing
-
-Sampling is non-trivial. Shipping every event from every session doesn't scale, and your slow users — the ones you most need data on — are also the ones most likely to drop your beacon before it fires. Most production setups sample 1–10% overall but bias toward slower sessions or pages with known issues. Get this wrong and your P95 data will be systematically misleading.
-
-The real power of RUM isn't any single metric — it's segmentation. Being able to filter LCP by browser, connection type, route, deploy hash, or A/B variant is where the observability value actually lives.
+The reason this shows up in design discussions: most teams measure synthetic performance and ship confidently, then wonder why their Core Web Vitals field scores don't improve. RUM closes that loop.

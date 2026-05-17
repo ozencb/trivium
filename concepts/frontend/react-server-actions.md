@@ -1,54 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## React Server Actions
 
-Server Actions are async functions that execute on the server but can be called directly from client-side code — they're the mechanism React provides for mutations (form submissions, data writes) without needing to build a separate API endpoint.
+Server Actions are async functions that run on the server but can be called directly from client components — no `fetch`, no route handler, no API contract. They're React's answer to the question: "what if a button click could invoke a server function without leaving the component model?"
 
-### The core idea
+**The core mechanism**
 
-Normally, a client needs an API route to talk to the server: `POST /api/update-user` → handler → DB. Server Actions collapse that boundary. You define a function marked `"use server"`, and React handles the serialization/deserialization and HTTP transport under the hood. The client calls it like a local function; the runtime ensures it runs on the server.
+When you mark a function with `"use server"`, the bundler replaces it with an RPC stub on the client side. Calling the function triggers a POST to a framework-managed endpoint, the server executes the real function body (with full Node.js access — DB, env vars, secrets), and the response flows back. Crucially, Server Actions integrate with React's transition model: you can wrap them in `startTransition` or `useActionState`, giving you pending states, optimistic updates, and error handling without any custom hooks.
 
 ```tsx
-// actions.ts
+// app/actions.ts
 "use server";
-
 export async function updateUsername(userId: string, name: string) {
   await db.users.update({ where: { id: userId }, data: { name } });
   revalidatePath("/profile");
 }
 
-// ProfileForm.tsx (client component)
-"use client";
-
-import { updateUsername } from "./actions";
-
+// components/ProfileForm.tsx (Client Component)
+import { updateUsername } from "@/app/actions";
 export function ProfileForm({ userId }: { userId: string }) {
-  return (
-    <form action={updateUsername.bind(null, userId)}>
-      <input name="name" />
-      <button type="submit">Save</button>
-    </form>
-  );
+  return <form action={updateUsername.bind(null, userId)}>...</form>;
 }
 ```
 
-Notice `revalidatePath` — Server Actions integrate directly with Next.js's cache invalidation. After a mutation, you tell the framework which cached data is stale, and it refetches/re-renders the relevant RSC subtree.
+Notice `revalidatePath` — the action invalidates the cache and triggers a re-render of the RSC tree, so your UI updates without any client-side state sync.
 
-### Mental model
+**Where this changes the design conversation**
 
-Think of Server Actions as RPC, not REST. You're not designing resource-oriented endpoints — you're calling remote procedures with typed arguments. The serialization protocol is React's own wire format (same one RSC uses), so it handles complex types like `Date`, `FormData`, and `Error` objects natively.
+For **fullstack engineers**, Server Actions collapse a whole layer. Instead of `POST /api/users/:id` → validate → update → return JSON → update client state, you write one function. This is compelling for internal tools and CRUD-heavy apps where REST API design overhead isn't worth it.
 
-### Where this matters in practice
+For **frontend engineers**, the win is colocating the mutation intent with the component that triggers it. Form actions in particular get a clean model: the `action` prop accepts a Server Action directly, progressive enhancement works without JS enabled, and you get the same mental model as native HTML forms.
 
-**Frontend:** Forms become much simpler. Instead of `useEffect` + `fetch` + optimistic state + error handling scattered across a component, you wire the form's `action` attribute to a server function. Progressive enhancement is free — it works without JS enabled.
+**Where it bites you**
 
-**Fullstack:** This changes where you draw the API boundary. For internal mutations (user profile updates, settings, admin actions), you often don't need a public API at all — the action *is* the API. You still want explicit API routes for mobile clients, third-party integrations, or anything that needs to be versioned separately.
+The tight coupling is real. Server Actions are not a clean API contract — they're an implementation detail of your React app. If you need to expose mutations to mobile clients, third-party integrations, or multiple frontends, you still need a proper API layer. Reach for Server Actions when the caller is always your own Next.js app. Prefer API routes when the mutation surface is shared.
 
-### What to watch for
+The other gotcha: error handling. Unhandled exceptions in Server Actions propagate to the nearest error boundary. `useActionState` gives you structured error returns, but it requires discipline — you need to define a return type that distinguishes success from validation failure from server error, otherwise you're flying blind.
 
-Server Actions run in a trusted server context, so they have direct DB/service access — which means they need their own auth checks. The calling component being authenticated doesn't make the action authenticated. Treat each action like a standalone endpoint: validate inputs, verify permissions, don't trust arguments.
-
-They also don't replace RSC data fetching — Server Actions are for writes. Reads still belong in Server Components.
+**Senior signal in interviews**: knowing when *not* to use them — specifically, articulating the coupling tradeoff and how it interacts with your API surface requirements — is what separates someone who read the docs from someone who's made the call in production.

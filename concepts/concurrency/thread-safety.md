@@ -1,29 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Thread safety** means a piece of code produces correct results when executed concurrently by multiple threads. It matters because modern runtimes run your code in parallel by default, and without it, shared state becomes a source of non-deterministic bugs that are nearly impossible to reproduce reliably.
+## Thread Safety
 
-## The core idea
+When multiple threads access shared mutable state without coordination, they can observe and act on intermediate, inconsistent states — thread safety is the set of guarantees that prevent this from producing incorrect behavior.
 
-The problem isn't concurrency itself — it's *shared mutable state*. When two threads read and write the same memory location without coordination, you get a race condition: the final result depends on which thread's CPU instructions happen to interleave at that moment.
+### The Core Mechanism
 
-The canonical example is a counter increment. In source code it looks atomic: `count++`. But at the hardware level it's three operations: read the value, add 1, write it back. If two threads both read `count = 5` before either writes, both write `6`. You've lost an increment. This isn't a compiler bug or an OS bug — it's the correct behavior of a system that makes no guarantees about ordering across threads unless you explicitly request them.
+Modern CPUs and compilers don't execute code the way it reads. Instructions get reordered, values get cached in registers, and memory writes propagate to other CPU cores with delay. When you have one thread, none of this matters — your view of memory is always self-consistent. With multiple threads, each thread has its own partial, potentially stale view of memory, and without explicit synchronization, there's no guarantee when (or if) a write from one thread becomes visible to another.
 
-Thread safety is achieved by ensuring that either:
-1. State isn't shared (each thread gets its own copy)
-2. State isn't mutable (immutable data is safe to share freely)
-3. Access is coordinated (mutexes, atomics, channels)
+The deeper issue is **atomicity**. Operations that look atomic in source code often aren't at the machine level. A simple `counter++` compiles to: load value, increment, store value — three separate steps. If two threads do this concurrently, both might load `5`, both compute `6`, and both store `6` — you've lost a write. The final value is `6` instead of `7`. This is a **race condition**: the outcome depends on arbitrary CPU scheduling.
 
-The reason mutexes work is they enforce *happens-before* relationships: the lock acquire on thread B cannot complete until thread A releases, so all of A's writes are visible to B after that point. This is as much about memory visibility across CPUs as it is about serializing operations.
+Thread-safe code must provide:
+1. **Atomicity** — operations that must happen together actually do
+2. **Visibility** — writes from one thread become visible to others in a defined order
+3. **Ordering** — operations happen in a predictable sequence across threads
 
-## Practical scenarios
+### Mental Model
 
-**Backend:** A Go HTTP server handling requests concurrently. If you have a `map` that caches DB results and multiple goroutines write to it simultaneously, you'll get a panic or corrupted data. You fix it with `sync.RWMutex` or `sync.Map`. This class of bug tends to only surface under load — fine in dev, blows up in prod.
+Imagine a shared whiteboard. Single-threaded code is one person writing on it — coherent, sequential. Multiple threads are multiple people writing simultaneously with no coordination: you erase what someone else half-wrote, you read a sentence mid-edit. Synchronization is the rule: "one person writes at a time, others wait and see the complete result."
 
-**SRE:** You're profiling a service that randomly serves stale config. The culprit: a background goroutine reloading config writes a struct while request handlers read it, and the struct update isn't atomic. The fix might be as simple as using an `atomic.Value` or restructuring the update to swap a pointer. Thread safety issues often masquerade as "flaky" behavior.
+### In Practice
 
-**Fullstack:** Node.js is single-threaded, so JavaScript itself is mostly safe — but if you use worker threads and share `SharedArrayBuffer`, you're back in the same territory. More commonly: React's concurrent rendering mode can call your components multiple times or in unexpected orders, which matters if your component has side effects that write to external mutable state.
+**Backend**: A request counter or session cache shared across goroutines/threads is the classic case. An in-memory cache without a lock is a latent data race — usually fine until load spikes and two threads simultaneously write the same key.
 
-The mental model that scales well: treat shared mutable state as a critical section that needs explicit ownership. Either one thread owns the data at a time (mutex), or the data structure is designed so operations can't interleave destructively (atomics, lock-free structures).
+**SRE**: Metrics aggregation daemons often maintain shared counters. Thread-unsafe implementations produce phantom spikes or dropped counts under load — bugs that only surface in production at scale, not in tests.
+
+**Fullstack**: Node.js sidesteps most of this with its event loop, but the moment you reach for worker threads or shared `SharedArrayBuffer` for performance, the same invariants apply. WebAssembly with threads has explicit atomic operations for this reason.
+
+The guarantees required — and the cost of providing them — are why mutexes, lock-free structures, and immutability patterns exist. Each is a different tradeoff between safety, performance, and complexity.

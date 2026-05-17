@@ -1,33 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## SSTables (Sorted String Tables)
 
-An SSTable is an immutable, on-disk file of key-value pairs sorted by key — the persistent storage format that LSM-Trees flush their in-memory memtable into. The "sorted" part is load-bearing: it's what makes efficient reads, merges, and compaction possible without random I/O.
+An SSTable is a file on disk where key-value pairs are stored in sorted order, written once, and never mutated. LSM-tree engines (LevelDB, RocksDB, Cassandra) use them as the durable layer: the in-memory memtable flushes to a new SSTable when full, and that file is sealed forever.
 
-### Core mechanism
+### The Core Mechanism
 
-When a memtable fills up, it's flushed to disk as an SSTable. The file has two logical sections:
+The invariant that makes everything else work is **immutability**. Because an SSTable is never modified after creation, multiple readers can scan it concurrently without locks — there's no write that could race them. Crash recovery is trivial: either a file exists and is complete (verified by a footer/checksum), or it doesn't exist and you replay from the WAL. There's no partial-write state to reason about.
 
-1. **Data block** — the actual key-value pairs, sorted by key, written sequentially
-2. **Index block** — a sparse index (e.g., every 16th key) that maps keys to byte offsets in the data block
+Inside the file, keys are sorted. This enables:
+- **Binary search for point lookups** — most SSTables also embed a sparse index (every Nth key) so you seek to a block, not the beginning of the file.
+- **Efficient range scans** — sequential disk reads, which are fast on both HDDs and SSDs.
+- **Merge operations** — two sorted files can be merged in O(n) with a single pass, which is exactly what compaction does.
 
-Because the data is sorted, you only need to store a sparse index rather than a full one. To look up a key, you binary-search the index to find the nearest smaller key, then do a short linear scan in the data block. Bloom filters are typically layered on top to avoid reading SSTables that definitely don't contain a key.
+A typical layout: a series of compressed data blocks, followed by an index block mapping key ranges to block offsets, followed by a Bloom filter (to short-circuit lookups for absent keys), followed by a footer pointing to the index and filter.
 
-Since SSTables are immutable, "updating" a key means writing a new SSTable with a newer entry — compaction later reconciles duplicates by merging sorted files (a k-way merge, like merge sort), keeping the most recent version and discarding tombstoned deletes.
+### Mental Model
 
-### Mental model
+Think of an SSTable as an immutable sorted array that got serialized to disk. The "sorted" property is what lets you merge N of them efficiently during compaction — it's just the merge step of merge sort, which is why LSM compaction can run as a background process without blocking writes.
 
-Think of each SSTable as a sorted, sealed envelope. You can read it, but you can't modify it. When you have multiple envelopes, finding a key means checking each one (newest first, for recency) until you find it. Compaction is the process of opening all envelopes, merging the contents into a new sorted envelope, and discarding the old ones.
+### Practical Scenarios
 
-### Practical scenarios
+**Backend:** When you query a key in RocksDB, it checks the memtable, then each level's SSTables newest-first, stopping at the first hit. Bloom filters make the "not found in this file" check O(1), so reads don't degrade catastrophically even with many files at L0. If your read latency is high, it's often because too many L0 SSTables exist (compaction is falling behind writes).
 
-**Backend (key-value stores, metadata services):** If you're building something like a feature flag service or a session store with high write throughput, LSM + SSTables lets you absorb writes cheaply (sequential memtable appends) while reads stay reasonable via bloom filters + sparse indexes. The tradeoff vs. B-trees is write amplification during compaction vs. read amplification at query time.
+**Data:** In systems like Bigtable or HBase, SSTables are why range scans over row keys are fast — the storage layer materializes a sorted layout on flush. Your choice of row key design directly affects whether you get sequential SSTable reads or scattered seeks across files. Time-series data stored with a timestamp prefix gets locality for free.
 
-**Data (columnar engines, analytics):** Parquet files are conceptually cousins — immutable, sorted (within row groups), with embedded statistics/indexes. Understanding SSTables helps you reason about why engines like ClickHouse or RocksDB-backed systems behave the way they do under heavy ingest: write performance stays flat because you're always appending new SSTables, never doing in-place updates.
+---
 
-### Why this matters for compaction
-
-SSTables being sorted is what makes compaction cheap — merging N sorted files is O(N·k) where k is entries per file, using a simple heap-based merge. If the files were unsorted, you'd need to sort before merging, making compaction far more expensive. The entire compaction strategy in LevelDB, RocksDB, and Cassandra flows from this property.
+SSTables are the reason LSM trees can make writes fast (sequential, append-only) without sacrificing read correctness — the sorting and immutability are what compaction uses to periodically restore read efficiency.

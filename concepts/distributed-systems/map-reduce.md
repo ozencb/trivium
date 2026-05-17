@@ -1,38 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## MapReduce
 
-MapReduce is a programming model for processing large datasets in parallel across a cluster by breaking computation into two phases: **map** (transform records independently) and **reduce** (aggregate results). It exists because a single machine can't process terabytes of logs or billions of records in reasonable time, and writing distributed code from scratch is error-prone — MapReduce handles fault tolerance, data locality, and coordination for you.
+MapReduce is a programming model for processing datasets too large to fit on a single machine, by decomposing computation into two composable phases that can execute in parallel across a cluster. The core insight is that a huge class of data problems can be expressed as: *transform each record independently*, then *combine records with the same key*.
 
-### The Core Mechanism
+**The mechanism**
 
-The framework does three things:
+The map phase takes an input split and emits zero or more `(key, value)` pairs. Critically, the mapper has no visibility into other records — it's a pure function over a local partition. After mapping, the framework performs a shuffle: all pairs sharing the same key are routed to the same reducer node. This is where consistent hashing becomes relevant — key-space partitioning determines which reducer owns which keys, and a well-distributed hash function avoids hot spots.
 
-1. **Map**: Each worker receives a chunk of input and emits `(key, value)` pairs. Workers run entirely independently — no coordination, no shared state.
-2. **Shuffle**: The framework groups all emitted pairs by key and routes each group to a reducer. This is the expensive network step.
-3. **Reduce**: Each reducer receives a key and the full list of values for that key, then collapses them into a final output.
+The reduce phase receives `(key, [values])` — a key and an iterator over all values mapped to it — and emits aggregated output. The invariant that matters: by the time a reducer sees a key, it has *all* values for that key. This guarantee is what makes aggregations (counts, sums, top-K) correct without coordination between reducers.
 
-The key insight is that the map phase is **embarrassingly parallel** — you can run as many mappers as you have data partitions. The reduce phase is parallel too, but bounded by key cardinality. Consistent hashing (which you know) is often what determines which reducer owns which key during the shuffle.
+Fault tolerance is mechanical: the framework reruns failed map tasks (since mappers are pure and input is immutable), and re-routes shuffle data. Reducers can also be retried because the map output is persisted to local disk before shuffle begins.
 
-### Concrete Example: Word Count
+**Mental model**
 
-Input: 3 files, each on a different machine.
+Think of a word-count job across 10TB of logs. You have 1,000 mappers, each reading 10GB. Each emits `("error", 1)` for every error line. The shuffle routes all `"error"` pairs to the same reducer. The reducer sums the list. No mapper needed to know the global error count — it just labeled records. The reducer only needed to sum one key's values.
 
-- **Map phase**: Each machine reads its file and emits `("word", 1)` for every word.
-- **Shuffle**: All `("the", 1)` pairs get routed to reducer #1, all `("cat", 1)` pairs to reducer #2, etc.
-- **Reduce phase**: Reducer #1 receives `["the", [1,1,1,1,...]]` and sums to `("the", 47)`.
+**Backend**
 
-The programmer writes ~10 lines. The framework handles retrying failed mappers, re-routing when a machine dies mid-shuffle, and writing final output to distributed storage.
+When you have a multi-tenant system and need to compute per-tenant billing aggregates over a month of event data, MapReduce gives you a framework where tenant ID is the key. The shuffle naturally partitions work by tenant, so each reducer handles one tenant's full event stream without cross-reducer communication. This is why Hadoop jobs often replace what would otherwise be a series of expensive GROUP BY queries.
 
-### Practical Scenarios
+**Data engineering**
 
-**Backend**: Log analysis pipelines are the canonical use case — counting error rates by endpoint, computing p99 latencies per service, or aggregating user events for billing. If you've used Spark SQL or AWS Athena, those engines compile queries down to MapReduce-style execution plans.
+Spark's RDD model and even SQL engines with hash aggregation implement a MapReduce-like shuffle internally. Understanding the shuffle boundary — where data moves across the network — is what separates engineers who write fast Spark jobs from those who write slow ones. Skewed keys cause one reducer to receive disproportionate data, becoming the bottleneck for the entire job. Salting (appending a random suffix to the key, then doing a second-pass reduce) is the canonical fix, and you can only reason about it if you understand what the shuffle is doing.
 
-**Data**: ETL jobs transforming raw event streams into analytics tables use this model constantly. Joining two datasets is map-then-reduce: map emits `(join_key, row)` from both sides, reduce sees all rows for a key and performs the join. Most batch ML feature engineering — computing per-user aggregates across months of data — is MapReduce in practice, even when you're writing pandas on Spark.
-
-### Why It Matters Now
-
-Newer systems (Spark, Flink, Beam) generalize MapReduce with DAGs of operations and in-memory state, but the underlying model is the same. Understanding MapReduce makes those systems predictable — you know why a shuffle is expensive, why cardinality affects reducer parallelism, and why map-side joins exist as an optimization.
+The senior-engineer insight: MapReduce isn't just a framework — it's a contract. Any computation that can be expressed as map + shuffle + reduce is horizontally scalable and fault-tolerant by construction. Knowing whether your problem fits that contract is the design skill.

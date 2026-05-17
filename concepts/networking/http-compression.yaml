@@ -1,0 +1,15 @@
+id: http-compression
+title: HTTP Compression
+category:
+  - Networking
+  - Performance
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - rest-constraints
+dependents: []
+brief: Server-side gzip/Brotli encoding negotiated via Accept-Encoding headers that reduces text response bodies 60–80%, trading CPU cycles for significant bandwidth and latency improvements.

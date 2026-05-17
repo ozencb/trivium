@@ -1,0 +1,19 @@
+id: slo-sli-sla
+title: SLOs, SLIs, and SLAs
+category:
+  - Observability
+  - Reliability
+roles:
+  - sre
+  - backend
+  - devops
+lenses:
+  - foundational
+  - practical
+  - career
+prerequisites:
+  - metrics-collection
+dependents:
+  - alerting
+  - error-budgets
+brief: The hierarchy of reliability commitments—SLAs are external contracts, SLOs are internal targets, SLIs are the measured signals—that turn vague uptime goals into actionable engineering constraints.

@@ -1,41 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Source Maps
 
-A source map is a file that encodes a bidirectional mapping between transformed output (minified/bundled JS, compiled TS, transpiled JSX) and the original source files. Without them, runtime errors in production point into unreadable one-liner bundles; with them, devtools reconstruct the original file, line, and column.
+When your bundler ships minified JavaScript, every error trace points to line 1, column 43291 of `bundle.js` — meaningless. Source maps fix this by providing a separate `.map` file that encodes a precise mapping from each position in the output back to the original file, line, and column in your source.
 
-### The core mechanism
+**The core mechanism**
 
-When a bundler like Webpack or esbuild produces `bundle.js`, it optionally emits `bundle.js.map` — a JSON file containing:
+A source map is a JSON file with a `mappings` field containing [VLQ-encoded](https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit) segments. Each segment encodes four numbers: generated column → source file index → original line → original column. Browsers and Node decode these at runtime when you open DevTools or when a source-map-aware error reporter (Sentry, for example) processes a stack trace. The map itself never runs — it's metadata consumed by tooling.
 
-- `sources`: array of original file paths
-- `sourcesContent`: (optional) the original file contents, inlined
-- `mappings`: a VLQ (Variable-Length Quantity) encoded string that maps every position in the output back to a position in a source file
+The file reference is embedded as a comment at the bottom of your bundle:
 
-The `mappings` field is the dense part. Each segment encodes a tuple: `[generated column, source file index, original line, original column]`. VLQ encoding keeps it compact. A typical map file might have a `mappings` string like `AAAA,SAAS,IAAI` — each comma-separated group is a line; semicolons separate generated lines.
-
-The output file references its map via a trailing comment:
 ```js
 //# sourceMappingURL=bundle.js.map
 ```
 
-Devtools detect this, fetch the map, and use it to remap stack traces and set breakpoints in original source.
+Or via an HTTP header (`SourceMap: /bundle.js.map`) if you don't want the URL in the file itself.
 
-### Concrete mental model
+**Concrete mental model**
 
-Think of it as a translation dictionary between two coordinate systems. The browser executes code at `bundle.js:1:4523`. The source map says: "column 4523 on line 1 of the output corresponds to line 47, column 12 of `src/auth/login.ts`." Devtools do this lookup transparently every time you see a stack trace or set a breakpoint.
+Think of it as a translation dictionary. Your bundler ran `webpack` or `esbuild`, took 300 files, and collapsed them into one. The map is the index that says: "the function at byte offset 12,847 in `bundle.js` came from `src/utils/debounce.ts`, line 14, column 3." DevTools reconstructs your original file tree from this — that's why breakpoints "just work" in the Sources panel despite the browser only loading the bundle.
 
-### Practical scenarios
+**Practical patterns**
 
-**Frontend:** You ship a React app minified and split into chunks. A user reports a runtime error. Sentry (or any error tracker) receives the minified stack trace, then uses your uploaded source maps to show you the exact component and hook where the throw originated — file name, line, even variable names if `sourcesContent` is included. Without maps, that stack trace is useless.
+*Frontend:* The typical production setup is `hidden-source-map` (webpack) or `external` (esbuild) — maps are generated and uploaded to your error monitoring tool (Sentry, Datadog) but not publicly served. This gives you readable stack traces in your dashboard without exposing source to end users. If you serve maps publicly, anyone can recover your unminified code.
 
-**Fullstack (Node.js):** If you compile TypeScript server code with `tsc` or bundle with esbuild, crashes in production reference `.js` output. With source maps enabled (`--enable-source-maps` in Node 12+), `Error.stack` is automatically remapped to the original `.ts` lines. Same principle, same format, different runtime.
+*Fullstack (Node/SSR):* Node doesn't load source maps automatically — you need `--enable-source-maps` (Node 12.12+) or a library like `source-map-support`. Without this, unhandled exceptions in your SSR layer show bundled positions even in development. This bites teams that SSR with esbuild or tsup and forget to enable it.
 
-### Things worth knowing
+**Common pitfalls**
 
-- **Inlined vs. external maps**: `sourceMappingURL=data:application/json;base64,...` inlines the map directly. Convenient for dev, wasteful for production — external maps are better.
-- **Security tradeoff**: Uploading source maps to your CDN exposes your original source to anyone who looks. Most teams upload maps only to their error tracker, not the public origin.
-- **`sourceRoot`**: Lets you rebase all source paths — useful when your CI build paths differ from what devtools expect.
+- **Mismatched maps**: CI builds must upload maps atomically with the deploy. If your CDN serves `bundle.js` from deploy N but your error tool has maps from deploy N-1, every stack trace is wrong.
+- **Inline source maps in production** (`eval-source-map`): convenient for dev, but each module is base64-encoded into the bundle — dramatically increases payload size and exposes source.
+- **TypeScript path aliases not resolving**: source map paths are relative to where the bundler wrote them. If you move artifacts, the `sourceRoot` field needs to compensate or paths break.
+
+Source maps are largely invisible when working correctly — you only notice them when they're wrong, which is usually a build pipeline misconfiguration rather than a concept misunderstanding.

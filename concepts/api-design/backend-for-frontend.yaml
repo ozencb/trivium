@@ -1,0 +1,17 @@
+id: backend-for-frontend
+title: Backend for Frontend
+category:
+  - API Design
+  - Patterns
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - api-gateway
+  - graphql
+dependents: []
+brief: A dedicated API layer per client type that aggregates microservice calls and reshapes responses to match each frontend's exact data contract, eliminating chatty clients and reducing coupling.

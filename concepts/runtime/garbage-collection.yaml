@@ -1,0 +1,17 @@
+id: garbage-collection
+title: Garbage Collection
+category:
+  - Runtime
+  - Memory Management
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - virtual-memory
+dependents:
+  - js-memory-profiling
+brief: Automatic memory reclamation algorithms—generational, mark-and-sweep, reference counting—and the stop-the-world pause tradeoffs they introduce at runtime that cause latency spikes in throughput-sensitive services.

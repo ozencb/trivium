@@ -1,38 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Resumability
 
-Resumability is a rendering strategy where the browser picks up execution exactly where the server left off — without re-running any framework code or re-executing component logic. The problem it solves is the redundant work in traditional hydration: the server renders HTML, ships it, and then the client throws away all the server's work and reconstructs the same component tree from scratch.
+Hydration's core problem is redundancy: the server renders HTML, ships the component tree and all its JavaScript to the client, then re-executes everything to reconstruct state and attach event listeners — work the server already did. Resumability eliminates that re-execution by serializing the *result* of that work into the HTML itself, so the client picks up exactly where the server left off.
 
-### The Core Mechanism
+### The core mechanism
 
-You already know partial hydration defers or skips hydration for components that don't need interactivity. Resumability goes further: it eliminates the *concept* of hydration entirely.
+In a resumable framework (Qwik is the main production example), the server doesn't just render HTML — it serializes three things into the document:
 
-The key insight is that hydration is expensive because the client doesn't know the application's state — it has to re-derive it by executing JavaScript. Resumability sidesteps this by **serializing execution state into the HTML itself**. The server encodes event listeners, component state, and the reactive graph into the document (typically as `<script>` tags or attributes). The client doesn't replay anything; it just reads that serialized state and resumes from it.
+1. **Component state** — props, signals, reactive values, encoded into the HTML (often as `<script type="application/json">` or data attributes)
+2. **Event listener locations** — instead of attaching handlers eagerly, it records *where* each handler lives as a URL-like pointer (e.g., `chunk-abc.js#onClick`)
+3. **The component ownership graph** — which DOM nodes belong to which components
 
-Think of it like a save file in a video game. Traditional hydration is replaying the entire game from the start to reach level 10. Resumability is loading a save file at level 10.
+When the page loads, *no JavaScript runs*. If the user clicks a button, the framework fetches only that handler's chunk, deserializes the relevant state slice, runs the handler, and updates the DOM. Everything else stays dormant.
 
-### Concrete Mental Model
+### Mental model
 
-In a standard React SSR setup:
-1. Server renders HTML
-2. Client downloads JS bundle
-3. Client re-runs all component render functions to rebuild the virtual DOM
-4. Client attaches event listeners
+Think of it like a VM snapshot. A hypervisor can pause a running VM, write its full memory state to disk, and restore it on a different machine — the process has no idea it was ever paused. Resumability does the same thing with component execution: pause on server, serialize the snapshot, resume on client, zero re-run.
 
-In a resumable framework (Qwik is the canonical example):
-1. Server renders HTML + serializes state into it
-2. Client downloads *almost no* JS initially
-3. A tiny loader script reads the serialized state
-4. JS for a specific component only downloads when that component's event fires
+Compare this to partial hydration, which still re-executes component logic for the "active" islands — it reduces *scope* but not the fundamental redundancy. Resumability removes the re-execution entirely.
 
-The critical difference: **JS is lazy-loaded per interaction, not pre-loaded per page**.
+### Where this matters in practice
 
-### Practical Scenarios
+**Frontend:** If you're building a content-heavy page — marketing site, e-commerce product page, news article — most components never need interaction. With hydration, you pay JavaScript execution cost upfront anyway. With resumability, a user who reads and leaves costs you zero JS execution. Time-to-interactive drops dramatically because there's no hydration phase blocking it.
 
-**Frontend:** On a content-heavy page with one interactive widget (say, a comment form buried at the bottom), resumability means zero JS executes on load. The user reads the article, and only when they click "Reply" does the comment form's JS download and activate. Time-to-interactive drops dramatically because you're not paying the cost of components the user never touches.
+**Fullstack:** Resumability changes how you think about server/client boundaries. Instead of reasoning about "which components need to be islands," you reason about "which event handlers will actually be triggered." The framework handles lazy-loading exactly what's needed, when it's needed.
 
-**Fullstack:** In a Next.js or Remix app you manage bundle splitting manually — route-based, component-based, with `React.lazy`. Resumability makes this automatic at the component/event level. A fullstack engineer building a product page doesn't need to reason about which components need JS upfront; the framework defers everything and hydrates on demand. The tradeoff is that you need a framework that's designed for this from the ground up (Qwik) — retrofitting resumability onto React's model isn't practical, which is why it remains a distinct ecosystem rather than a React feature.
+### The senior-engineer angle
+
+In design discussions, the distinction to make is: hydration frameworks (including partial hydration) have a startup cost proportional to component count; resumable frameworks have a startup cost proportional to *user interaction*. For read-heavy apps this is a massive win; for highly interactive dashboards the difference shrinks.
+
+The current limitation worth knowing: resumability requires that closures and component state be fully serializable, which constrains what you can do (no arbitrary closures over non-serializable values). That's the real architectural tradeoff — not "is it faster" but "what does it force you to give up."

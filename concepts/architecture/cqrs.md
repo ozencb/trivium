@@ -1,34 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**CQRS (Command Query Responsibility Segregation)** separates the model you use to mutate state from the model you use to read it. The motivation is that read and write requirements diverge almost immediately in real systems, and forcing them to share a model means both suffer.
+## CQRS (Command Query Responsibility Segregation)
 
-## The Core Idea
+Most systems model data the same way for reads and writes — one schema, one ORM, one data access layer. CQRS rejects this assumption: the shape of data you need to *write* correctly and the shape you need to *read* efficiently are almost never the same, so trying to satisfy both with one model means compromising both.
 
-In a standard CRUD setup, you read from and write to the same schema. This seems fine until your query patterns don't match your write structure — you start joining five tables to render a list view, or you add denormalized columns "just for reads," or your normalized write schema makes certain queries genuinely expensive.
+**The core mechanism**
 
-CQRS names and formalizes the split: **Commands** mutate state (and return nothing or just an acknowledgment), **Queries** return data (and never change state). More importantly, you maintain separate models for each — potentially separate schemas, separate services, separate databases.
+You split your application into two sides. The **command side** owns writes — it enforces invariants, runs business logic, and persists to a write-optimized store. The **query side** owns reads — it serves pre-shaped, denormalized projections built specifically for UI or API consumers. Neither side knows about the other's internals.
 
-The write side owns the invariants: it validates, enforces business rules, and persists to a normalized, authoritative store. The read side owns the projections: it maintains denormalized views optimized for exactly what the UI or downstream consumers need.
+The synchronization between them is where your Event-Driven Architecture knowledge kicks in. Commands on the write side emit domain events. The query side listens to those events and updates its read models (projections). These projections are often eventually consistent — the read side may lag behind the write side by milliseconds or seconds.
 
-## Concrete Example
+**Concrete example**
 
-Say you're building an order management system. Your write model is a normalized relational schema — `orders`, `order_items`, `customers`, `products`. When a `PlaceOrder` command comes in, you validate inventory, check payment, write to these tables.
+You're building an e-commerce platform. On the write side, placing an order involves complex logic: checking inventory, applying discount rules, updating customer credit, reserving stock. Your write model is normalized, transactional, and domain-rich. On the query side, a customer's "order history" page needs order ID, product name, thumbnail, status, and total — flattened, sorted, possibly paginated across millions of rows. If you query the normalized write model for that, you're joining 6 tables per request at scale.
 
-Your read side might maintain a materialized view called `order_summaries` — a flat structure with customer name, item count, total, status, pre-joined and pre-computed. When a query for "list all pending orders" comes in, it hits this table directly. No joins. No latency from normalization.
+Instead, you maintain a separate `order_history` projection (could be PostgreSQL, Elasticsearch, Redis) that gets updated whenever an `OrderPlaced`, `OrderShipped`, or `OrderCancelled` event fires. The query is now a single table scan with an index on `customer_id`.
 
-When the write side commits an order, it publishes an event (here's where your Event-Driven Architecture knowledge kicks in). A read-side projector consumes that event and updates `order_summaries`. Synchronously or async depending on your consistency requirements.
+**Why this matters in practice**
 
-## Practical Scenarios
+For **backend engineers**, CQRS lets you scale read and write paths independently. Your command handlers can be stateless workers behind a queue; your query side can be replicated read replicas or purpose-built stores. It also forces you to make consistency requirements explicit — which queries can tolerate stale data, and which can't.
 
-**Backend:** Any system where read volume vastly outpaces writes, or where different consumers need radically different shapes of the same data. Reporting services, audit dashboards, public APIs serving high traffic — these benefit from read models tuned to their specific access patterns rather than general-purpose schemas.
+For **fullstack engineers**, the pattern explains why some architectures have separate read APIs (often thin, fast, REST) and write APIs (often command-based, slower due to validation). It's also why optimistic UI updates work well in CQRS systems — you apply the command locally, knowing the read model will catch up.
 
-**Fullstack:** Real-time collaboration tools or dashboards where you need multiple live projections of the same underlying data. Your write side handles one clean domain model; your read side maintains several denormalized projections — one per view or component — updated as events flow through.
+The design discussion signal: when a senior engineer hears "our queries are slow," they ask whether the write model is being queried directly. When they hear "our domain logic is getting complex," they ask whether reads are muddying the write model. CQRS is the answer to both — not always warranted, but the lens is always useful.
 
-## Why It Matters
-
-CQRS isn't about microservices or eventual consistency by default — you can start with CQRS in a monolith with a single DB, just using separate query objects and command handlers. The payoff is you can evolve read and write sides independently, and scale them independently.
-
-It also sets the foundation for **Event Sourcing** — once your write side emits events that the read side consumes, you're one step from making those events the primary store rather than a side effect.
+This is also why Event Sourcing naturally pairs with CQRS: the event log *is* the write model, and projections are just views derived from it.

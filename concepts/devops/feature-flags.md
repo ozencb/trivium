@@ -1,32 +1,46 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Feature flags (also called feature toggles) let you deploy code that's disabled at runtime, decoupling code deployment from feature release. This means you can ship to production continuously without exposing unfinished or risky changes to users.
+## Feature Flags
 
-## Core Mechanism
+Feature flags are runtime conditionals that let you ship code dark — deployed but not active — and then enable it without touching the codebase or redeploying. The key insight is that "deployment" and "release" are separate events, and flags give you a control plane between them.
 
-A flag is just a conditional — `if (flagEnabled("new-checkout-flow"))` — but the value comes from an external source: a config file, environment variable, database row, or a dedicated service like LaunchDarkly. The key insight is that the flag's state is mutable at runtime without redeployment. You can flip a switch and the behavior changes live, for some or all users.
+**The core mechanism**
 
-Flags are typically evaluated per-request and can target specific contexts: user ID, account tier, region, percentage rollout. This makes them more powerful than a simple env var — you can enable a feature for 5% of users, then 20%, then 100%, with no new deployments at each step.
+A flag is just a conditional check against a configuration source — a database, an in-memory store, a dedicated service like LaunchDarkly or Unleash. At runtime, your code asks: "is feature X enabled for this request?" The answer can vary by user, org, percentage of traffic, environment, or any attribute you can attach to the context. The config changes; the code doesn't.
 
-## Mental Model
+This differs from env-based config (which you already know) in a critical way: flags can be toggled *without* a deploy or restart, and they can target specific users rather than entire environments.
 
-Think of it as a circuit breaker you control intentionally. The code for both paths exists in production simultaneously. You're not branching in git — you're branching in execution, with an externally controlled switch.
+**Concrete mental model**
 
-## Practical Scenarios
+Think of a feature flag system as a permission layer sitting in front of your business logic:
 
-**Backend**: You've rewritten a pricing calculation engine. The old path is battle-tested; the new one is untested under real load. Ship both, flag-gate the new one, enable it for internal users first, compare outputs, then gradually roll out. If something breaks, flip the flag — no rollback deploy needed.
+```
+if flagService.isEnabled("new-checkout-flow", user):
+    return newCheckoutFlow(cart)
+return legacyCheckoutFlow(cart)
+```
 
-**Frontend**: A redesigned dashboard is ready but stakeholders want to see it before users do. Gate it behind a flag, give stakeholders a preview URL that sets a cookie enabling the flag, get sign-off, then enable for everyone. No separate staging environment required.
+The flag service evaluates rules: "enable for 5% of users," "enable for anyone on the beta plan," "enable only in region EU-West." You ship both code paths, then gradually migrate traffic.
 
-**Fullstack**: A new API endpoint and the UI that consumes it need to launch together. Gate both behind the same flag. The endpoint exists but returns 403 unless the flag is on; the UI conditionally shows the new component. One flag controls a coordinated release across the stack.
+**In practice**
 
-**DevOps/Platform**: You're migrating from one secrets manager to another. Flag which backend each service uses. Roll it forward service-by-service, with easy per-service rollback if the new system misbehaves. No big-bang migration.
+*Backend*: You're rewriting a payment processing service. Instead of a blue-green cutover, you route 1% of real transactions through the new path, watch error rates, then ramp. If something breaks, you flip the flag — rollback in seconds, no deploy.
 
-## What to Watch For
+*Frontend*: You want to A/B test a redesigned onboarding flow. The flag system returns a variant per user. Both teams can iterate in main without coordination, and the experiment runs independently of sprint cycles.
 
-Flags accumulate. A codebase with 40 stale flags becomes hard to reason about — every path is conditional. Flag hygiene (removing flags after full rollout) is a real maintenance cost teams underestimate.
+*Fullstack*: A new API endpoint and corresponding UI ship together but behind a flag. QA tests in production against specific accounts. No staging environment drift, no merge ceremony.
 
-This connects directly to canary releases: a percentage-rollout flag *is* a canary, just implemented in code rather than at the infrastructure layer. The difference is granularity — flags can target specific user segments, not just random traffic slices.
+*DevOps*: Flags are what make trunk-based development practical at scale. Instead of long-lived feature branches causing merge hell, everyone commits to main behind a flag. You get continuous integration without continuous release.
+
+**The pitfalls senior engineers catch**
+
+Flag debt is real. A flag that was "temporary" in Q1 becomes load-bearing by Q4 because both code paths are still exercised. Establish a lifecycle: flags get a removal ticket when they ship. Also, testing combinatorial explosion is subtle — with 10 boolean flags, you have 1,024 possible states. Most teams only test with flags fully on or off, which misses edge cases in gradual rollouts.
+
+Flags also create distributed state. If your flag evaluation is inconsistent across services (different caches, different evaluation timing), a user can see the new UI but hit the old API — which should be an explicit design concern, not an afterthought.
+
+**Why it matters in design discussions**
+
+Feature flags are the mechanism that makes canary releases tractable. When you understand them deeply, you shift from "we deploy once a week to reduce risk" to "we deploy continuously and control exposure separately" — which is the more scalable and safe approach at any meaningful scale.

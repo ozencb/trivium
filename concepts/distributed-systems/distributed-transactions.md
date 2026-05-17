@@ -1,28 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Distributed Transactions
+Distributed transactions extend the ACID guarantee across multiple independent resources — different databases, services, or message brokers — such that all participants commit or all roll back as one unit. You want this when correctness requires atomicity across boundaries that don't share a write-ahead log.
 
-A distributed transaction coordinates writes across multiple independent services or databases so that either all succeed or all fail — preserving atomicity when a single ACID-compliant database isn't an option. The hard problem isn't the happy path; it's ensuring consistency when any participant can crash or become unreachable mid-operation.
+**The core problem**
 
-**The core mechanism**
+You already know 2PC. The deeper issue is what 2PC exposes: in a distributed system, the coordinator and participants can fail independently at any point. The critical vulnerability is the window after a participant votes "yes" but before it receives the final commit/abort decision. During that window, the participant holds locks and can't proceed unilaterally — it's in a "blocking" state. If the coordinator crashes here, participants are stuck until the coordinator recovers. This is the fundamental tension: achieving atomicity requires holding state across nodes, and held state across nodes is a liveness liability.
 
-You already know 2PC, which is the canonical answer: a coordinator asks all participants to *prepare* (lock resources, persist intent), then issues *commit* only if everyone agreed. The guarantee is strong, but the cost is high — participants hold locks through two network round-trips, and if the coordinator crashes after *prepare* but before *commit*, participants are blocked waiting indefinitely. This is the "in-doubt" window: participants have said yes but don't know what to do next.
+3PC was designed to eliminate the blocking window by adding a pre-commit phase, making it non-blocking under node failures but still vulnerable to network partitions. XA transactions (used by Java EE, many relational databases) implement a standardized 2PC protocol but inherit its failure modes. In practice, XA is slow — it requires a synchronous round-trip to every participant before each commit — and most cloud-native databases don't support it at all.
 
-What makes distributed transactions fundamentally different from local transactions is that failure modes multiply. A local transaction either commits or rolls back — you get a definitive answer. Across a network, you can get *silence*, which is indistinguishable from a crash or a slow response. There's no global clock, no shared memory, and no way to atomically check state across participants.
+**Concrete mental model**
 
-**Mental model**
+Imagine a payment service and an inventory service with separate databases. An order must debit the account and reserve stock atomically. With 2PC: the coordinator sends PREPARE to both, both lock their rows and vote yes, then the coordinator writes COMMIT to its log and sends COMMIT to both. If the coordinator dies between writing its log and sending the second COMMIT, inventory is committed and payment is stuck in limbo, holding a lock, waiting. Recovery requires replaying the coordinator log — which assumes that log is durable and recoverable.
 
-Think of booking a flight + hotel as two separate API calls. Both need to succeed, or neither should complete. A naive approach reserves the flight, then calls the hotel — but if the hotel call fails after the flight is confirmed, you've got an inconsistent state with no clean rollback path. 2PC would have both services hold provisional reservations until a coordinator confirms both are ready, then releases them simultaneously. That works — but the airline and hotel systems are now coupled through the coordinator, and latency under that lock is visible to users.
+**Backend scenario**
 
-**Practical scenarios**
+In microservices, distributed transactions are usually the wrong tool. Services own their data; reaching across service boundaries for a lock couples their failure domains. A payment service that holds an inventory lock while a network partition is ongoing takes down order creation for everyone. The architectural response is to design around eventual consistency — accept that consistency is temporal, use compensating actions, and make operations idempotent.
 
-*Backend:* Payment processing is the textbook case — debit one account and credit another across services that may own separate databases. Also common: order placement that must atomically update inventory, create an order record, and trigger a fulfillment event.
+**Data scenario**
 
-*Data:* Cross-shard writes in a distributed database (Spanner, CockroachDB) use distributed transactions internally. If you're using Postgres + a separate analytics store and need to keep them consistent, you're in distributed transaction territory the moment you write to both in the same logical operation.
+For data pipelines — say, writing atomically to both a PostgreSQL OLTP database and a Kafka topic — XA is theoretically possible but Kafka's transaction support is separate from the database's. The operationally robust answer is the Transactional Outbox Pattern: write to the database and an outbox table in one local transaction, then relay the outbox to Kafka asynchronously. Local transactions are cheap; distributed ones aren't.
 
-**Why this matters for what's next**
+**Why this matters in senior design discussions**
 
-2PC's blocking nature and tight coupling led to an important design shift: instead of trying to make distributed writes *atomic*, many systems accept that they'll be *eventually consistent* and use compensating transactions to undo work if something fails. That's the Saga pattern. And to reliably publish events only when a database write succeeds — without a distributed transaction — the Transactional Outbox pattern uses the local database's own ACID guarantees as a coordination primitive. Both patterns exist precisely because distributed transactions are expensive and brittle in practice.
+The instinct to reach for a distributed transaction is often correct in intent but wrong in execution. Recognizing *why* it's wrong — blocking failure modes, lock amplification, coordinator SPOF — lets you propose Saga or Outbox as first-class alternatives rather than workarounds.

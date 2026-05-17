@@ -1,34 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Core Web Vitals
 
-Core Web Vitals are Google's three standardized metrics for measuring real-user experience quality — not synthetic benchmarks, but field data signals that directly influence search ranking and reflect whether your page actually feels fast to users.
+Google's three field metrics — LCP, CLS, and INP — measure what users actually experience in production, not what your DevTools waterfall shows in a controlled lab. They matter because Google uses them as ranking signals, but more practically, they give you a shared vocabulary for diagnosing real-user degradation that synthetic benchmarks miss.
 
-### The core idea
+**The core distinction: field vs. lab**
 
-The key insight is that "performance" is too vague to optimize. CWV collapses the problem into three orthogonal axes that cover distinct failure modes: *did it load?* (LCP), *did it stay stable?* (CLS), *did it respond?* (INP).
+You likely know the Performance Observer API well enough to collect `paint`, `layout-shift`, and `event` entries yourself — Core Web Vitals are exactly that, standardized and aggregated. Google collects these from Chrome users via the Chrome User Experience Report (CrUX), giving you p75 distributions across your actual traffic segments (mobile vs. desktop, fast vs. slow networks). The threshold targets (LCP < 2.5s, CLS < 0.1, INP < 200ms) are calibrated against those real-world distributions, not ideal conditions.
 
-Each metric is captured via `PerformanceObserver` in real browsers, aggregated in the Chrome UX Report (CrUX), and surfaced in Search Console and PageSpeed Insights. You're not measuring your CI environment — you're measuring the 75th percentile of your actual users' experiences.
+**What each metric actually measures**
 
-**LCP (Largest Contentful Paint)** — time until the largest above-the-fold element (hero image, `<h1>`, video poster) finishes rendering. Good: < 2.5s. This catches slow servers, render-blocking resources, and unoptimized images.
+- **LCP** timestamps when the largest above-the-fold image or text block finishes rendering. It's a proxy for "does the page feel loaded." The pitfall: LCP candidates change during load, so a small image that renders early can be displaced by a hero image — your LCP is the final winner, often a late-loading `<img>`.
+- **CLS** accumulates layout shift scores throughout the page lifecycle, not just initial load. The non-obvious part: shifts caused by user interaction within 500ms are excluded. Everything else counts, including shifts triggered by late-injecting ads or fonts swapping.
+- **INP** replaced FID in 2024. It's the worst-case interaction latency (at p98) across the full session — click, keypress, tap — measuring from input to next paint. FID only captured the first interaction and ignored processing/render time; INP catches long tasks blocking the main thread mid-session.
 
-**CLS (Cumulative Layout Shift)** — sum of unexpected layout shifts weighted by their impact fraction × distance fraction. Good: < 0.1. Classic culprit: image without `width`/`height` that loads and pushes content down, or a cookie banner that injects above existing content.
+**Mental model**
 
-**INP (Interaction to Next Paint)** — the worst-case interaction latency across the page session, measuring from input event to next frame paint. Good: < 200ms. Replaced FID in March 2024 because FID only measured the *first* interaction, missing slow handlers triggered later.
+Think of CrUX as a distributed `PerformanceObserver` running across millions of real sessions, aggregating what you'd collect yourself if you had full RUM coverage. Your lab tools (Lighthouse, WebPageTest) simulate one path; CrUX shows the distribution.
 
-### Mental model
+**Where this matters by role**
 
-Think of a page as a theater performance. LCP is: when did the curtain actually rise? CLS is: did the set pieces move around while actors were performing? INP is: when an actor was cued, how long before something visibly happened?
+- **Frontend**: INP degrades with heavy React re-renders or synchronous event handlers. LCP breaks when you don't preload hero images or use lazy-loading on above-the-fold content. You need to own both.
+- **Fullstack**: Slow TTFB (server response) directly delays LCP — a fast CDN or streaming SSR response has measurable field impact. CLS often comes from server-rendered height mismatches when hydration swaps content.
+- **SRE**: CrUX data lags 28 days. For incident detection, you need your own RUM pipeline using `PerformanceObserver` reporting to your observability stack. CrUX confirms trends; your RUM catches regressions before they compound.
 
-### Practical implications
-
-**Frontend:** CLS failures are almost always preventable with CSS — reserve space for async content (`min-height`, explicit image dimensions, skeleton screens). INP failures usually trace to long tasks on the main thread; use `scheduler.yield()` or break work across frames with `requestIdleCallback`.
-
-**Fullstack:** LCP is heavily server-side. TTFB directly eats into LCP budget. If you're SSRing and your DB query takes 400ms, that 400ms comes out of your 2.5s LCP budget before a single byte reaches the client. Edge rendering and aggressive caching move the needle more than frontend tuning here.
-
-**SRE:** CWV degrade under load in ways synthetic tests miss — a p99 TTFB spike at peak traffic shows up as LCP regression in CrUX the following week. Instrument your RUM pipeline to correlate CWV percentiles with server-side metrics (TTFB, CPU saturation) so you can root-cause field regressions without guessing.
-
-The payoff for understanding these deeply is that each metric has a specific, traceable cause — unlike "the page feels slow," which isn't actionable.
+**In design discussions**: the senior move is knowing when a business decision (adding an ad slot, switching font providers, lazy-loading below the fold vs. at viewport) will shift a metric — before shipping, not after.

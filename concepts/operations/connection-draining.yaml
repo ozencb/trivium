@@ -1,0 +1,16 @@
+id: connection-draining
+title: Connection Draining
+category:
+  - Operations
+  - Networking
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - graceful-shutdown
+  - load-balancing
+dependents: []
+brief: The window during which a deregistering backend stops accepting new connections while finishing in-flight requests, ensuring zero dropped connections during rolling deployments.

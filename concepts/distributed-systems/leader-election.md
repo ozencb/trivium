@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Leader Election
 
-In a distributed system, leader election is the process by which a cluster of nodes autonomously agrees on exactly one node to act as coordinator — so writes, scheduling, or state mutations flow through a single authoritative source without manual intervention.
+In a distributed system, leader election is the process by which a cluster of nodes agrees that exactly one node holds authority to make decisions — writes, coordination, lock grants — at any given time. Without it, you get split-brain: two nodes both believing they're the leader, both accepting writes, diverging state.
 
-### The Core Mechanism
+**The core mechanism**
 
-Leader election is consensus applied to a specific question: "who's in charge right now?" The elected leader isn't special by nature — it's just whichever node won a round of consensus. What makes it interesting is *what happens when that node dies*.
+Leader election is a specialization of consensus: nodes must agree on a single value (the leader's identity) even under partial failures. What makes it distinct from general consensus is the *ongoing* nature — leaders die, networks partition, and the cluster must re-elect without human intervention while preserving safety.
 
-Most production implementations use a lease model: the leader holds a time-bounded token (a lease) and must renew it by writing a heartbeat to shared storage before expiry. If it fails to renew, the lease expires, followers detect the absence, and they race to claim leadership by atomically writing a new lease entry. Only one wins — because the underlying operation (compare-and-swap or a distributed transaction) is atomic.
+The key invariant is **at most one leader per term**. Raft enforces this through term numbers: each election attempt increments a monotonic term, and a node only votes once per term. A candidate wins if it collects a quorum (majority) of votes. Because any two quorums overlap by at least one node, two candidates can't simultaneously win the same term — they'd need the same voter to vote twice, which is prohibited.
 
-This is why consensus algorithms are the prerequisite. Etcd uses Raft; ZooKeeper uses ZAB. The election itself is just a consensus round on a small piece of state: "current leader = X, term = 42."
+The subtler safety property: a new leader must not be *behind* on log entries. Raft requires candidates to advertise their last log index/term and voters to reject anyone whose log is less up-to-date than their own. This ensures the new leader has all committed entries before it starts issuing new ones.
 
-### Mental Model
+**Mental model**
 
-Think of a town with one mayor. The town can function fine with one mayor issuing decisions. The problem is when the mayor goes missing — the town needs a reliable way to elect a new one without ending up with two mayors simultaneously (split-brain), which causes conflicting decisions.
+Think of it like a parliamentary vote with an expiring mandate. A candidate campaigns (RequestVote RPCs), promises not to go back in time (log recency check), collects majority support, and holds office until it stops sending heartbeats. Any node that stops hearing heartbeats within the election timeout assumes the leader is dead and starts a new campaign.
 
-The "lease" is the mayor's term in office. They must check in regularly. If they miss check-in, the town holds a new election. The check-in itself is the heartbeat.
+**Practical relevance**
 
-### Practical Scenarios
+*Backend:* When you use etcd, Consul, or ZooKeeper as a distributed lock service or service registry, you're relying on their internal Raft leader to serialize decisions. If your service registers itself or acquires a lock against a follower, that follower proxies to the leader — or rejects outright. Understanding election timeouts tells you why `etcd` has a 1–10s default and what happens to your service discovery during a leader failover.
 
-**Backend:** You're running a distributed job scheduler — say, a cron-like system across 5 pods. Only one pod should fire each job at a given time. Rather than building external locking logic, you implement leader election so only the leader pod schedules jobs. When it crashes, a new leader takes over within seconds. Kubernetes controller-manager and scheduler work exactly this way, using etcd leases.
+*SRE:* A 5-node cluster tolerates 2 simultaneous failures before losing quorum and becoming read-only (no leader can be elected without 3 votes). When you see a Kubernetes control plane go unavailable because 2 out of 3 `etcd` nodes are unhealthy, this is why — not a bug, but a deliberate safety property. Knowing this, you size etcd clusters at 3 or 5 nodes, never 2 or 4.
 
-**SRE:** You're investigating why a scheduled task ran twice, causing duplicate emails. The root cause is often a failed leader election or an expired lease that wasn't detected fast enough — two nodes both believed they were leader briefly (the "dual-leader window"). This is the gap between lease expiry and the new election completing. Tuning lease duration vs. election timeout is a classic SRE tradeoff: shorter leases = faster failover but higher false-positive elections under network blips.
+**Why it matters in interviews**
 
-### The Hard Part
-
-The failure mode isn't election itself — it's the window where the old leader is still running but has lost its lease. If it doesn't check the lease before acting, you get split-brain. Correct implementations always re-validate lease ownership before any write. "Am I still the leader?" is a question that must be answered immediately before every consequential action, not assumed from cached state.
+Senior engineers distinguish themselves by knowing *why* split-brain is dangerous (not just that it is), and by understanding that election safety comes from quorum overlap — not from timeouts or heartbeats, which are liveness mechanisms. That distinction — safety vs. liveness — is what separates a candidate who's read about Raft from one who understands it.

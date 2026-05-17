@@ -1,0 +1,17 @@
+id: graphql
+title: GraphQL
+category:
+  - API Design
+  - Query Language
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rest-constraints
+dependents:
+  - backend-for-frontend
+brief: A query language where the client declares exactly the fields it needs from a typed schema, eliminating over-fetching and the proliferation of specialized REST endpoints.

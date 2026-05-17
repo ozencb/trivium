@@ -1,15 +1,15 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CSS Custom Properties
 
-CSS custom properties (often called "CSS variables") are named values you define in CSS that cascade and inherit like any other CSS property — unlike preprocessor variables (Sass/Less), which are compiled away before the browser ever sees them.
+CSS custom properties are variables you define in CSS itself — not a preprocessor — that participate in the cascade and inheritance tree just like `color` or `font-size`. The key distinction from Sass/Less variables: they're resolved at **runtime in the browser**, which means they can change without a recompile, respond to JS, and scope differently per element.
 
-**The core mechanism**
+### The core mechanism
 
-You declare a custom property with a double-dash prefix (`--my-value: ...`) and read it with `var()`. The key thing that distinguishes them from preprocessor variables: they exist in the computed style tree at runtime. The browser stores them, they participate in the cascade, and JavaScript can read and write them. They're live.
+You define them with a double-dash prefix and read them with `var()`:
 
 ```css
 :root {
@@ -19,30 +19,40 @@ You declare a custom property with a double-dash prefix (`--my-value: ...`) and 
 
 .button {
   background: var(--brand-color);
-  padding: calc(var(--spacing-unit) * 2);
+  padding: var(--spacing-unit);
 }
 ```
 
-Inheritance is where it gets interesting. A custom property set on a parent element is available to all descendants — so you can scope behavior by redefining the property lower in the tree:
+What makes this more than syntax sugar: custom properties **inherit down the DOM tree**. If you redefine `--brand-color` on a `.card` element, everything inside that card picks up the new value automatically. This is scoped theming — no class-toggling cascades needed.
 
 ```css
-.dark-theme {
-  --brand-color: #60a5fa; /* override just for this subtree */
+.card--danger {
+  --brand-color: #ef4444;  /* overrides for this subtree only */
 }
 ```
 
-No selector specificity tricks needed. The right value flows down naturally.
+`var()` also accepts a fallback: `var(--spacing-unit, 8px)` — useful when properties may not be set.
 
-**Mental model**
+### Runtime mutability
 
-Think of custom properties as typed slots in the cascade. Each element has a computed value for every custom property it can see. When you change `--brand-color` on a parent, every child that uses `var(--brand-color)` re-renders with the new value — without touching those child selectors at all.
+Because resolution happens in the browser, JS can change them directly:
 
-**Practical scenarios**
+```js
+document.documentElement.style.setProperty('--brand-color', '#10b981');
+```
 
-*Frontend:* Theming is the obvious win — define your design tokens as custom properties on `:root`, and switching themes becomes one class toggle or a few property overrides. Component libraries use scoped custom properties to expose a controlled API: consumers set `--card-border-radius` without needing to know or override internal selectors.
+That single line re-renders everything reading `--brand-color` instantly. No stylesheet swaps, no class toggling, no full re-render triggered by JS framework reconciliation. This is why dark mode is often implemented here: swap a handful of root-level variables, done.
 
-*Fullstack:* When your backend drives UI state (user preferences, feature flags, per-tenant branding), you can inject a `<style>` tag server-side with custom property overrides — or set them via `element.style.setProperty('--brand-hue', hue)` in JavaScript without touching a stylesheet. This is cleaner than class toggling when the variation is continuous (colors, sizes, durations) rather than boolean.
+### Where this actually matters
 
-**Why this matters beyond convenience**
+**Frontend:** Component libraries use custom properties to expose a "theming API" — the component owns its internal structure but exposes `--button-bg`, `--button-radius` etc. for consumers to override. This is a cleaner contract than deep CSS selectors or prop-drilling style objects.
 
-Because custom properties survive into the browser's style engine, they're the mechanism CSS Houdini builds on. Paint Worklets and Animation Worklets can register typed custom properties (`@property`) with syntax constraints and default values, enabling things like animating a color or interpolating a gradient — transitions the browser couldn't previously handle because it didn't know the type of the value.
+**Fullstack:** When you're server-rendering and want user-specific theming (e.g., a user picks a brand color), inject a `<style>` tag in the HTML response setting root-level custom properties. The page renders with the right theme on first paint — no flash, no client-side JS required for the initial state.
+
+### Common pitfalls
+
+- **They don't work in media query conditions** — you can't do `@media (min-width: var(--breakpoint))`. Custom properties resolve to values, not tokens the parser understands structurally.
+- **Inheritance bites you unexpectedly** — if you set `--color` high in the tree expecting isolation, child components inherit it. Scope intentionally.
+- **Unset vs. invalid** — if a custom property resolves to an invalid value for the property using it (e.g., `color: var(--my-number)` where `--my-number: 42`), the property goes to its inherited or initial value silently. Debugging this is annoying.
+
+Understanding custom properties is a direct prerequisite for CSS Houdini, which lets you register typed custom properties with default values and animatability constraints — but that's the next layer.

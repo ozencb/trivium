@@ -1,0 +1,17 @@
+id: infrastructure-as-code
+title: Infrastructure as Code
+category:
+  - DevOps
+  - Automation
+roles:
+  - devops
+  - sre
+  - backend
+lenses:
+  - practical
+  - career
+prerequisites:
+  - config-management
+dependents:
+  - gitops
+brief: Defining and provisioning infrastructure through version-controlled declarative code (Terraform, Pulumi) so environments are reproducible, auditable, and free from manual configuration drift.

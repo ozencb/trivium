@@ -1,44 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Twelve-Factor App
 
-A methodology for building software that runs reliably as a service — whether on your laptop, a VM, or a Kubernetes cluster — without heroic ops effort. It emerged from Heroku engineers documenting what made applications actually deployable at scale.
+A methodology for building cloud-native applications that can deploy cleanly across environments without manual configuration or tight coupling to infrastructure. The core insight: most deployment headaches come from apps that know too much about where they're running.
 
 ### The Core Idea
 
-Most deployment pain comes from hidden coupling: between config and code, between a process and the machine it runs on, between services and how they're wired together. The twelve factors are a set of constraints that eliminate that coupling systematically.
+Traditional apps often embed assumptions about their environment — database URLs hardcoded in config files, sessions stored on local disk, logs written to `/var/log/app.log`. These work fine on a single server you manage personally. They break when you try to scale horizontally, run multiple environments, or let a platform like Kubernetes or Heroku manage deployment.
 
-The factors group into a few themes:
+The twelve factors are a set of constraints that force you to externalize those assumptions. The three that actually matter most in practice:
 
-**Codebase and dependencies** — one repo per app, all dependencies declared explicitly (no "oh you need libxml2 installed globally"). This means `requirements.txt`, `package.json`, `go.mod` — not just "it works on my machine."
+**Config lives in environment variables.** Not config files checked into the repo, not a `config/production.yml`. Environment variables because they're naturally per-environment, never accidentally committed, and every deployment platform natively supports them. The smell: if you can't open-source your codebase without scrubbing secrets first, you're violating this.
 
-**Config** — everything that differs between environments (dev/staging/prod) lives in environment variables, not in code or config files committed to the repo. No `if env == "production"` branches, no hardcoded credentials.
+**Processes are stateless and share nothing.** Any data that needs to persist between requests goes to a backing service — a database, Redis, S3. The process itself holds nothing. This is what makes horizontal scaling trivial: spin up ten instances, kill any of them, it doesn't matter. The smell: storing uploaded files on the local filesystem, or using sticky sessions.
 
-**Processes and state** — processes are stateless and share nothing. Any persistent data goes to a backing service (database, cache). This is why you can run 10 instances of a factor-compliant app without coordination — they're interchangeable.
+**Disposability — fast startup, graceful shutdown.** Processes should start in seconds and handle `SIGTERM` cleanly. This is what lets a platform restart your app safely during deploys, scale events, or hardware failures.
 
-**Backing services** — databases, queues, SMTP servers are attached resources, referenced by URL in config. Swapping your local Postgres for RDS is a config change, not a code change.
+### Concrete Example
 
-**Build/release/run separation** — you build an artifact once, release it by combining it with config, and run it. No modifying code on production servers.
+Imagine your app reads `DATABASE_URL` from `os.environ` rather than `config/database.yml`. Now your CI environment, staging, and production all run the same binary — just with different env vars injected. No environment-specific code paths, no "works on staging, broken in prod."
 
-**Port binding** — the app exports its own HTTP server rather than relying on a web server injection (Apache, nginx) to activate it. You run `./app` and it listens on a port.
+### Why It Matters by Role
 
-**Logs as streams** — the app writes to stdout/stderr, never manages log files. The infrastructure routes them wherever they need to go.
+**Backend:** Designing a new service? Starting twelve-factor means you're building something your platform can manage without babysitting. Config changes don't require redeploys; scaling doesn't require redesign.
 
-### Mental Model
+**SRE:** An app violating factor VI (stateful processes) is one you can't safely restart without coordination. That's toil. Twelve-factor apps are intrinsically more operable.
 
-Think of each factor as a seam: a place where concerns are separated so that each piece can be swapped independently. Config is swappable without redeployment. Processes are swappable without data loss. Services are swappable without code changes.
+**DevOps:** Twelve-factor apps map cleanly to Kubernetes primitives — ConfigMaps for config, StatefulSets only when genuinely needed, rolling restarts that actually work. When an app fights these, it's usually violating one of the factors.
 
-### Practical Angles
+**Fullstack:** The "config in env vars" factor directly shapes how you structure `.env` files locally and how you wire up deployment secrets — it's not just backend concern.
 
-**Backend**: Factor III (config) directly governs how you handle database credentials and feature flags. If your app reads from a `.env` file that's gitignored, you're halfway there but not fully — env vars should be set by the platform, not a file you manage.
+### In Design Discussions
 
-**SRE**: Factors VI (stateless processes) and XI (logs as streams) are load-balancing and observability preconditions. If processes hold local state, you can't kill and replace them freely. If logs are files, you need agents; if they're stdout, you get it for free.
-
-**DevOps**: Factor V (build/release/run) maps directly to CI/CD pipeline design. The discipline of building once and promoting the same artifact through environments is the twelve-factor version of "works on my machine" discipline.
-
-**Fullstack**: Factor IV (backing services) keeps your frontend-serving layer decoupled from your data layer — the API URL is config, not hardcoded, which is why environment-specific builds aren't necessary.
-
-The full spec is at 12factor.net, but the 80% value is: stateless processes, config in env vars, dependencies declared, logs to stdout.
+Senior engineers use this as a checklist when reviewing architecture. "Where does session state live?" and "How does this process handle SIGTERM?" are twelve-factor questions. Knowing the vocabulary lets you name the tradeoff precisely rather than describing it from first principles each time.

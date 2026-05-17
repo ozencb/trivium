@@ -1,49 +1,46 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Selector Memoization
 
-A selector is a function that derives data from your store state — filtering a list, computing a total, denormalizing a normalized shape. Memoization caches the result and skips recomputation when inputs haven't changed, but the real payoff isn't performance: it's **referential stability**.
+In a Flux-derived store, your components often need *derived* state — filtered lists, aggregated totals, joined data across slices. Without memoization, every store update recomputes those derivations from scratch, even when the inputs haven't changed. Selector memoization caches the output keyed to its inputs, so the recomputation only happens when something it actually depends on changes.
 
-### The core problem
+### The core mechanism
 
-In a Flux-derived architecture (Redux, Zustand, etc.), components subscribe to state and re-render when it changes. If your selector returns a new object or array on every call — even with identical data — React's shallow equality check sees a new reference and re-renders anyway.
-
-```js
-// This always returns a new array, even if nothing relevant changed
-const getActiveUsers = (state) => state.users.filter(u => u.active);
-```
-
-Every unrelated state update (a modal opening, a counter incrementing) triggers a re-render in any component using this selector.
-
-### The mechanism
-
-Libraries like Reselect solve this with a two-level check:
-
-1. **Input selectors** extract raw slices from state using reference equality
-2. **Result function** only runs if any input reference changed; otherwise returns the cached result
+A memoized selector wraps a pure function with a cache layer that tracks its last arguments. If called again with referentially equal inputs, it returns the cached result — same reference, zero work. The selector library (reselect being the canonical example) does this by composing *input selectors* (cheap, direct state reads) with a *result function* (the expensive transformation):
 
 ```js
-const getActiveUsers = createSelector(
-  (state) => state.users,       // input selector
-  (users) => users.filter(u => u.active)  // result function
+const selectVisibleTodos = createSelector(
+  state => state.todos,       // input selector
+  state => state.filter,      // input selector
+  (todos, filter) => todos.filter(t => t.status === filter)  // result function
 );
 ```
 
-If `state.users` reference hasn't changed, you get back the exact same array instance as last time. Same reference → component skips re-render.
+If `state.user` or `state.theme` changes but `state.todos` and `state.filter` haven't, `selectVisibleTodos` returns the exact same array reference it returned last time. Components receiving that reference won't re-render.
 
-### Mental model
-
-Think of it as a pure function with a one-slot cache: last-arguments → last-result. Reselect's default cache size is 1, so it only remembers the most recent call. This is fine for most cases but matters if you're calling the same selector with different arguments (e.g., parameterized selectors in a list).
+The reference equality part matters more than it looks. React's `memo`, `useMemo`, and `shouldComponentUpdate` all rely on referential stability. If your selector recreates `[]` on every call even when the data is unchanged, you've silently broken all that downstream optimization.
 
 ### Where this bites you in practice
 
-**Frontend:** You have a product grid with filtering, sorting, and pagination. Each of those operations produces a derived list. Without memoization, every keystroke in an unrelated search field re-renders the entire grid because the selector produces a new array. With memoization, only the filter/sort/page state changes trigger recomputation.
+The most common failure mode: a selector that *looks* memoized but takes dynamic arguments.
 
-**Fullstack:** In SSR or BFF patterns, you often transform normalized API responses into view-ready shapes on the server. The same principle applies — memoizing these transforms at the request level (or within a request's execution context) avoids redundant work when multiple components need the same derived data during a single render pass.
+```js
+// This creates a new selector instance on every render
+const selectByStatus = (status) => createSelector(
+  state => state.todos,
+  todos => todos.filter(t => t.status === status)
+);
+```
 
-### The subtlety to watch for
+Every render constructs a fresh selector with a fresh cache — you get zero memoization benefit. The fix is either lifting the selector outside the component, using a factory pattern with per-instance selectors (`useMemo(() => createSelector(...), [])` in React), or using selector libraries that handle parametric selectors natively (reselect v5's `createSelectorCreator`, or RTK Query's `createSelector`).
 
-Memoization breaks when you call a parameterized selector from multiple component instances, because they all share one cache slot and thrash each other's cached results. The fix is either factory functions (each instance gets its own selector) or a library that supports per-instance caches.
+### Practical relevance
+
+**Frontend-heavy apps:** If you're aggregating or transforming store data into anything a component renders — sorted lists, derived totals, denormalized joins — memoized selectors are the right tool. They're also the natural seam for unit testing business logic separately from components.
+
+**Fullstack with SSR:** On the server, you often reconstruct store state per-request. Selector memoization provides less benefit there (the cache is per-request lifetime), but it still pays off if a single render tree calls the same selector dozens of times — the first call computes, subsequent calls in the same render hit cache.
+
+The rule of thumb: if a selector does more than a direct property lookup, memoize it. The cost is near zero; the benefit compounds across every re-render.

@@ -1,42 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Intersection Observer API
 
-The Intersection Observer API lets you react to when an element enters or exits the viewport (or any ancestor scroll container) — without polling, without scroll event listeners, without layout thrashing.
+The browser's scroll event + `getBoundingClientRect()` pattern works, but it's a trap: every `getBoundingClientRect()` call forces a synchronous layout, and firing that on every scroll tick means you're causing layout thrashing at 60fps. Intersection Observer offloads the geometry math to the browser, which batches and delivers intersection state changes asynchronously during its own rendering cycle.
 
-### The core mechanism
+### Core Mechanism
 
-Before Intersection Observer, detecting element visibility meant attaching a `scroll` event listener, calling `getBoundingClientRect()` on each element you cared about, and comparing against `window.innerHeight`. The problem: `getBoundingClientRect()` forces a layout recalculation synchronously, and you're doing this on every scroll tick. This is expensive and was a major source of jank.
+You register an observer with a `root` (viewport by default, or any scrollable ancestor), a `rootMargin` (extends or shrinks the root like CSS margin), and one or more `thresholds` (ratios of the element's area that must be visible to trigger). The browser tracks observed elements internally and invokes your callback with a list of `IntersectionObserverEntry` objects when any threshold is crossed — not on every scroll tick, just on state transitions.
 
-Intersection Observer moves this work off the main thread. You declare what you want to observe and a threshold (what % of the element must be visible to trigger), and the browser batches intersection checks between frames — in a way that doesn't force layout. Your callback fires asynchronously when intersection crosses your threshold.
+Each entry gives you `isIntersecting`, `intersectionRatio`, `boundingClientRect`, and timestamps. Critically, this callback runs outside the scroll event pipeline, so there's no layout forcing.
 
 ```js
 const observer = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting) {
-      // element is now visible
+      loadImage(entry.target);
+      observer.unobserve(entry.target); // stop watching once loaded
     }
   });
-}, { threshold: 0.1 }); // fire when 10% is visible
+}, { rootMargin: '200px', threshold: 0 });
 
-observer.observe(document.querySelector('.target'));
+document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
 ```
 
-The `entries` array is key: each entry has `isIntersecting`, `intersectionRatio`, `boundingClientRect`, and `rootBounds`. You're not asking "is this visible?" — you're reacting to a state transition the browser already tracked.
+The `rootMargin: '200px'` pre-fires 200px before the image enters the viewport — standard practice for lazy loading so users don't see a loading flash.
 
-### Mental model
+### Practical Scenarios
 
-Think of it like a pub/sub system where the browser is the publisher. You subscribe elements to visibility events, and the browser notifies you when geometry crosses your declared thresholds. You never ask; you only listen.
+**Frontend:** Lazy loading images and iframes is the canonical use case. Beyond that: triggering CSS animations when sections scroll into view, infinite scroll (observe a sentinel element at the list bottom), and detecting when a sticky header becomes active. For analytics, you can track "was this content actually seen?" rather than just "was this page visited?"
 
-### Practical scenarios
+**Fullstack:** If you're rendering above-the-fold content server-side and deferring below-the-fold hydration, Intersection Observer is what triggers that hydration. Frameworks like Next.js use it internally for `next/image` lazy loading. You can also use it to implement accurate content engagement metrics — only count a read if the element was visible for >X seconds.
 
-**Frontend:** Lazy-loading images is the canonical case — swap a `data-src` to `src` once the `<img>` is about to scroll into view. But it's equally useful for triggering animations (fade-in sections as they enter the viewport), implementing infinite scroll (observe a sentinel element at the bottom of a list), or pausing video/canvas updates for off-screen elements to save CPU.
+### Common Pitfalls
 
-**Fullstack:** Analytics and engagement tracking benefit here significantly. Instead of guessing whether a user "saw" an ad or a product card, you can log a server-side impression event only when the element actually entered the viewport for a meaningful duration — combine Intersection Observer with a small timer to confirm dwell time before firing the request. This is more accurate than pageview-level attribution and cheaper than scroll-event-based tracking.
+- **Forgetting to unobserve:** If you're observing hundreds of elements for a one-shot trigger (lazy load, analytics ping), call `observer.unobserve(entry.target)` after firing or you leak observers.
+- **Initial callback:** The observer fires once immediately on `observe()` to report current state. Always check `isIntersecting` rather than assuming a callback means "just entered viewport."
+- **`rootMargin` units:** Must be in `px` or `%` — no other CSS units work, and `%` is relative to the root, not the element.
 
-### What to watch for
-
-`rootMargin` lets you expand or shrink the intersection area — useful for preloading content slightly before it enters view. And always call `observer.unobserve(entry.target)` once you've handled a one-shot observation (like image loading) to avoid memory leaks.
+Reach for this whenever you'd otherwise put logic inside a scroll event handler that touches element geometry.

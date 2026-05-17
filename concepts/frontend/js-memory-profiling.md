@@ -1,35 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## JavaScript Memory Profiling
 
-JavaScript runs in a managed memory environment, but "managed" doesn't mean leak-proof. Memory profiling is how you observe the V8 heap over time to find allocations that survive longer than they should.
+JavaScript runs in a garbage-collected runtime, but "garbage collected" doesn't mean "leak-proof." Memory profiling is the practice of finding objects that *should* be freed but aren't — because something in your code still holds a reference to them, even unintentionally.
 
-### The Core Mechanism
+### The core mechanism
 
-V8 splits heap memory into spaces (new space for short-lived objects, old space for survivors). The garbage collector runs mark-and-sweep cycles, freeing anything unreachable. Profiling hooks into this at two levels:
+The JS engine's GC operates on reachability: any object reachable from a root (window, active closures, event listener callbacks) stays alive. A leak isn't a bug where memory isn't freed — it's a bug where *your code accidentally maintains a reference* that prevents the GC from freeing it. The memory grows steadily over time, session by session, until the tab crashes or slows to a crawl.
 
-- **Heap snapshots**: a point-in-time serialization of every live object, its size, and its retention path (the chain of references keeping it alive)
-- **Allocation timelines**: continuous recording of allocation events so you can see *when* memory was allocated and whether it was ever freed
+The three most common culprits:
 
-The key insight: a leak isn't an object that's large, it's an object that's *retained unintentionally*. The profiler's job is to surface retention paths — who's holding a reference that prevents GC.
+**Detached DOM nodes** — You remove a node from the DOM, but a JS variable or closure still references it. The node is "detached" — out of the visible tree, but alive in the heap. This is extremely common with dynamically-built lists, modals, or charts that get torn down and rebuilt.
 
-### Mental Model
+**Accumulated event listeners** — You call `addEventListener` on a component mount but never call `removeEventListener` on teardown. In SPAs with client-side routing, components mount/unmount dozens of times per session, each time registering a new listener on a long-lived element like `window` or `document`.
 
-Think of your virtual memory background: a page is "in use" as long as something references it. Same idea here. If a closure captures a reference to a 50MB array and that closure is registered as an event listener that never gets removed, the array never gets collected. The retention path would look like: `EventTarget → listener fn → closure scope → array`.
+**Retained closures** — A callback captures a large object (say, a full API response) in its scope. The callback is held by an event emitter or a timer that never gets cleared. The entire captured scope stays in memory.
 
-Heap snapshots let you take two snapshots (before and after a user interaction, say) and diff them — anything that grew between snapshots and wasn't expected is a suspect.
+### Mental model
 
-### Practical Scenarios
+Think of the heap as a graph. Nodes are objects, edges are references. GC walks the graph from roots and marks everything reachable. Leaks are islands that *should* be unreachable but aren't, because one stray edge still connects them to the mainland.
 
-**Frontend**: The classic case is SPAs with client-side routing. A component unmounts but leaves behind a `setInterval`, a WebSocket handler, or a third-party analytics listener. Each navigation cycle leaks a bit more. After 20 route changes, you've got 20 copies of whatever that component held in scope. You'd catch this by taking a heap snapshot on first load, navigating repeatedly, forcing GC, then diffing — the retained object count for that component's data should be 1, not 20.
+### In practice
 
-**Fullstack (Node.js)**: Long-running servers accumulate leaks differently. A request handler that caches parsed request bodies in a module-level Map, but the cleanup logic has a bug and keys never evict. Under load, RSS climbs steadily. Allocation timelines in Node (via `--heap-prof` or Chrome DevTools connected to `--inspect`) show the callsite responsible for the growing allocations. The fix is obvious once you can see *where* the retained objects were created.
+**Frontend:** In a React or Vue app, the typical culprit is a `useEffect` or `mounted()` hook that wires up a WebSocket, a third-party event emitter, or a `setInterval` — without a cleanup function. After 20 route navigations, you have 20 active subscriptions. The Chrome Memory panel's Allocation Timeline shows you heap size increasing in sawtooth waves instead of flat-lining.
 
-### What to Actually Look At
+**Fullstack:** Node.js services are equally susceptible. A common pattern: a request handler that registers a listener on a shared EventEmitter (like an internal pubsub or an SDK client) but never deregisters it. Under load, you accumulate thousands of listeners. Node will warn you with `MaxListenersExceededWarning`, but by then you're already leaking.
 
-In Chrome DevTools Memory tab: take a snapshot, do the thing, force GC (`gc()` in console with DevTools open), take another snapshot. Switch to "Objects allocated between snapshots." Sort by retained size. Any constructor you recognize that has more instances than expected is worth drilling into its retainers panel.
+### Why this differentiates senior engineers
 
-The tool surfaces evidence; you still have to read the retention path and reason about why the reference exists.
+Junior engineers fix performance by optimizing render cycles or reducing bundle size. Senior engineers know that a 400ms render that runs fine for 5 minutes can become a 4-second render after 30 — because the heap has grown 10x with retained objects. Profiling tools (heap snapshots comparing before/after an action, allocation timelines, the Detached DOM filter) let you make that argument with evidence, not intuition.

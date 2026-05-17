@@ -1,36 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Screen reader testing is the practice of verifying that your UI is usable when consumed as audio or braille output rather than visually. It's necessary because a correct accessibility tree is a prerequisite, not a guarantee — screen readers are implementations that interpret the tree, and they have quirks, inconsistencies, and behaviors no linter will catch.
+## Screen Reader Testing
 
-## The Core Mechanism
+Automated accessibility tools catch rule violations — missing `alt` attributes, insufficient color contrast, unlabeled buttons. What they can't catch is whether a screen reader user can actually accomplish a task. Screen reader testing is manual QA with real assistive technology to validate that your semantic structure produces coherent, navigable UX for non-sighted users.
 
-You already know the accessibility tree sits between the DOM and assistive technology. What screen reader testing surfaces is the gap between *tree correctness* and *user experience coherence*. A `role="dialog"` with `aria-modal="true"` and a proper `aria-labelledby` looks fine in DevTools. But NVDA on Windows may not trap focus inside it without additional JS — while VoiceOver on macOS does. The spec and the implementation diverge.
+### The core idea
 
-Screen readers also impose a *linear reading model* on inherently spatial UIs. Users navigate by heading hierarchy, landmark regions, or tab order — not by scanning. Testing forces you to experience your interface the way a non-visual user does: sequentially, with only audio feedback.
+You already know the accessibility tree is the parallel DOM that browsers expose to assistive tech. Screen readers consume that tree, not the visual layout. The gap that manual testing closes: the tree can be technically valid but experientially broken.
 
-## Concrete Mental Model
+Consider a modal dialog. The accessibility tree might have `role="dialog"`, `aria-labelledby` pointing to the heading, and a close button with a proper label. Axe finds nothing wrong. But when you actually tab into it with NVDA, focus lands behind the modal on the obscured page content, and there's no `aria-modal="true"` to tell the screen reader to constrain virtual cursor navigation. A sighted user sees the backdrop and intuitively stays inside the modal. A screen reader user in browse/virtual mode can arrow-key through the entire page as if the modal doesn't exist.
 
-Think of it like testing your API by actually calling it, not just reading the OpenAPI spec. The accessibility tree is the spec. The screen reader is the client. You care whether the client gets a coherent, predictable experience — not whether the spec is syntactically valid.
+That bug is invisible to automated tools and invisible to snapshot tests. It only surfaces when you hear the screen reader narrate the wrong content.
 
-## Practical Testing Workflow
+### The three major tools
 
-1. Navigate keyboard-only first (Tab, arrows, Enter/Space) to confirm focus is logical
-2. Enable a screen reader and run the same flow — listen for what gets announced
-3. Specifically check: interactive element labels, state changes (expanded/collapsed, selected, error), reading order, focus behavior when content appears or disappears
+- **NVDA** (Windows, free) — most common among actual users, pairs with Firefox or Chrome
+- **JAWS** (Windows, paid) — dominant in enterprise/government contexts
+- **VoiceOver** (macOS/iOS, built-in) — essential for Safari and native iOS flows
 
-**Pairings that matter:** NVDA + Chrome (most common Windows users), VoiceOver + Safari (macOS/iOS), TalkBack + Chrome (Android). Behavior differs enough that testing one doesn't cover the others.
+They have meaningfully different behavior. A navigation landmark that works in VoiceOver may announce confusingly in JAWS. Test on at least two.
 
-## Frontend Scenarios
+### Practical scenarios
 
-A custom `<div role="combobox">` dropdown: does opening it announce "expanded"? Do options announce their position ("2 of 5")? Does selecting one move focus back sensibly? Form validation: does the error message get announced when the field blurs, or just appear visually while the screen reader stays silent?
+**Frontend:** You build a combobox autocomplete — input triggers a listbox of suggestions. The ARIA pattern is documented. But does the screen reader announce the number of results when they appear? Does selecting an option close the listbox and move focus back to the input with a confirmation? Does pressing Escape work correctly in both browse mode and forms mode (NVDA distinction)? You'll only know by testing it.
 
-## Fullstack Scenarios
+**Fullstack:** A form submission returns a server-rendered error summary at the top of the page. The DOM updates, but focus stays at the submit button. A sighted user sees the red error list. A screen reader user hears nothing — they have to manually navigate back up to discover something went wrong. Fix: move focus to the error summary or use a live region to announce the error count.
 
-Server-rendered apps and SPAs both have a specific failure mode: page navigation. A full-page load re-announces the `<title>`. Client-side routing (Next.js, Remix, React Router) does not — the DOM updates silently. Without explicit focus management or a live region announcing the new page, screen reader users have no signal that navigation happened. This is one of the most common accessibility regressions in fullstack apps and is invisible to automated tools.
+### When to reach for it
 
-## The Key Insight
-
-Static analysis (axe, Lighthouse) tells you about structural problems. Screen reader testing tells you whether the *experience* is coherent. You cannot substitute one for the other — you have to listen.
+Reach for screen reader testing when you're building interactive widgets (modals, drawers, carousels, autocompletes, data tables with actions), form flows, and anything with dynamic content updates. Don't rely on it as a first pass — run axe first to clear the mechanical issues, then do manual testing to validate the experience.

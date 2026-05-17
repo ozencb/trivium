@@ -1,42 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Index selection** is how the query planner decides *which* index to use when multiple candidates exist — or whether to skip indexes entirely and scan the table. Getting this wrong is one of the most common reasons a query runs 100x slower than it should.
+## Index Selection
 
-## The Core Mechanism
+Every index you add speeds up reads that use it but slows down every write to that table and consumes storage. Index selection is the discipline of deciding which of those tradeoffs are worth making, given your actual query patterns — not the ones you imagine you'll have.
 
-The optimizer doesn't just check "does an index exist for this column?" It estimates the *cost* of each access path — index scan vs. table scan vs. multiple index merges — using statistics it maintains about column distributions, row counts, and cardinality. The winner is whichever plan has the lowest estimated I/O and CPU cost.
+### The core mechanism
 
-Two properties drive almost all selection decisions:
+When you add an index, the database maintains a separate data structure (typically a B-tree) that's updated on every insert, update, and delete. The optimizer consults statistics to decide whether using an index is cheaper than a sequential scan. Critically, the optimizer can be wrong, and it sometimes ignores indexes you'd expect it to use — usually because the selectivity estimate is off or the table is small enough that a scan wins.
 
-**Selectivity**: What fraction of rows match the predicate? An index on `country` where 60% of rows are `'US'` is nearly useless — scanning the heap for that many rows costs more than just reading it sequentially. The optimizer will often skip that index. An index on `user_id` in an orders table? Extremely selective, almost always used.
+The real depth here is in **composite index design**. An index on `(user_id, status, created_at)` supports queries filtering on `user_id` alone, `user_id + status`, or all three — but not `status` alone. The leftmost prefix rule is well-known, but the less-obvious move is choosing column order to maximize reuse: put equality filters before range filters, and high-cardinality columns first.
 
-**Index prefix rules**: A composite index on `(a, b, c)` can satisfy queries filtering on `a`, `(a, b)`, or `(a, b, c)` — but not queries filtering only on `b` or `c`. The leftmost prefix must be present. This is why column order in composite indexes matters enormously.
+### Concrete mental model
 
-## Concrete Example
+Think of a composite index as a sorted phonebook. `(last_name, first_name)` lets you find all Smiths efficiently, then all John Smiths within that. Searching by first name only means scanning the whole book. Same structure, totally different utility depending on your lookup pattern.
 
-You have an index on `(status, created_at)` and run:
+### Backend context
 
-```sql
-SELECT * FROM orders WHERE created_at > '2024-01-01';
-```
+An API endpoint like `GET /orders?user_id=X&status=pending` benefits from `(user_id, status)`. But if you also need `created_at` in the `SELECT`, adding it as a third column creates a **covering index** — the database never touches the main table (heap) at all. That's a significant speedup at scale. The pitfall: if you also have `(user_id)` and `(user_id, status)` separately, you're paying triple write cost for what one index could cover.
 
-The optimizer may ignore this index entirely because `created_at` isn't the leading column. Flip the query to also filter on `status`, or create a separate index on `created_at`, and the plan changes.
+### Data/analytics context
 
-## Why Indexes Get Ignored
+Wide analytical queries often benefit from **partial indexes** — indexing only rows matching a condition, like `WHERE status = 'active'`. If 95% of your rows are archived, a partial index on active rows is dramatically smaller and faster. Knowing this separates engineers who reach for "just add an index" from those who reason about the data distribution first.
 
-Even with a perfect index, the planner skips it when:
-- **Low cardinality predicate** — `WHERE active = true` on a table that's 90% active rows
-- **Function wrapping** — `WHERE LOWER(email) = 'x'` defeats an index on `email`; use a functional index or store normalized data
-- **Stale statistics** — after a bulk load, run `ANALYZE` (Postgres) or `UPDATE STATISTICS` (SQL Server) or the planner works with wrong estimates
-- **Type mismatch** — passing a string to an integer column causes implicit casting, breaking index use
+### Where engineers get this wrong
 
-## Practical Scenarios
+Low-cardinality columns (boolean flags, enum status with 3 values) rarely benefit from a plain index — the optimizer often skips it. Over-indexing is also common: tables with 12 indexes see noticeably degraded write throughput, and the query planner's job gets harder, not easier.
 
-**Backend**: When a new endpoint is slow, run `EXPLAIN ANALYZE`. If you see a `Seq Scan` where you expected an index scan, check selectivity and whether your WHERE clause matches the index prefix. Adding a composite index that covers both the filter and the sort column often eliminates both the index scan and the sort step.
-
-**Data**: In analytical queries with large fact tables, index selection matters less (full scans are often intentional), but partial indexes — e.g., `WHERE status = 'pending'` — can dramatically accelerate operational queries against append-heavy tables without bloating the full index.
-
-The mental model: the optimizer is a cost accountant. Give it accurate statistics and indexes that match your query patterns, and it makes good choices. Obscure the data with functions or give it stale stats, and it flies blind.
+In design discussions, asking "what's the write-to-read ratio on this table?" and "what does the query distribution actually look like?" signals you understand that indexes aren't free — they're a bet on your workload.

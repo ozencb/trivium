@@ -1,32 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## JWT Signing and Verification
 
-JWTs let a server issue a tamper-proof claim ("this user is authenticated as user ID 42") that clients can carry around and present without the server needing to do a database lookup every time. The signing mechanism is what makes that tamper-proof part actually hold.
+A JWT isn't encrypted by default — it's *signed*. The signing step is what makes it tamper-evident: anyone can decode the payload, but only the holder of the right key can produce a valid signature. Verification proves the token wasn't modified since issuance.
 
-### The core mechanism
+### The Mechanism
 
-A JWT is three base64url-encoded segments joined by dots: `header.payload.signature`. The header and payload are just JSON — readable by anyone. The signature is what binds them together and makes mutation detectable.
+A JWT is three base64url-encoded segments: header, payload, signature. The signature is computed over `header.payload` using a secret or private key. On verification, the receiver recomputes the signature and checks it matches — if the payload was altered by even one byte, the signatures diverge.
 
-**Symmetric signing (HMAC):** The server signs `base64(header) + "." + base64(payload)` using a shared secret and a hash function (e.g., HS256 = HMAC-SHA256). Verification means re-computing the signature with the same secret and checking it matches. Fast, simple — but every service that needs to verify must also hold the secret, meaning they could also *issue* tokens.
+Two algorithm families dominate:
 
-**Asymmetric signing (RSA/ECDSA):** The server signs with a private key; verifiers use the corresponding public key. A downstream service can verify a token's authenticity without being able to mint new ones. This is the right model when multiple services need to trust tokens they didn't issue.
+**HS256 (HMAC-SHA256)** — symmetric. One secret is shared between the issuer and every verifier. Fast, simple. The problem: every service that needs to *verify* tokens must also possess the secret, which means every service could *issue* tokens. In a breach, your blast radius includes all holders of that secret.
 
-The signature covers the exact bytes of header and payload. If anyone flips a single bit in the payload — changing `"role":"user"` to `"role":"admin"` — the signature no longer matches. Verification fails.
+**RS256 (RSA-SHA256)** — asymmetric. The auth service signs with a private key; everyone else verifies with the public key. Services that only need to validate tokens never touch the private key. This is the right default in any multi-service architecture.
 
-### Mental model
+### Mental Model
 
-Think of it like a wax seal on a letter. Anyone can read the letter. The seal proves it came from you and hasn't been opened. Symmetric HMAC is like everyone on your team having a copy of your seal — useful internally. Asymmetric is like a notary stamp: anyone can verify it's legitimate, but only the notary can produce it.
+Think of HS256 as a shared wax seal — anyone with the stamp can forge a letter. RS256 is a notarized signature — only the notary can sign, but any court can verify.
 
-### Practical scenarios
+### Concrete Scenarios
 
-**Backend (auth service):** You issue JWTs on login using RS256 with your private key. You publish your public key at a `/.well-known/jwks.json` endpoint. Other microservices fetch that key and verify incoming tokens locally — no auth service round-trip on every request.
+**Backend (API gateway / microservices):** Your auth service issues RS256 tokens. Each downstream service fetches the public key from a JWKS endpoint (e.g., `/.well-known/jwks.json`) and validates tokens locally without a network call to the auth service. Key rotation becomes operationally safe: publish a new keypair, keep the old public key available briefly, and services pick up the new key on next fetch. With HS256, rotation requires coordinating secret updates across every service simultaneously.
 
-**Fullstack:** Your Next.js API routes receive a JWT in the `Authorization` header. Middleware verifies the signature before any handler runs. If the sig is invalid or the token is expired (the `exp` claim is part of the signed payload, so it can't be forged either), you reject early. The client-side never sees your signing key; it just stores the token and sends it.
+**Fullstack (BFF or monolith):** HS256 is often fine here — your server both issues and verifies tokens, so there's only one secret holder. Just don't leak it to the client (the frontend never needs it) and rotate it in your secret manager, not in code.
 
-**Key rotation gotcha:** When you rotate signing keys, old tokens signed with the previous key must still verify during the overlap window. JWKS endpoints handle this by publishing multiple keys — verifiers try each `kid` (key ID) in the token header to find the right one.
+### Common Pitfalls
 
-The `alg: none` vulnerability is worth knowing: some early libraries accepted unsigned tokens if the header claimed `"alg": "none"`. Always explicitly validate the algorithm against an allowlist, never trust whatever the token header says.
+- **`alg: none` attacks** — always explicitly allowlist algorithms on verification; never accept whatever algorithm the token header claims.
+- **Trusting `iss` without validating the key source** — fetch JWKS from a URL you control or hardcode; don't let a token tell you where to fetch verification keys.
+- **Not checking `exp`** — a valid signature doesn't mean the token is current. Always validate expiration.
+- **Storing sensitive data in the payload** — it's base64, not encrypted. Anyone with the token can read the claims.
+
+RS256 is the safer default for anything beyond a single-process app. The key rotation story alone is worth the marginal complexity.

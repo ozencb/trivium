@@ -1,52 +1,59 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CSS Houdini
 
-CSS Houdini is a collection of browser APIs that expose the CSS rendering pipeline to JavaScript, letting you extend CSS itself rather than working around it. The core problem it solves: before Houdini, if you needed a visual effect the browser didn't natively support, you had to fake it with DOM hacks, canvas, or JS-driven style mutations — all of which either fight the render pipeline or live outside of it entirely.
+CSS has always been a black box: you declare properties, the browser renders them, and you have zero control over what happens in between. Houdini cracks that box open by exposing hooks into the browser's style resolution, layout, and paint phases — letting you register custom logic that the engine calls as part of its own pipeline, not after the fact via JavaScript DOM manipulation.
 
-### The core mechanism
+### The Core Mechanism
 
-The browser's rendering pipeline has discrete stages: style calculation, layout, paint, composite. Houdini gives you **worklets** — lightweight, sandboxed JS execution contexts — that hook into specific stages synchronously. This is the key difference from a `requestAnimationFrame` hack: your code runs *inside* the pipeline, not after it.
+Houdini is actually a collection of APIs, but the three you'll encounter most are:
 
-The main APIs:
+**CSS Paint API (Houdini Paint Worklet)** — lets you define a `paint()` function that the browser calls when rendering a CSS `background`, `border-image`, or `mask`. It gives you a Canvas 2D-like context sized to the element. Critically, this runs in a worklet (separate thread), so it doesn't block the main thread.
 
-- **Paint Worklet** (`CSS.paintWorklet`) — defines a custom `paint()` function you reference in CSS like `background: paint(my-thing)`. It gets a Canvas 2D-like context scoped to the element's dimensions.
-- **Properties & Values API** (`CSS.registerProperty`) — gives custom properties a type, initial value, and inheritance behavior. This is what makes custom properties animatable (browsers can interpolate typed values).
-- **Layout Worklet** — define custom layout algorithms (think: masonry, custom grid variants) that run at layout time.
-- **Animation Worklet** — drive animations on a compositor thread, linked to scroll or time, without touching the main thread.
+**CSS Properties and Values API** — lets you register custom properties with a type (`<length>`, `<color>`, etc.) and a fallback. Without this, CSS custom properties are untyped strings, which means you can't animate them smoothly — the browser doesn't know `--my-color` is a color. With `CSS.registerProperty()`, transitions and animations work as expected.
 
-### Concrete mental model
+**Layout API** — lets you implement custom layout algorithms (think: your own `display: masonry` or a circular layout). The browser calls your worklet during its layout phase rather than you recalculating positions in a `resize` observer.
 
-Think of the Paint Worklet like writing a CSS `background-image` generator. You register a painter in JS, pass it parameters via custom properties, and use it in CSS:
+### Concrete Example
+
+Imagine you want an element with a procedurally-generated polka-dot background that responds to a `--dot-size` custom property:
 
 ```js
-// my-painter.js (worklet)
-registerPaint('ripple', class {
-  static get inputProperties() { return ['--ripple-color', '--ripple-radius']; }
-  paint(ctx, size, props) {
-    ctx.arc(size.width / 2, size.height / 2, props.get('--ripple-radius').value, 0, 2 * Math.PI);
-    ctx.fillStyle = props.get('--ripple-color').toString();
-    ctx.fill();
+// paint-worklet.js
+registerPaint('dots', class {
+  static get inputProperties() { return ['--dot-size']; }
+  paint(ctx, geom, props) {
+    const size = props.get('--dot-size').value || 10;
+    for (let x = 0; x < geom.width; x += size * 2) {
+      for (let y = 0; y < geom.height; y += size * 2) {
+        ctx.beginPath();
+        ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 });
 ```
 
 ```css
-.button {
-  --ripple-color: rgba(0,0,0,0.2);
-  --ripple-radius: 80;
-  background: paint(ripple);
-  transition: --ripple-radius 0.3s ease; /* animatable because it's typed */
+.el {
+  --dot-size: 20;
+  background: paint(dots);
+  transition: --dot-size 0.3s; /* works if registered via CSS.registerProperty */
 }
 ```
 
-### Practical scenarios
+No `canvas` element, no `requestAnimationFrame` loop, no layout thrashing.
 
-**Frontend:** Instead of maintaining a canvas overlay or complex pseudo-element chains for a custom border animation, you register a paint worklet once and ship it as a self-contained CSS primitive. Design systems benefit a lot here — you can expose parameterized, GPU-composited effects that consumers control entirely via CSS custom properties.
+### When to Reach for This
 
-**Fullstack:** On the server side, Houdini itself is irrelevant, but understanding it matters for SSR performance decisions. Paint worklets load asynchronously and aren't pre-rendered — if you're using them for above-the-fold styling, you'll need a fallback strategy, because the worklet may not be registered by first paint.
+**Frontend:** Custom background effects, generative art tied to component state, smooth CSS-animated gradients or textures that would otherwise require Canvas or WebGL. Also useful for polyfilling layout behaviors (gap support in older Safari, masonry-like grids) without JavaScript-driven repositioning.
 
-The broader significance: Houdini is why the CSS Typed OM and `@property` syntax exist. Even if you never write a worklet, you're already using Houdini's foundational layer.
+**Fullstack:** Less directly relevant server-side, but if you're SSR-ing components that rely on Houdini paint worklets, remember those worklets register client-side only — your server render will fall back to the registered initial value, so design your fallbacks intentionally.
+
+### Pitfalls
+
+Browser support is partial — Paint API is solid in Chromium, but Firefox has lagged. Safari added it behind a flag. The [CSS Houdini Is It Ready?](https://ishoudinireadyyet.com) tracker is the real-time reference. Use `@supports` or `CSS.paintWorklet` existence checks before loading worklets.

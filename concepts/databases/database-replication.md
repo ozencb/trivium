@@ -1,30 +1,31 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Database replication** is the continuous process of propagating writes from one node (the primary) to one or more others (replicas), so your data survives node failure and read load can be distributed.
+## Database Replication
 
-## Core mechanism
+The primary node writes every change to its WAL before applying it locally — replication exploits this by shipping those same WAL entries to one or more replica nodes, which replay them in order. The result is a byte-for-byte copy of the primary's data, maintained continuously, that can serve reads without touching the primary.
 
-Since you know WAL: replication is essentially WAL shipping. The primary writes to its WAL as usual, and replicas receive and replay that stream. Two main modes:
+**The core mechanism**
 
-**Physical (streaming) replication** — the replica receives raw WAL bytes and applies them in order, ending up byte-for-byte identical to the primary. This is what Postgres streaming replication does by default.
+In streaming replication (Postgres's default), the replica opens a persistent connection to the primary and requests WAL records starting from its current LSN (log sequence number). The primary sends records as they're written — the replica applies them and advances its LSN. The replica is always *replaying history*, never making independent decisions about data.
 
-**Logical replication** — the primary decodes WAL into row-level change events (INSERT/UPDATE/DELETE) and ships those. More flexible: you can replicate to a different schema, a different Postgres major version, or filter to specific tables.
+The critical choice is **synchronous vs. asynchronous**:
 
-The replica tracks its position via an LSN (Log Sequence Number in Postgres) — essentially a cursor into the WAL. It continuously asks "give me everything after position X."
+- **Async**: Primary commits without waiting for replica acknowledgment. Low write latency, but if the primary crashes before the replica catches up, you lose those writes. The replica's copy is *eventually consistent*.
+- **Sync**: Primary waits until at least one replica has written the WAL entry to durable storage before acknowledging the commit. You get a durability guarantee across nodes, but every write now has network round-trip added to its latency.
 
-**Sync vs. async** is the critical tradeoff: async replication (default) lets the primary acknowledge a write after its own WAL write, without waiting for replicas. This creates **replication lag** — replicas trail behind by milliseconds to seconds under normal load, more under pressure. Synchronous replication makes the primary wait for at least one replica to confirm receipt before acknowledging, eliminating lag but adding latency to every write.
+**Mental model**
 
-## Mental model
+Think of the WAL as a shared append-only log. The primary is the writer; replicas are consumers playing catch-up. As long as they consume in order and don't skip entries, they'll converge on identical state. The "lag" is just how far behind in the log each replica is.
 
-Think of it like a distributed event log with a subscriber. The primary is the producer; replicas are consumers that can fall behind. Lag is the distance between the producer's head and a consumer's cursor.
+**In practice**
 
-## Practical scenarios
+*Backend*: Route `SELECT` queries to read replicas to offload the primary. Works well for dashboards, reporting, and read-heavy API endpoints — but be aware of replication lag. If a user writes data and immediately reads it back through a replica, they might see stale state. Apps that can't tolerate this need to read from primary after writes (or use sync replication).
 
-**Backend:** Read replicas let you offload SELECT queries from the primary. The trap: a user writes data, immediately reads it back, hits a lagging replica, and sees stale state. Common fixes are read-your-writes routing (send reads to primary for N seconds post-write), or accepting eventual consistency where staleness is tolerable.
+*SRE*: Replication lag (`pg_stat_replication`, `seconds_behind_master` in MySQL) is a key health signal. A replica that's falling behind under load is a ticking clock — if it lags too far and the primary's WAL is retained only for N hours, the replica can't reconnect after a failure. Replica promotion during failover requires understanding *which* replica is most caught up to minimize data loss.
 
-**SRE:** Failover correctness depends entirely on replication state at the moment of failure. If the primary crashes with async replication, the replica you promote may be 500ms behind — those writes are gone. Replication lag in bytes and seconds should be a first-class alert, not an afterthought.
+*DevOps*: Replication topology decisions are infrastructure decisions. Async replicas in the same datacenter are cheap insurance for read scaling. Sync replicas in a second AZ give you failover guarantees at the cost of cross-AZ write latency. Cascading replication (replica of a replica) can distribute WAL load but deepens the lag chain.
 
-**DevOps:** HA tooling like Patroni or ProxySQL automates failover by picking the most-caught-up replica. Schema migrations are trickier: a DDL on the primary replicates to replicas, but if replicas can't apply it (incompatible change, lock contention), replication breaks. Zero-downtime migrations need to account for the replication path, not just the primary.
+The key invariant: replicas are only as fresh as their lag allows. Design your read paths around whether staleness is acceptable, not around the assumption that replicas are always current.

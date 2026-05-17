@@ -1,46 +1,49 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Responsive images** let the browser download the most appropriate image for the current device, rather than forcing every device to download the same asset — the core problem being that a 4K hero image wastes bandwidth on a phone and looks terrible scaled up on a Retina display.
+## Responsive Images
 
-## The Core Mechanism
+The browser fetches images before layout is complete — meaning it can't know the rendered size of an `<img>` when it starts downloading. Without hints, it defaults to the full-resolution source, making a 400px mobile slot download a 2400px image. Responsive images give the browser enough information to make a smart fetch decision upfront.
 
-The browser knows two things you don't at markup-writing time: the user's screen resolution (device pixel ratio) and the rendered layout width of the element. Responsive images give the browser a *menu* of image variants and the rules to choose among them, deferring that decision to request time rather than compile time.
+### The Core Mechanism
 
-There are two orthogonal axes:
-
-**Resolution switching** — same image, different sizes. You provide `srcset` with width descriptors (`w`), and `sizes` tells the browser how wide the `<img>` will render at various viewport widths. The browser multiplies: if the image renders at 600px on a 2x display, it looks for an asset ≥ 1200px wide.
+`srcset` declares a menu of image variants with their intrinsic widths (or pixel densities). `sizes` tells the browser how wide the image will render at various viewport breakpoints — *before* CSS is parsed. The browser computes: given the viewport width, the matching `sizes` rule, and the device pixel ratio, which `srcset` candidate is the smallest one that still looks good?
 
 ```html
 <img
-  srcset="hero-400.jpg 400w, hero-800.jpg 800w, hero-1600.jpg 1600w"
-  sizes="(max-width: 768px) 100vw, 50vw"
   src="hero-800.jpg"
+  srcset="hero-400.jpg 400w, hero-800.jpg 800w, hero-1600.jpg 1600w"
+  sizes="(max-width: 600px) 100vw, (max-width: 1200px) 50vw, 800px"
   alt="Hero"
 />
 ```
 
-**Art direction** — different images at different contexts (crop, aspect ratio, subject framing). Use `<picture>` with `<source media="...">` for this; the browser picks the first matching source.
+On a 375px Retina phone (2x DPR), the browser targets ~750 CSS pixels of image data and picks `hero-800.jpg`. On a 1400px desktop monitor, it picks `hero-1600.jpg`. The `src` is just a fallback.
+
+`<picture>` is the escape hatch when the browser's automatic selection isn't enough — art direction (different crops per breakpoint), format negotiation (WebP with JPEG fallback), or portrait vs. landscape variants:
 
 ```html
 <picture>
-  <source media="(max-width: 600px)" srcset="hero-portrait.jpg" />
-  <img src="hero-landscape.jpg" alt="Hero" />
+  <source media="(max-width: 600px)" srcset="hero-crop-mobile.webp" type="image/webp">
+  <source srcset="hero-wide.webp" type="image/webp">
+  <img src="hero-wide.jpg" alt="Hero">
 </picture>
 ```
 
-## Mental Model
+### Common Pitfalls
 
-Think of it like a CDN serving the right cache tier. You pre-generate variants; the browser's layout engine calculates demand at request time and picks from your menu. `src` is the fallback, not the primary.
+**Wrong `sizes` values** are the most common failure. If `sizes` says `100vw` but the image renders at `50vw` due to a two-column layout, you're downloading twice the needed data. Measure actual rendered widths in DevTools and set `sizes` accurately.
 
-## Practical Scenarios
+**Forgetting DPR** — a 400w candidate on a 2x display looks blurry. Either include 2x variants or let the browser math handle it by providing enough width steps.
 
-**Frontend:** A marketing site with a full-bleed hero. Without responsive images, a 2MB desktop image loads on mobile over 4G. With `srcset`/`sizes`, mobile gets a 200KB crop. The critical rendering path is shorter; LCP improves measurably.
+**Generating too few variants** — jumping from 400w to 1600w leaves the browser with bad options. 3–5 variants across the range you care about is typical.
 
-**Fullstack:** When you control image uploads (e.g., user avatars, product photos), your server-side pipeline should generate variants on ingest — typically via Sharp, ImageMagick, or a service like Cloudinary/imgix. The backend concern is generating and storing variants; the frontend concern is expressing the selection hints correctly. If you're using Next.js, `<Image>` handles this automatically via its image optimization API, but understanding the underlying mechanism tells you *why* the `sizes` prop matters and why omitting it causes it to default to 100vw (and over-fetch).
+### Practical Scenarios
 
-## Connection to What's Next
+**Frontend:** Any hero image, product card grid, or avatar that renders at different sizes across breakpoints. This is especially impactful on mobile-heavy traffic where you're shaving 200–800KB per page load.
 
-Responsive images and lazy loading compose cleanly: `sizes`/`srcset` determine *which* asset loads, `loading="lazy"` determines *when*. Both are about deferring or reducing network cost — different levers on the same problem.
+**Fullstack:** Image CDNs (Cloudinary, Imgix, Next.js Image) generate the srcset variants server-side and inject the correct markup automatically. Understanding the underlying mechanism lets you debug when the CDN's default behavior doesn't match your layout — which happens often when you use CSS Grid or flex with dynamic column counts that the CDN can't infer.
+
+This is the prerequisite mental model for lazy loading: once you understand that the browser makes fetch decisions early based on `sizes`, you can see why `loading="lazy"` defers that decision for below-fold images without guessing.

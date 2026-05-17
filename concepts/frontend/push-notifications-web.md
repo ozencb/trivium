@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Web Push Notifications
 
-Web push lets servers send messages to users even when the browser tab is closed — achieved by routing messages through a browser vendor's push service rather than a direct server-to-client connection.
+Web Push lets a server send messages to a user's browser even when your site isn't open — the browser receives the message via a background service worker, which can then display a native OS notification or take action silently.
 
-### The Core Mechanism
+### Core mechanism
 
-The architecture has three parties: your server, the browser's push service (FCM for Chrome, Mozilla's autopush for Firefox, APNs for Safari), and the service worker.
+The flow has three parties: your server, a browser vendor's push service (Google's FCM, Mozilla's autopush, etc.), and the browser. When a user grants permission, the browser generates a unique **push subscription** — an endpoint URL on the vendor's push service plus a pair of encryption keys. Your server stores this subscription. To push a message, your server sends an HTTP POST to that endpoint, encrypted with the user's public key and signed with your **VAPID** key pair.
 
-When a user grants notification permission, the browser generates a **push subscription** — an endpoint URL on the vendor's push service plus a pair of encryption keys (auth and p256dh). Your server stores this subscription. To send a push, your server makes an authenticated HTTP POST to that endpoint URL with an encrypted payload. The push service queues it and delivers it to the client when the browser is connected. The service worker's `push` event fires (even with no open tabs), and it calls `self.registration.showNotification()`.
+VAPID (Voluntary Application Server Identification) is what prevents anyone else from abusing the endpoint — you sign the request with your private key, the push service verifies it. Without this, anyone who obtained the endpoint URL could spam your users.
 
-The authentication part uses **VAPID** (Voluntary Application Server Identification): you generate a public/private key pair, include the public key when subscribing, and sign your push requests with the private key. The push service verifies this so only your server can send to your subscriptions.
+The push service queues the message and delivers it to the browser (waking it if needed). The browser hands it to your service worker's `push` event handler, which runs even with no tab open. From there, you control what happens: show a `Notification`, sync data, update a badge.
 
-### Mental Model
+### Mental model
 
-Think of it like email infrastructure: you don't deliver email yourself — you hand it to an SMTP server that handles delivery. Similarly, you hand your push message to the browser vendor's push service, which handles the actual "wake up that browser" work. You never have a persistent connection to users; you just POST to an endpoint and the vendor handles the rest.
+Think of it like a letter-drop system. Each user gets a mailbox (the push subscription endpoint) at a post office run by the browser vendor. Only you have the stamp (VAPID key) proving mail is from your app. The post office holds mail until the recipient's device is online, then delivers it. Your service worker is the person who checks the mailbox and decides whether to ring the doorbell.
 
-### Practical Scenarios
+### Practical scenarios
 
-**Frontend:** The subscription lifecycle lives in client code — requesting permission, calling `pushManager.subscribe()` with your VAPID public key, and sending the resulting subscription object to your backend. You also handle the `push` and `notificationclick` events in the service worker to display notifications and route clicks to specific URLs or open/focus a window.
+**Frontend**: Handle the `push` event in your service worker, parse the payload with `event.data.json()`, and call `self.registration.showNotification()`. Store the subscription in your backend when the user opts in via `PushManager.subscribe()`. The tricky part is permission UX — browsers block sites that immediately prompt on load; gate it behind a user action.
 
-**Fullstack:** Server-side you store subscriptions per-user (they're per-browser, so one user can have multiple), send pushes using a library like `web-push` (Node) or `pywebpush` (Python), and handle expired/invalid subscriptions — if the push service returns 404 or 410, delete that subscription. You'll also deal with payload size limits (~4KB) and TTL (how long the push service should retain undelivered messages).
+**Fullstack**: On the server side, use a library like `web-push` (Node) or `pywebpush` (Python) to handle the encryption and VAPID signing. You'll store subscriptions per user, handle `410 Gone` responses from the push service (subscription expired — delete it), and manage broadcast vs. targeted delivery. This integrates naturally with background jobs: a new order, a deployment finishing, a price alert.
 
-### Key Gotchas
+### When to reach for it
 
-- Subscriptions are browser-specific and ephemeral — they change after certain browser updates or if the user clears site data
-- Safari on iOS only added support in 2023, and requires a web app manifest with `display: standalone`
-- The encryption is mandatory (payload isn't optional-plaintext) — the browser vendor never sees your message content
+Use it when you need to re-engage users outside your app — alerts that have time sensitivity or require no user presence. Avoid it for things better served by polling or SSE while the tab is open; push is heavier infrastructure for the asynchronous, out-of-tab case.

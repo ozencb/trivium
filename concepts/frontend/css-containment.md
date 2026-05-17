@@ -1,39 +1,41 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## CSS Containment
 
-CSS Containment lets you tell the browser that a subtree of the DOM is independent from the rest of the page, so the browser can skip that subtree when recalculating layout, paint, or style for unrelated changes.
+The browser's rendering pipeline is global by default — a text change in a deeply nested component can trigger style recalculation, layout, and paint across the entire document. CSS Containment lets you draw a hard boundary around a subtree and promise the browser that changes inside won't affect anything outside (and vice versa), so it can skip the rest.
 
-### The core mechanism
+### Core Mechanism
 
-The browser's rendering pipeline is expensive because it's often global. Change a font-size deep in the DOM and the browser potentially needs to recalculate layout for the entire document — it doesn't know whether your change affects elements elsewhere. The `contain` property is an explicit contract: "this element's internals don't affect anything outside it." The browser can then scope its invalidation work to that subtree.
+The `contain` property accepts several values that each isolate a different phase of rendering:
 
-There are four containment types:
+- **`layout`** — nothing inside affects external layout, nothing external affects internal layout. The element also becomes a containing block for absolutely positioned descendants.
+- **`paint`** — descendants don't render outside the element's border-box (implies `layout`). Effectively clips like `overflow: hidden`.
+- **`size`** — the element's size is independent of its content. You must give it an explicit size or it collapses.
+- **`style`** — CSS counters and quotes don't leak out.
+- **`content`** — shorthand for `layout paint style`. Most useful value in practice.
+- **`strict`** — `layout paint style size`. Maximum isolation, requires explicit sizing.
 
-- **`layout`** — the element's internal layout doesn't affect external elements. Floats, scroll anchors, and margin collapse are all contained.
-- **`paint`** — the element's children won't paint outside its bounds. The browser can skip painting this subtree if it's off-screen.
-- **`size`** — the element's size doesn't depend on its children. The browser can skip measuring descendants when computing this element's dimensions.
-- **`style`** — CSS counters and quotes won't escape the subtree. (Rarely used in isolation.)
+The key insight: with `contain: content`, the browser can treat that subtree as a render island. When something inside changes, it invalidates *only* that subtree's layout/paint budget — the rest of the document is skipped.
 
-`contain: content` is shorthand for `layout + paint`, and `contain: strict` means `layout + paint + size`.
+### Mental Model
 
-### Mental model
+Imagine a news feed with 200 cards. A like-count updates on card #47. Without containment, the browser conservatively checks whether that text change shifts any adjacent cards, which might shift their siblings, and so on up the tree. With `contain: content` on each card, the browser knows the card is a closed system — it recalculates only card #47's internals.
 
-Think of it like a bulkhead on a ship. Changes inside one compartment don't flood the rest of the ship. The browser can treat each contained element as if it's rendering in isolation.
+### Where You'd Actually Use This
 
-### Practical scenarios
+**Frontend:** Widget-heavy UIs — comment feeds, dashboards with live metrics, chat interfaces. Any component that updates at high frequency benefits from `contain: content`. Also useful for third-party embeds where you want to prevent their layout thrashing from dirtying your page.
 
-**Frontend — widget-heavy dashboards.** If you have a page with 50 card components, changing state inside one card would normally trigger layout recalculations across the whole document. Adding `contain: content` to each card tells the browser those cards are islands — recalc stays local. This is particularly valuable in React or Vue apps where state updates are frequent and fine-grained.
+**Fullstack:** Server-rendered pages that hydrate piecemeal (islands architecture) are a natural fit. Each island getting `contain: content` aligns the rendering model with the logical isolation you already have at the component level.
 
-**Frontend — infinite scroll / virtual lists.** List items off-screen with `contain: strict` can be completely skipped during paint, since the browser knows their size is fixed and they won't paint outside their bounds. This makes the runtime cost of off-screen DOM nodes much lower.
+The newer `content-visibility: auto` property is essentially containment with auto-skip for off-screen elements — it applies `contain: strict` implicitly and defers rendering entirely until the element enters the viewport. That's the higher-leverage version for long pages with many sections.
 
-**Fullstack — server-rendered pages with dynamic islands.** When you hydrate a single interactive widget on an otherwise static page, `contain: content` around those islands means client-side state changes don't force a full-page layout recalc. This matters when you're mixing SSR content with client-rendered components.
+### Common Pitfalls
 
-### Caveat
+- `contain: layout` silently makes the element a new containing block — absolutely positioned children inside will position relative to it, which breaks assumptions if you didn't expect it.
+- `contain: paint` clips overflow. Don't use it if you have tooltips or dropdowns that extend outside the container.
+- `contain: size` requires an explicit size. Forgetting this collapses the element to zero.
 
-Containment has side effects because it establishes a new formatting context — `layout` containment creates a new BFC, `paint` creates a new stacking context. This can break assumptions about z-index stacking or margin collapse if you apply it carelessly to existing layouts.
-
-The `content-visibility: auto` property (which implicitly applies `contain: layout style paint`) is the higher-level API most people use today — it automatically skips rendering off-screen elements entirely.
+Start with `contain: content` on leaf-level components that update independently. Measure with DevTools performance profiler — you're looking for reduced "Recalculate Style" and "Layout" entries in the flame graph.

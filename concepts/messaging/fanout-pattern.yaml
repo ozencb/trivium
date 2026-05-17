@@ -1,0 +1,15 @@
+id: fanout-pattern
+title: Fanout Pattern
+category:
+  - Messaging
+  - Patterns
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - pub-sub-pattern
+  - message-queues
+dependents: []
+brief: A topology where a single published event is delivered in parallel to multiple subscribers simultaneously, enabling notifications, cache invalidation, and replication without coupling producers to consumers.

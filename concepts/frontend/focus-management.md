@@ -1,42 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Focus Management
 
-Focus management is the practice of programmatically controlling which element holds keyboard focus, ensuring keyboard-only users can always orient themselves and interact with dynamic UI changes without getting lost.
+When you change what's on the page — navigating routes, opening modals, inserting validation errors — the browser's focus state doesn't automatically update to reflect that change. Focus management is the practice of explicitly moving focus to the right place so keyboard users aren't left stranded in the DOM equivalent of a dead end.
 
-### The Core Mechanism
+### The core problem
 
-Browsers maintain a single focused element at a time (accessible via `document.activeElement`). When content changes dynamically — a modal opens, a route changes, a drawer slides in — the DOM changes but focus doesn't move automatically. It stays wherever it was, often on an element that no longer exists or that's now obscured. The user is effectively teleported to a different page while their "cursor" is still somewhere in the void.
+The browser tracks a single focused element at any moment. When you remove that element from the DOM (or bury it behind a modal overlay), focus either disappears entirely or gets reset to `<body>`. For a sighted user with a mouse this is invisible — they just click. For a keyboard or screen reader user, they've lost their place entirely and have no natural way to find the new content without tabbing through everything from the top.
 
-Focus management means you take ownership of where focus lands after state transitions, using `element.focus()` or by ensuring the right element has `autofocus` at the right moment.
+The fix is mechanical: call `element.focus()` at the right moment, after the DOM has settled.
 
-### Mental Model
+### Mental model
 
-Think of it like managing scroll position. When a user clicks a link and lands on a new page, the browser scrolls to the top. You'd never leave them 1200px down from a previous page's position. Focus is the same thing — it needs to reset or move intentionally on state transitions, otherwise keyboard users are disoriented.
+Think of focus as a text cursor. When you cut text and paste it somewhere else, your editor repositions the cursor — it doesn't leave it floating where the old text was. Your job as the developer is to be that editor. The browser won't do it for you.
 
-### Concrete Example
+### Where this actually bites you
 
-A modal dialog: when it opens, focus should move to the first interactive element inside it (or the modal container itself if descriptive). While the modal is open, focus should be **trapped** inside — Tab cycles through modal elements only, not the background content. When the modal closes, focus returns to the trigger that opened it.
+**Modal dialogs** — Two requirements: when the modal opens, focus moves inside it (usually to the first focusable element or a descriptive heading). When it closes, focus returns to the element that triggered it. If you don't return focus, the user is teleported to the top of the document.
 
-```js
-// On modal open
-modalRef.current.querySelector('button, [href], input, [tabindex]').focus();
+**SPA route transitions** — This is the most commonly missed one. After navigation, focus typically stays wherever it was on the previous page, often a link in a nav that no longer makes sense in context. The standard pattern is to focus the page's `<h1>` or a skip-navigation landmark after each route change. React Router doesn't handle this for you; neither does Next.js by default without explicit hooks.
 
-// On modal close
-triggerRef.current.focus();
-```
+**Inline error insertion** — If you insert a validation error summary above a form on submit, focus needs to move to it. Otherwise the user submits, nothing appears to happen from their perspective, and they don't know why.
 
-Without the return-to-trigger step, a screen reader user who closes the modal is stranded at the top of the page.
+**Focus trapping** — Modals also require trapping: `Tab` and `Shift+Tab` should cycle within the modal, not escape into the background. This means intercepting keyboard events and wrapping around when you reach the last/first focusable element.
 
-### Practical Scenarios
+### Common pitfalls
 
-**Frontend (SPAs):** Route changes are the most common failure point. React Router and other routers don't manage focus — navigating from `/settings` to `/profile` leaves focus on the nav link. The fix is focusing the `<h1>` or a skip-target on route change, often via a "live region" announcement + focus on the page heading.
+- Focusing a `<div>` without `tabindex="-1"` — `focus()` silently fails on non-interactive elements without it
+- Moving focus before the element is rendered (use `useEffect` or `requestAnimationFrame` as needed)
+- Focusing too eagerly on minor updates (every toast notification shouldn't hijack focus — use ARIA live regions for announcements that don't need a focus shift)
 
-**Fullstack (server-rendered with JS enhancements):** Form submissions that partially update the page (HTMX, Turbo, custom fetch) leave focus on the submit button, which may now be disabled or re-rendered as a new DOM node (losing focus entirely). You need to explicitly refocus the button or the confirmation message after the swap.
-
-**Portals and tooltips:** Content rendered outside the normal DOM tree (React portals) can break tab order expectations. Focus needs to be explicitly moved into the portal and back out.
-
-The underlying rule: any time a user action causes a significant DOM change, ask "where does focus go now, and does that make sense to someone who can't see the page?"
+For fullstack setups with server-rendered partial updates (htmx, Turbo), the same rules apply — you're just wiring the focus call to a response event instead of a React state change.

@@ -1,37 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Cache Invalidation
 
-A cache is only useful if its data reflects reality. Cache invalidation is the process of removing or updating stale cached data when the underlying source of truth changes — and it's hard precisely because "when" is often non-obvious.
+Caching is trivially easy; keeping a cache correct is not. The moment you store a copy of data, you've created two sources of truth that must agree — and every mutation that bypasses the cache is a silent lie waiting to be read.
 
 **The core problem**
 
-When you cache a value, you're making a bet: "this won't change before someone reads it again." That bet has a cost when you're wrong. The challenge isn't the mechanics of deletion — it's knowing *which* cached entries are affected by a given mutation, and doing that determination correctly and efficiently at scale.
+A cache is a bet: "this data won't change before someone reads it." Invalidation is what happens when the bet loses. The difficulty isn't the mechanics of deletion — it's *knowing when to invalidate*. That requires the cache to have complete knowledge of every write path to the underlying data. In a system with multiple services, async queues, direct DB writes, and third-party integrations, achieving that knowledge is genuinely hard.
 
-Cache entries go stale in three main ways:
-- **TTL expiry**: you set a time-to-live and accept eventual staleness
-- **Event-driven invalidation**: something upstream explicitly invalidates on write
-- **Invalidation on read**: you check freshness at read time (ETags, version tokens, etc.)
+There are two fundamental strategies, and the tradeoffs between them define most of the design space:
 
-TTL is simple but blunt — you're trading correctness for simplicity, accepting a window of staleness. Event-driven is correct but requires coupling: the writer must know which caches to invalidate. Read-time validation is precise but adds latency on every cache hit.
+**TTL (time-to-live):** Every cached entry expires after N seconds. Simple, self-healing, no write coordination needed. The cost is guaranteed staleness — you accept that reads may return data up to N seconds stale. Works well when stale-for-a-bit is acceptable (product catalog, feature flags, user profiles).
 
-**Concrete model**
+**Active invalidation:** When a write happens, explicitly purge or update the cached entry. Zero staleness, but now your write path must know about the cache. The bug surface explodes: what if the cache write succeeds but the DB write fails? What if two services write concurrently and invalidation messages arrive out of order?
 
-Imagine a product page with price cached at the CDN edge. A pricing service updates the price. Without invalidation, users see the old price until TTL expires — maybe 5 minutes, maybe an hour. Event-driven invalidation means the pricing service fires a purge request on every price update. The tradeoff: complexity in the writer, but correctness in the cache.
+**Mental model**
 
-Now add complexity: the product page also appears in a search results cache, a recommendations cache, and a personalized homepage cache. Invalidating "all pages showing product 42" requires knowing which cache keys encode that product. This is the core difficulty — cache key design and invalidation are deeply coupled.
+Think of a whiteboard shared across a team. Someone photographs it (the cache). The moment anyone edits the whiteboard, every photograph is stale — but the photographer doesn't know. TTL says "assume photos expire after an hour." Active invalidation says "whoever edits the whiteboard must notify every photographer." Both break under specific failure modes.
 
-**By role**
+**In practice**
 
-*Backend*: When you update a user record, which cache keys need to go? If you cached `user:123` and also `team:456:members`, both are stale. Write-through patterns and explicit key namespacing help here. Tags-based invalidation (grouping keys under a logical tag and purging the tag) is a common pattern.
+*Backend:* The cache-aside pattern (read from cache, miss → load from DB → populate cache) is the default. Pair it with explicit invalidation on writes. The silent killer: background jobs or admin scripts that write directly to the DB, bypassing the invalidation logic entirely.
 
-*SRE*: Runaway invalidation storms are a real operational hazard. If a single write triggers invalidation of thousands of downstream keys simultaneously, you can cause a cache stampede — every reader races to recompute from the database. This is why thundering herd protection and probabilistic early expiry exist.
+*SRE:* TTL becomes a reliability lever. Aggressively short TTLs under incident → more DB load. Too long → stale data persists during rollbacks or config changes. Most outages involving caches aren't cache failures — they're invalidation gaps that surfaced under load.
 
-*Fullstack*: Next.js's `revalidateTag` / `revalidatePath` are exactly this problem surfaced at the framework level. When you call `revalidateTag('products')`, you're doing event-driven invalidation — telling the cache "anything tagged with 'products' is stale." The framework manages the key-to-tag mapping so you don't have to track individual keys.
+*Fullstack:* CDN caching is invalidation at scale. A deploy that changes HTML/JS must purge or version cache keys globally across edge nodes, with propagation delays measured in seconds to minutes. Cache-busting via content-hashed filenames sidesteps invalidation entirely for static assets — the URL changes, so the old cache entry is simply abandoned.
 
-**The philosophical point**
-
-Phil Karlton's "two hard things" quote (naming things and cache invalidation) isn't a joke about difficulty — it's a statement about correctness under distributed mutation. Any time you have a copy of data that can change, you've introduced the invalidation problem. How you solve it determines whether your system is fast *and* correct, or just fast.
+The reason Phil Karlton's quote ("there are only two hard things in computer science: cache invalidation and naming things") has lasted: both problems are fundamentally about maintaining consistent mappings across independently-evolving systems. There's no clean solution, only tradeoffs you must choose consciously.

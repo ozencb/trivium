@@ -1,39 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## IndexedDB
 
-IndexedDB is a low-level, transactional key-value store built into the browser that lets you persist structured data client-side at scale — unlike `localStorage`, which tops out at ~5MB and only handles strings.
+IndexedDB is a transactional, NoSQL object store built into the browser — the right tool when localStorage's string-only, synchronous, ~5MB ceiling stops being enough. It handles structured data at scale with real querying support, making it the foundation for any serious client-side persistence strategy.
 
-### Core Mechanism
+### Core mechanism
 
-IndexedDB is an actual database engine running in the browser. It's asynchronous, transaction-based, and supports indexes (hence the name). Data is organized into **object stores** (analogous to tables), and you interact with it via a request/event model — or more practically, via Promises with a wrapper library.
+The data model centers on **object stores** (roughly analogous to tables), each holding arbitrary JS objects keyed by a primary key. You define **indexes** on object stores at schema creation time, which lets you look up records by fields other than the primary key. All reads and writes happen inside **transactions** — you open one on one or more stores with a mode (`readonly` or `readwrite`), issue requests against it, and it auto-commits once all pending work drains. For large result sets, **cursors** let you iterate through records one at a time without pulling everything into memory.
 
-The key architectural point: every read/write happens inside a **transaction** scoped to one or more object stores, with a mode (`readonly` or `readwrite`). Transactions auto-commit when they go idle, which trips people up — you can't do async work mid-transaction unless it keeps the transaction alive.
+The API is fully async and event-driven at its core, though modern usage almost always goes through a thin promise wrapper like [`idb`](https://github.com/jakearchibald/idb) rather than the raw callback surface.
 
-Indexing is what makes it genuinely useful beyond a glorified cache. You can define indexes on any property of your stored objects and query by them efficiently, not just by primary key.
+### Mental model
 
-### Mental Model
+Think of it as a browser-local SQLite with a document store personality: you're storing JS objects (not typed rows), indexes are explicit rather than inferred, and schema changes are versioned and handled in an `onupgradeneeded` callback when you bump the database version number.
 
-Think of it as SQLite embedded in the browser. You have a database per origin, schemas with versioned migrations (`onupgradeneeded`), indexed tables, and ACID-ish transactions. It's not SQL — it's a document store — but the conceptual weight is similar.
+### Practical scenarios
 
-Contrast with `localStorage`: that's a synchronous string map you'd use to stash a token or a flag. IndexedDB is for when you need to store 10,000 product records, query them by category, and do it without blocking the main thread.
+**Frontend:** Pre-load and index a large product catalog so filtered search runs entirely offline. Cache API responses keyed by request URL with a timestamp, and invalidate stale entries on the next load. Persist complex form drafts — including nested objects and blobs — across page refreshes without serializing to JSON in localStorage.
 
-### Practical Scenarios
+**Fullstack:** Build the mutation queue for an offline-first app. When the user is offline, writes go into IndexedDB with a "pending" flag. A service worker with background sync picks them up and replays them against the server when connectivity returns. This is the pattern behind apps like Figma, Linear, and most PWAs that need to work disconnected.
 
-**Frontend:** A note-taking app that works offline. You write notes to IndexedDB immediately on user input, then sync to the server when connectivity is available. The user never waits on a network round-trip for local CRUD.
+### Common pitfalls
 
-**Fullstack:** A dashboard app with heavy read queries. Instead of hitting your API on every filter/sort interaction, you hydrate IndexedDB with a dataset on page load, then handle all the filtering client-side. The server becomes the source of truth on load; IndexedDB handles the interaction layer.
+**Transaction auto-commit is subtle**: a transaction commits as soon as its request queue empties, which means you cannot `await fetch(...)` inside an open transaction — it will close before the response arrives. Fetch first, then open the transaction.
 
-**Common patterns:**
-- Offline queues: buffer mutations locally, flush when online
-- Client-side caching with expiry metadata stored alongside records
-- Large asset storage (blobs, files) — IndexedDB handles binary data, `localStorage` doesn't
+**Storage is evictable by default**: browsers can clear IndexedDB under storage pressure. Call `navigator.storage.persist()` to request durable storage (user or browser grants it).
 
-### In Practice
+**Raw API verbosity**: the native API is deeply callback-oriented and cumbersome for anything beyond toy examples. Use `idb` — it's a thin, well-maintained wrapper with zero lock-in.
 
-Nobody writes raw IndexedDB in production — the API is verbose and callback-heavy. [`idb`](https://github.com/jakearchibald/idb) (Jake Archibald's thin Promise wrapper) is the standard utility. Service Workers + IndexedDB together are the backbone of offline-first PWAs.
+**Schema migrations are your responsibility**: unlike most ORMs, there's no auto-migration. You handle every version upgrade explicitly in `onupgradeneeded`, which becomes important the moment your app is deployed to real users with existing data.
 
-The main gotcha: IndexedDB is async by nature but migrations (`onupgradeneeded`) are synchronous within the version upgrade transaction, so schema changes require careful versioning logic.
+Once you understand IndexedDB, offline-first architecture — where the local store is the source of truth and the server is a sync target — becomes the natural next concept.

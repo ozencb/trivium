@@ -1,36 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Token Bucket Algorithm
+The token bucket algorithm solves a real tension in rate limiting: you want to enforce a sustained throughput ceiling without penalizing callers who batch work or experience natural bursts. It does this by separating *instantaneous capacity* from *long-term rate*.
 
-Token bucket is a rate limiting mechanism that allows **controlled bursting** — it enforces a sustained rate limit while permitting short-term traffic spikes up to a configurable ceiling.
+## The Mechanism
 
-### The core mechanism
+The bucket holds tokens up to a fixed capacity. A refill process adds tokens at a constant rate (e.g., 100/second). Each incoming request consumes one or more tokens. If tokens are available, the request proceeds; if not, it's rejected or queued. That's it.
 
-Imagine a bucket with a maximum capacity of N tokens. Tokens are added at a fixed refill rate (e.g., 100/second). Each incoming request consumes one token. If the bucket has tokens, the request proceeds. If it's empty, the request is rejected (or queued, depending on your semantics).
+The key insight is that the bucket's capacity and the refill rate are independent knobs. The refill rate sets your sustained throughput ceiling—no matter how you arrange your requests, you can't exceed it over time. The bucket capacity controls how large a burst you can absorb before that ceiling kicks in.
 
-Two parameters define the behavior:
-- **Refill rate** — the sustained throughput you're willing to allow
-- **Bucket capacity** — the maximum burst you'll absorb
+## Mental Model
 
-These are independent. A bucket of capacity 500 with a refill rate of 100/sec means: you can handle 500 requests instantly, but you'll only sustain 100/sec over time. The bucket empties during bursts and refills between them.
+Think of it as a leaky bucket in reverse: instead of water draining out, tokens drip in. You can let tokens accumulate (up to capacity), then spend them all at once. A bucket with capacity 1000 and refill rate 100/sec means a caller who's been idle for 10 seconds can fire 1000 requests immediately—then they're rate-limited to 100/sec going forward.
 
-### Mental model
+## Practical Scenarios
 
-Think of it like a prepaid phone: credits accumulate while idle (up to a cap), and you spend them when you make calls. You can burn a week's credits in one long call, but you can't borrow against the future.
+**Backend**: API gateways use this to give clients predictable burst allowances. A well-behaved client that polls occasionally gets to burst when they need it. The naive "fixed window" alternative penalizes bursty-but-reasonable usage—token bucket doesn't. Redis is the common distributed store for token counts, using Lua scripts for atomic check-and-decrement.
 
-This is the key distinction from the **leaky bucket** algorithm, which enforces a strictly smooth output rate — no bursting allowed. Token bucket is more permissive and more realistic for real traffic patterns.
+**SRE**: When protecting downstream services, token bucket lets you tune blast radius. If your database can handle 500 sustained QPS but tolerates short spikes to 2000, you set those as separate parameters. You're not just throttling—you're codifying your service's actual capacity contract. This pairs well with circuit breakers: the breaker opens on sustained overload, but token bucket handles normal variance before you get there.
 
-### Backend context
+## Common Pitfalls
 
-When you're rate limiting an API by user or API key, token bucket gives you the right tradeoffs. A legitimate client doing a batch import at startup shouldn't be punished the same way as a client hammering you in a tight loop. You grant them a burst budget (the bucket), then they're throttled to the sustained limit once it's drained.
+- **Clock skew in distributed systems**: If each node refills independently, you'll exceed your intended aggregate rate. Use a shared store or a token-bucket sidecar.
+- **Bucket capacity too large**: Clients can accumulate a 10-minute worth of burst allowance and dump it all at once, overwhelming downstreams even though the "rate limit" looks fine.
+- **Treating rejection as the only outcome**: Many implementations should *queue* rather than reject when tokens run out, especially for background jobs. Rejection is right for latency-sensitive APIs; queuing is right for batch workloads.
 
-Implementation is also cheap: store `{tokens, last_refill_time}` per key in Redis. On each request, calculate elapsed time, add the appropriate tokens (capped at max), then attempt to decrement. This is a standard atomic Lua script in Redis — no locks needed.
-
-### SRE context
-
-Token bucket is widely used for **traffic shaping at ingress** — Envoy, nginx, and most API gateways implement it natively. When a downstream dependency has a known throughput ceiling, you attach a token bucket at the call site to avoid overwhelming it during recovery (the classic thundering herd after an outage). The bucket capacity absorbs the initial reconnect surge; the refill rate keeps steady-state load within safe bounds.
-
-It also maps cleanly onto **quota systems**: give each customer a monthly token pool that refills hourly. Same algorithm, different time scale.
+Reach for token bucket when your callers have legitimate burst patterns and you want to be permissive about them without giving up the sustained rate guarantee.

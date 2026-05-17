@@ -1,41 +1,33 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Layout Thrashing
 
-Layout thrashing happens when JavaScript forces the browser to recalculate layout multiple times in a single frame — turning one cheap operation into dozens of expensive ones.
+Layout thrashing happens when you force the browser to synchronously recalculate layout multiple times in a single frame by interleaving reads and writes to the DOM. The browser normally batches style/layout work and defers it — but certain DOM reads (anything that requires knowing the current geometry: `offsetHeight`, `getBoundingClientRect`, `scrollTop`, etc.) invalidate that batch and force an immediate synchronous reflow so it can return an accurate value.
 
-### The mechanism
-
-The browser's rendering pipeline batches style and layout work. When you write to the DOM (changing styles, adding classes, modifying content), the browser marks the layout as "dirty" but defers the recalculation — it'll do it once at the end of the frame. The problem starts when you *read* layout properties (like `offsetWidth`, `getBoundingClientRect`, `scrollTop`) *after* a write. The browser can't return a stale value, so it flushes the pending layout work immediately to give you accurate numbers. Now do that in a loop — write, read, write, read — and you're forcing a full reflow on every iteration.
+**The mechanism:** After any DOM write (setting a style, adding a class, mutating innerHTML), the layout is marked "dirty." The browser won't actually recompute it until it needs to — usually at the end of the frame. But if you read a geometry property while layout is dirty, the browser *must* flush and recalculate synchronously before it can return. Do that in a loop — write, read, write, read — and you're triggering a full layout recalculation on every iteration instead of once per frame.
 
 ```js
-// Thrashing: each iteration forces a reflow
+// Thrashing — triggers reflow on every iteration
 elements.forEach(el => {
-  el.style.width = container.offsetWidth + 'px'; // read → flush, then write → dirty
+  el.style.width = container.offsetWidth + 'px'; // read forces reflow, then write dirties it again
 });
 
-// Fixed: batch reads before writes
-const width = container.offsetWidth; // one read, one flush
+// Fixed — batch reads first, then writes
+const width = container.offsetWidth; // one reflow
 elements.forEach(el => {
-  el.style.width = width + 'px'; // writes only, batched
+  el.style.width = width + 'px'; // writes only, no reads
 });
 ```
 
-### Why it hurts
+**Practical scenarios:**
 
-Layout is one of the most expensive steps in the pipeline — it calculates the geometry of every affected node and its descendants. Triggering it 50 times instead of once during an animation frame blows past the 16ms budget instantly. You get jank even on fast hardware.
+*Frontend:* The classic trap is animation loops — using `requestAnimationFrame` but reading layout inside it after a write. Also common in "match sibling heights" patterns where you iterate over elements reading height then setting it. React doesn't magically protect you here; if you're reading layout in `useLayoutEffect` after mutations, you can still thrash.
 
-### Practical scenarios
+*Fullstack:* Less obvious but relevant when building server-rendered pages with hydration-time JS. Initialization code that measures DOM elements (for things like sticky headers, virtualized lists, responsive carousels) runs before the page is interactive — if it's written naively, it can block the thread and delay TTI noticeably on lower-end devices.
 
-**Frontend:** The classic offender is animating a list where each item's size depends on its siblings or a parent container. A drag-and-drop implementation that reads element positions and writes transforms in the same loop will thrash badly. The fix is to read all positions first (one reflow), then apply all transforms in a second pass.
+**Diagnosis:** Chrome DevTools Performance panel shows purple "Layout" blocks in the flame chart. Forced synchronous layouts show up explicitly labeled, with a callstack pointing directly to the offending read. If you see many narrow purple blocks in a single frame, that's thrashing.
 
-**Fullstack / SSR hydration:** Less obvious, but initial hydration code that measures DOM elements to set dynamic sizes can thrash if it interleaves reads and writes across multiple components mounting in sequence. Each component mount writes to the DOM, then immediately reads for its own sizing logic. Tools like `requestAnimationFrame` or libraries like `fastdom` enforce the read/write separation at a framework level.
-
-### How to spot it
-
-Chrome DevTools' Performance panel shows this as interleaved purple (Layout) blocks inside a single frame rather than one consolidated block at the end. "Forced reflow" warnings in the console are the browser telling you directly that it had to flush early.
-
-The mental model: reads are free as long as nothing is dirty. Every write poisons the well for the next read.
+**Fix pattern:** FastDOM library formalizes the batch-reads-then-writes approach if you're working in a codebase without a framework managing this for you. In framework land (React, Vue), the virtual DOM handles most of this, but you lose the protection the moment you reach into the DOM directly — `ref` reads inside effect hooks being the most common offender.

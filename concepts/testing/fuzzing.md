@@ -1,38 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Fuzzing
+Fuzzing is automated chaos: you throw massive volumes of malformed, random, or mutated inputs at a program and watch what breaks. Where property-based testing proves invariants you can articulate, fuzzing finds bugs in your blind spots — the ones you didn't know to assert.
 
-Fuzzing is automated testing where you bombard a program with randomly generated, malformed, or unexpected inputs to find crashes, hangs, and security vulnerabilities that structured test cases miss. Unlike property-based testing (which you already know), fuzzing doesn't assert correctness — it hunts for failures.
+**The core mechanism**
 
-### The core mechanism
+Modern fuzzers (AFL++, libFuzzer, go-fuzz) aren't purely random. They use coverage-guided feedback: instrument the binary to track which code branches execute, then mutate inputs that trigger new branches. This directs the fuzzer toward unexplored paths rather than hammering the same surface. The fuzzer is essentially doing a guided random walk through your program's control flow, looking for panics, crashes, hangs, or memory safety violations.
 
-A fuzzer generates inputs through one of two approaches:
+This is why fuzzing is disproportionately effective at parser and protocol boundaries: a single-byte mutation to a PNG header or a Protobuf message can cascade into deeply nested parsing logic that humans never exercise in unit tests.
 
-**Mutation-based**: take valid inputs and mutate them — flip bits, truncate bytes, insert nulls, repeat chunks. Start with `{"user": "alice"}` and produce `{"user": null}`, `{"user": "alice\x00extra"}`, `{"user": "AAAA...AAAA"}` (8MB string), etc.
+**Concrete mental model**
 
-**Coverage-guided** (what modern fuzzers like libFuzzer and AFL do): instrument the binary to track which branches execute, then bias generation toward inputs that hit *new* code paths. This is the key insight — random mutation alone is dumb; mutation that explores new branches converges on edge cases fast. The fuzzer builds a corpus of "interesting" inputs that maximizes coverage, then mutates those.
+Think of your input space as a vast landscape with hidden cliffs. Unit tests are flags planted at spots you thought to check. Property-based testing validates that certain slopes are never too steep. Fuzzing sends thousands of agents wandering randomly — but agents smart enough to head toward uncharted territory when they find it. The cliffs they fall off are your bugs.
 
-This is meaningfully different from property-based testing. PBT generates structured valid inputs and verifies invariants. Fuzzing generates *anything*, including structurally invalid inputs, and just watches for the process to die.
+**Backend: where this matters**
 
-### Mental model
+Any service parsing external input is a candidate: JSON/XML/YAML parsers, file format handlers (images, PDFs, archives), custom binary protocols, SQL query builders. A backend that deserializes user-controlled data without fuzzing coverage is a liability. The ImageMagick "ImageTragick" vulnerability and dozens of curl CVEs were found this way. If you're writing a parser from scratch or wrapping a C library, fuzzing isn't optional — it's the test that earns trust.
 
-Imagine your parser as a maze. Property-based testing walks the maze by following known corridors quickly. Fuzzing throws a ball at the walls repeatedly — every time it finds a new room, it adds that spot to its "interesting positions" list and keeps bouncing from there. Over millions of iterations, it finds rooms the corridor-walkers never reach.
+Integration: add `go-fuzz` or `cargo fuzz` targets to CI. They don't need to run to completion — even a 10-minute fuzzing run in CI catches regressions in parser logic.
 
-### Backend scenarios
+**SRE: the reliability angle**
 
-Your HTTP API parses multipart uploads. Fuzzing will find: the `Content-Length` header that claims 2GB but sends 10 bytes, the boundary string containing `\r\n` in the middle, the encoding that's valid per spec but your library chokes on. These aren't things you'd write unit tests for — you don't know to look for them. Fuzzing finds the inputs that make your parser allocate unbounded memory or panic.
+Fuzzers excel at finding hangs and infinite loops, not just crashes. For an SRE, an input that causes a service to spin at 100% CPU for 30 seconds is often worse than a crash (which at least fails fast). Fuzzing your gRPC handlers or HTTP request parsers can surface these denial-of-service vectors before attackers do. Corpus management also matters operationally: save crash-reproducing inputs as regression fixtures so fixed bugs stay fixed.
 
-JSON/XML/YAML parsers, binary protocol decoders, image processing, compression libraries — anything that deserializes external data is high-value fuzzing territory.
+**The senior-engineer signal**
 
-### SRE scenarios
-
-Fuzzing is how you find the inputs that cause 100% CPU or OOM-kills in prod before attackers do. If you're operating a service that processes user-supplied data (which is almost everything), a fuzzer running against a staging environment catches denial-of-service vectors. It's also essential after patching — a regression fuzzing run validates the fix didn't introduce new crash paths.
-
-Infrastructure tooling benefits too: config file parsers, log processors, anything that ingests operator-controlled or third-party input.
-
-### Where to start
-
-Go has `go test -fuzz` built in. For C/C++/Rust, libFuzzer with sanitizers (AddressSanitizer, UBSan) is standard. For APIs, `boofuzz` and RESTler handle protocol-level fuzzing. The corpus you build compounds over time — previous crash-triggering inputs become seeds for future runs.
+Most engineers reach for fuzzing only after a CVE. Proposing it proactively — especially when your team is shipping a new serialization format or an internal protocol — signals you understand that parser correctness can't be unit-tested to safety. It also opens the conversation about attack surface: where does untrusted data enter the system, and what's the blast radius if the parser misbehaves?

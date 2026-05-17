@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Trace Sampling
 
-Trace sampling is the practice of recording only a fraction of traces instead of every request — because storing and processing 100% of traces at scale is prohibitively expensive, and most of them tell you nothing new.
+Collecting every trace in a high-traffic system is economically unworkable — a service handling 10k RPS generates millions of spans per minute. Sampling lets you retain enough signal to be useful while keeping storage and ingestion costs sane.
 
-### The core mechanism
+### The Core Tension
 
-When a request enters your system, a sampling decision is made: record this trace, or discard it. This decision propagates through every service in the call chain via the trace context headers (`traceparent` in W3C Trace Context). The critical point is that the decision must be consistent — you can't have Service A record a span while Service B discards it for the same trace, or you get orphaned, useless fragments.
+There are two fundamentally different points where you can make the keep/drop decision:
 
-There are two broad strategies:
+**Head-based sampling** decides at the start of a request, before any spans are collected. A sampling rate (e.g., 1%) is applied at the entry point, and that decision propagates downstream via the trace context header (`traceparent` in W3C Trace Context, or `X-B3-Sampled` in Zipkin). Every downstream service respects the decision — if it's not sampled, they don't bother recording. This is cheap and stateless, but blind: you're deciding before you know whether the request will be slow, erroring, or otherwise interesting.
 
-**Head-based sampling** — decide at the entry point (the root span). Simple and cheap: the decision is made once before you know anything about the request's outcome. Commonly implemented as a fixed-rate (1%) or probabilistic sampler.
+**Tail-based sampling** buffers the complete trace first, then decides at the end. A collector (like the OpenTelemetry Collector with the tail sampling processor) holds spans in memory until the root span closes, then applies rules: keep all traces with errors, keep all traces over 2 seconds, sample 1% of everything else. This catches the rare-but-important failures that head-based sampling statistically misses.
 
-**Tail-based sampling** — buffer spans and decide *after* the trace completes. This lets you keep 100% of slow or erroring traces and drop boring fast ones. It's more expensive (requires a collector that holds spans in memory) but far more useful in practice. Tools like Jaeger's sampling or OpenTelemetry Collector's `tailsampling` processor implement this.
+### Mental Model
 
-### Mental model
+Think of head-based as a coin flip at the door of a nightclub — fast, fair, but sometimes the interesting people get turned away. Tail-based is a bouncer who watches everyone dance for the whole night and then decides who gets a VIP wristband — much more accurate, but requires watching everyone.
 
-Think of a security camera system for a warehouse. Head-based sampling is recording one frame per second no matter what — cheap, but you'll miss the exact moment something breaks. Tail-based sampling is motion-activated recording — you only keep the footage where something actually happened.
+### In Practice
 
-### Practical scenarios
+**Backend:** Head-based works well when your error rate is high enough to be statistically visible at low sample rates. If you're seeing 0.1% error rates and sampling 1%, you'll get a reasonable number of error traces. But if errors are 0.01% — a rare race condition, a specific user segment hitting a bad code path — they'll slip through. The fix is layered sampling: head-sample at 5%, then tail-filter to always keep errors from that 5%.
 
-**Backend:** You're running a high-traffic API at 50k RPS. At 1% head-based sampling, you still get 500 traces/sec — plenty for latency histograms and error analysis. But for debugging a rare race condition that only manifests on 0.01% of requests, you configure a tail sampler to keep 100% of traces where any span has `error=true` or `duration > 2s`.
+**SRE:** Tail sampling introduces a stateful collector into your pipeline, which creates real operational challenges. The collector needs to buffer spans in memory across all services for the full duration of a request window. Collector restarts drop in-flight traces. Span arrival order isn't guaranteed — child spans often arrive before the root span, so the collector needs timeout logic and span reassembly. This is a genuine reliability concern to design around, not just an implementation detail.
 
-**SRE:** During an incident, you want full fidelity. Dynamic sampling lets you crank sampling rate to 100% for a specific service or endpoint temporarily. Some systems support this via remote configuration (OpenTelemetry's OpAMP protocol, for example), so you can increase sampling without a deploy. After the incident, you dial it back to avoid drowning your trace storage.
+### What Separates Senior Engineers Here
 
-### The gotcha
-
-Sampling interacts badly with derived metrics. If you compute error rates from sampled trace data, your rates are only accurate if errors are sampled at the same rate as non-errors — which they won't be if you're doing intelligent tail sampling. Keep your metrics pipeline separate from traces; don't derive error rates from span counts.
+Most engineers know head vs. tail exists. The senior-level insight is understanding the failure modes: head-based sampling creates survivorship bias in your trace data (you only see the requests you decided to watch), while tail-based creates operational complexity and a potential bottleneck. The practical answer is almost always hybrid — head-sample to control volume, tail-filter to guarantee critical traces are retained. Knowing that trade-off, and how trace context propagation actually works at the header level, is what makes the difference in a design review.

@@ -1,41 +1,41 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Cursor-based pagination replaces page numbers with a pointer into your dataset — a stable, opaque marker that says "give me records after this one." It solves the fundamental problem with offset pagination: offsets lie as soon as the underlying data changes.
+## Cursor-Based Pagination
 
-## The Core Problem with Offsets
+Offset pagination is a lie you tell yourself until you hit production. `LIMIT 20 OFFSET 100` works fine in tests, but under real traffic—where rows are being inserted and deleted—you get page drift: items appear twice or vanish entirely as the offset shifts under you. Cursor-based pagination fixes this by encoding *where you are* in the result set as a pointer to a specific row, not a position number.
 
-`LIMIT 20 OFFSET 40` tells the database "skip 40 rows, return the next 20." That works until someone inserts or deletes a row before position 40 — now your offset drifts, and users see duplicates or skipped items. On high-write tables, this isn't theoretical; it happens constantly.
+### The Core Mechanism
 
-Offsets also have a performance cliff: `OFFSET 10000` still requires the database to scan and discard 10,000 rows before returning anything useful. Even with an index, that cost accumulates.
-
-## How Cursors Work
-
-Instead of "give me page 5," the client says "give me 20 records after the record with ID 8472" (or after a timestamp, or after some composite value). The query becomes:
+Instead of "give me rows 101–120," you ask "give me 20 rows after the row with ID `abc123`." The cursor is typically the value of the sort key (often a timestamp or primary key) of the last item the client received, base64-encoded to make it opaque. On the server, this translates to a `WHERE` clause:
 
 ```sql
 SELECT * FROM posts
-WHERE created_at < '2024-01-15 10:32:00'
+WHERE created_at < '2024-11-01T10:23:00Z'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-The server returns the page plus a cursor encoding the last record's position. The client passes that cursor back for the next page — it never knows or cares about absolute positions.
+Because this hits an index directly rather than scanning and skipping rows, it's O(log n) instead of O(n). At page 500 of an offset query, you're asking the DB to read and discard 9,980 rows. With a cursor, you're seeking straight to the position.
 
-The cursor itself is usually base64-encoded JSON of the sort fields (`{"created_at": "2024-01-15T10:32:00Z", "id": 8472}`) to handle ties. You encode it so clients treat it as opaque and don't try to construct their own.
+### Concrete Mental Model
 
-## What This Requires
+Think of a bookmark vs. a page number. A page number becomes wrong the moment someone inserts a chapter. A bookmark stays exactly where you left it regardless of what gets added around it.
 
-Your sort column must be indexed, and the combination you cursor on must be **stable and unique** — otherwise "after this record" is ambiguous. This is why `(created_at, id)` is common: timestamps cluster well for the index but need `id` as a tiebreaker.
+The cursor is the bookmark. It's stable because it references an immutable property of a row (its ID or creation timestamp), not its position relative to other rows.
 
-You lose random access. You can't jump to page 50 — you must walk forward from your current cursor. This is a real tradeoff.
+### Practical Scenarios
 
-## Practical Scenarios
+**Backend:** Any feed, activity log, or event stream with frequent writes needs this. If you're building an audit log API or a Slack-style message history endpoint, offset pagination will silently corrupt the client's view under concurrent writes. Cursor pagination also pairs naturally with Kafka/event-stream semantics where you're always consuming "from offset X" — same concept, different layer.
 
-**Backend:** Feed APIs, audit logs, notification streams — any endpoint where the consumer walks forward through time-ordered data. Webhooks paginating delivery history. Admin tools listing background jobs.
+**Fullstack:** Infinite scroll is the canonical client-side use case. The client holds onto the last cursor and passes it with each "load more" request. No page numbers to manage, no state synchronization issues. The tricky part: you can't jump to page 50. Cursor pagination is inherently sequential — you can't seek arbitrarily without traversing. If your UI needs "jump to page N," you're stuck with offsets or need a hybrid.
 
-**Fullstack:** Infinite scroll is the canonical use case. The client holds the last cursor; when the user scrolls to the bottom, it fires another request. No "page 3 of 47" UI, just "load more." Chat history (walking backwards with a `before` cursor) works the same way.
+### Common Pitfalls
 
-**The tricky part** most engineers miss: bidirectional cursor pagination — letting users scroll both forward and backward — requires returning both a `next_cursor` and a `prev_cursor`, and the backward query flips the inequality and re-reverses the results before returning them. Simple to describe, easy to get wrong in implementation.
+- **Non-unique sort keys**: if two rows share the same `created_at`, your cursor is ambiguous. Fix it by making the cursor a composite of `(created_at, id)`.
+- **Leaking internals**: don't expose raw IDs as cursors — base64 encode them so clients treat them as opaque blobs, letting you change the encoding scheme later.
+- **Backward pagination**: reversing cursor direction requires storing both the "before" and "after" cursor and flipping the comparison operator. It's doable but adds complexity most teams underestimate upfront.
+
+Reach for cursor pagination any time you have a high-write dataset and sequential traversal — which is most real-world feed or log APIs.

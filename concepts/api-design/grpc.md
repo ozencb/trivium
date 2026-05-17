@@ -1,28 +1,42 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## gRPC
 
-gRPC is a typed RPC framework that uses Protocol Buffers as both the IDL and wire format, and HTTP/2 as the transport. The core motivation: REST gives you conventions, gRPC gives you a contract — one that's enforced by generated code on both sides of the wire.
+gRPC formalizes service communication into a code-generated contract: you write a `.proto` file, run `protoc`, and get strongly-typed client/server stubs in a dozen languages. The pitch over REST isn't just performance—it's that schema drift becomes a compile error rather than a runtime surprise.
 
-### How it actually works
+**Core mechanism**
 
-You define services in a `.proto` file — methods, request types, response types. The `protoc` compiler generates a client stub and a server interface in your target language. The client stub looks like a local method call; under the hood it serializes the request with protobuf, opens an HTTP/2 stream, and sends the binary payload. The server deserializes, runs your handler, and sends back a protobuf-encoded response over the same stream.
+The `.proto` file is the single source of truth. It defines services, methods, and message shapes. Code generation produces stubs that handle serialization, framing, and HTTP/2 stream management. You write business logic; the generated layer handles the wire.
 
-Because gRPC runs over HTTP/2, every call is a stream — even unary ones. This means a single TCP connection handles all concurrent RPCs via multiplexed streams, no head-of-line blocking, and HPACK header compression on repeated metadata. That's the HTTP/2 knowledge you already have cashing in directly.
+Under the hood, gRPC maps to four communication patterns:
+- **Unary** — one request, one response (equivalent to a REST call)
+- **Server streaming** — client sends once, server pushes a stream (e.g., live telemetry)
+- **Client streaming** — client streams data, server responds once (e.g., file upload)
+- **Bidirectional streaming** — both sides stream concurrently over a single HTTP/2 connection
 
-gRPC also exposes all four call patterns the HTTP/2 stream model makes possible: unary (one request, one response), server streaming, client streaming, and bidirectional streaming.
+HTTP/2 multiplexing means all four patterns share one TCP connection without head-of-line blocking. Flow control operates at both connection and stream levels, so a slow consumer can back-pressure a fast producer without application-layer polling.
 
-### Mental model
+**Mental model**
 
-Think of it as a remote function call where the compiler is your contract enforcer. If service A changes a method signature in the proto, service B's generated stub won't compile against the old definition. Compare this to REST, where a renamed field silently breaks things at runtime.
+Think of `.proto` the way you think of a TypeScript interface that both sides of a network boundary are forced to import. If Service B removes a field Service A depends on, the build breaks—not a prod incident at 2am.
 
-### In practice
+**Practical scenarios**
 
-**Backend (microservices):** This is gRPC's home turf. Internal service-to-service calls benefit from the low overhead (binary encoding is 3-10x smaller than JSON for most schemas), the strict interface contract, and streaming support for things like real-time telemetry or large data transfers. Generated stubs eliminate hand-rolled HTTP clients and manual deserialization.
+*Backend:* Internal microservice-to-microservice calls are where gRPC earns its keep. You control both endpoints, care about latency at high RPS, and want streaming without WebSocket infrastructure. Interceptors handle auth, tracing, and deadline propagation cleanly.
 
-**Fullstack:** gRPC-Web (with a proxy like Envoy or the `grpc-web` package's built-in proxy) lets browser clients call gRPC backends. More practically, even if you keep REST at the edge, you can share `.proto` files between your backend services and a BFF layer, giving you compile-time safety across service boundaries without OpenAPI drift. Teams using Buf Schema Registry take this further — central proto registry, breaking change detection in CI.
+*Fullstack:* Raw gRPC doesn't run in browsers (HTTP/2 trailers aren't exposed). You have two options: grpc-web with an Envoy proxy, or the Connect protocol (Buf's implementation), which speaks both gRPC and HTTP/1.1 JSON. For new projects, Connect is usually the better call—you get gRPC semantics without the proxy overhead.
 
-The real leverage is the contract-first workflow: define the interface, generate the code, and let the toolchain catch mismatches before they hit production.
+**Pitfalls worth knowing**
+
+- L4 load balancers treat gRPC as a single long-lived TCP connection—all traffic goes to one backend. You need L7-aware load balancing (Envoy, GCP's HTTP/2 LB) or client-side load balancing.
+- Schema evolution requires field number discipline. Never reuse a field number; use `reserved` when removing fields. Violating this silently corrupts deserialization.
+- Debugging: no curl equivalent. Use `grpcurl` or Postman's gRPC support. Missing this tooling is a common friction point when onboarding teams.
+
+**When to reach for it**
+
+Internal services at scale, bidirectional streaming, or polyglot environments where shared contract enforcement matters. Avoid it for public-facing APIs where discoverability and browser-native consumption matter more than performance—REST/JSON with OpenAPI is still the better public interface.
+
+The design-discussion signal: proposing gRPC for internal comms while keeping REST for the public API layer shows you understand the tradeoff rather than cargo-culting either approach.

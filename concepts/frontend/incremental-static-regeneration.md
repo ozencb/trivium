@@ -1,38 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Incremental Static Regeneration
+## Incremental Static Regeneration (ISR)
 
-ISR lets you serve statically generated pages while keeping them fresh — without rebuilding the entire site. It's the answer to "SSG is fast, but my data changes too often for a full rebuild to be viable."
+ISR solves the core tension in SSG: static pages are fast and cheap to serve, but they go stale. Without ISR, your only options are full rebuilds (slow, expensive) or client-side fetching (defeats the purpose). ISR gives you a third path—serve the cached page immediately, then regenerate it asynchronously once it's past its TTL.
 
-### The core mechanism
+### The mechanism
 
-ISR implements stale-while-revalidate at the page level. When a request comes in:
+When a request hits an ISR page:
 
-1. The cached static page is served immediately (fast, CDN-friendly)
-2. If the page's TTL has expired, a background regeneration is triggered
-3. The *next* request after regeneration completes gets the fresh version
+1. **First request (cold):** page doesn't exist yet—server renders it, caches it, serves it. Slow, like SSR.
+2. **Subsequent requests within TTL:** serve the cached HTML instantly. Zero compute.
+3. **First request after TTL expires:** serve the *stale* cached page immediately (the visitor never waits), then trigger a background regeneration. Next visitor gets the fresh page.
 
-The critical point: the request that triggers revalidation doesn't wait. It still gets the stale page. This means ISR trades consistency for latency — you're always fast, but you're accepting that some users see data that's up to `revalidate` seconds old.
+This is stale-while-revalidate semantics applied to the rendering pipeline, not just HTTP headers. The key insight: "stale" doesn't mean "broken"—it means slightly outdated, which is almost always acceptable.
 
-There's also **on-demand revalidation**: instead of TTL-based expiry, you hit a revalidation endpoint (typically from a CMS webhook) to invalidate specific pages immediately when content changes. This collapses the staleness window to near-zero while keeping the static delivery model.
+### Concrete mental model
 
-For dynamic routes that weren't pre-rendered at build time, ISR can generate them on first request and cache the result. Subsequent requests hit the cache. `fallback: 'blocking'` vs `fallback: true` controls whether that first request waits for generation or gets a skeleton.
+Think of a news homepage. You statically generate it at deploy time. With `revalidate: 60`, a visitor at 12:00:00 gets the cached build. A visitor at 12:01:05 (after TTL) still gets the old page, but kicks off a background render. The visitor at 12:01:06 gets the fresh one.
 
-### Mental model
+The first post-TTL request is the "trigger" visitor—they eat no latency, but they're the reason the next person gets fresh content.
 
-Think of ISR as moving cache invalidation up the stack. You already know how this works at the API or DB layer — a Redis key expires or gets invalidated by a write event, and the next read triggers a cache fill. ISR applies the same pattern to fully-rendered HTML artifacts. The "cache" is your CDN/edge; the "fill" is Next.js server-side rendering and storing the result.
+### Where it breaks down
 
-### Practical scenarios
+**On-demand invalidation vs. TTL:** TTL-based ISR is eventually consistent by definition. If you publish a critical correction, it won't propagate until the next revalidation cycle. Next.js added `res.revalidate()` (and later `revalidatePath`/`revalidateTag`) for on-demand ISR to patch this—useful when your CMS can call a webhook on publish.
 
-**Frontend**: You're building a marketing site where the content team publishes via a headless CMS. Full rebuilds take 8 minutes and content authors hate waiting. Wire a publish webhook to the revalidation endpoint — only the affected pages regenerate, in seconds.
+**Cold starts on rarely-visited pages:** If a page hasn't been requested in a while, it may be evicted from the cache and treated as a cold render again. TTL doesn't mean "cached forever."
 
-**E-commerce product pages**: Prices update hourly, inventory more frequently, but your catalog has 500k SKUs. Pre-rendering all of them at build time is impractical. ISR with `fallback: 'blocking'` generates pages on first access and caches them; a short TTL (60s) keeps pricing acceptably fresh without SSR cost per request.
+**Distributed caches:** In multi-region deployments, each region maintains its own cache. A revalidation in `us-east-1` doesn't propagate to `eu-west-1`. You can end up serving different versions across regions for the duration of the TTL.
 
-**Fullstack dashboard**: Aggregate stats that update every few minutes don't need per-request SSR. ISR at 120s TTL gives you static delivery performance (edge-cached, no server hit) with data that's fresh enough for the use case.
+### When to reach for it
 
-### The tradeoff to internalize
+- **Product catalog / marketing pages:** content changes infrequently, high traffic, SEO matters. ISR is the obvious fit.
+- **User-generated content at scale:** per-user pages with ISR + on-demand invalidation beats SSR for cost under sustained load.
+- **Dashboards with tolerable staleness:** if a 30-second-old report is fine, ISR beats SSR significantly on infrastructure cost.
 
-ISR isn't universally better than SSR — it's a bet that eventual consistency is acceptable for your data. If a user must always see their own latest write reflected immediately, ISR without on-demand revalidation will cause confusion. The answer there is either SSR for those pages, or hybrid: ISR for public/shared content, client-side fetch for personalized data on top.
+Avoid it when data must be real-time (stock prices, live scores) or when the page is personalized per-user—SSR or client-side fetching are better there.

@@ -1,0 +1,17 @@
+id: stream-processing
+title: Stream Processing
+category:
+  - Data Engineering
+  - Streaming
+roles:
+  - backend
+  - data
+  - sre
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - pub-sub-pattern
+  - kafka-partitioning
+dependents: []
+brief: Continuous computation over unbounded event streams using frameworks like Kafka Streams or Flink, enabling real-time windowed aggregations and stateful joins without batch ETL cycles.

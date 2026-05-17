@@ -1,32 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Memory-Mapped Files
 
-Memory-mapped files let you treat a file as if it were an array in RAM — you get a pointer, dereference it, and the kernel handles the I/O transparently. The payoff is avoiding explicit `read()`/`write()` syscalls and the userspace buffer copies that come with them.
+Instead of copying file data through kernel and user-space buffers via `read()`/`write()`, `mmap()` tells the kernel to alias a range of your virtual address space directly to a file. From that point on, reading those addresses *is* reading the file — the OS page fault mechanism handles the rest.
 
-### The core mechanism
+**The mechanism**
 
-When you call `mmap()`, the kernel doesn't read the file. It reserves a range of virtual addresses in your process and sets up a Virtual Memory Area (VMA) backed by the file's inode. That's it — no data moves yet.
+When you call `mmap()`, the kernel creates a virtual memory area (VMA) record — but loads nothing. The page table entries for that range are initially absent. The first access to any address in the range triggers a page fault. The fault handler looks up which file offset corresponds to that virtual address, pulls the page from the page cache (or from disk if it's cold), and inserts the page table entry. Subsequent accesses to the same page are pure memory ops — no syscall, no copy.
 
-The actual loading happens through the exact same page fault machinery that powers virtual memory. When you dereference one of those addresses and the page isn't in RAM, a page fault fires. The kernel locates the corresponding file offset, reads the page into the **page cache**, maps it into your page tables, and your instruction resumes as if nothing happened. The latency is the I/O cost; the mechanism is identical to demand paging anonymous memory.
+Critically, the mapped pages *are* the page cache. If another process already read that page via `read()`, it's the same physical frame. If two processes `mmap()` the same file with `MAP_SHARED`, they share physical pages and writes from one are immediately visible to the other.
 
-Critically, the page cache is shared. Two processes mapping the same file share the same physical pages. This is why `MAP_SHARED` writes are visible to other mappers — you're all pointing at the same pages, and dirty ones get flushed back to disk by the kernel's writeback mechanism. `MAP_PRIVATE` gives you copy-on-write: writes fork the page into a process-private copy.
+For writes: with `MAP_SHARED`, modified pages are marked dirty and flushed to disk by the kernel's write-back mechanism (or explicitly via `msync()`). With `MAP_PRIVATE`, writes trigger copy-on-write — a private page is allocated and the original file is untouched.
 
-### Mental model
+**Mental model**
 
-Think of it as `read()` that's lazy and zero-copy. With a normal `read()`, the kernel reads into a kernel buffer, then copies into your buffer — two buffers. With mmap, the page cache *is* your buffer. You get a pointer straight into it.
+Think of it as delegating buffer management to the OS. You get a pointer; the OS decides when to bring pages in and when to evict them. The page cache is a shared pool, so frequently accessed file regions stay warm without you doing anything.
 
-### Backend relevance
+**Backend**
 
-Databases lean on this heavily. SQLite's WAL mode uses mmap for reads by default. RocksDB has an `mmap_read` option. The argument is: let the OS manage the buffer cache instead of implementing your own in userspace. You get OS-level readahead, and the kernel's LRU eviction instead of a custom one. The tradeoff is losing control over I/O scheduling and getting unpredictable latency spikes when pages are evicted under memory pressure — which is why some databases (PostgreSQL) default to `pread()` and manage their own buffer pool.
+Databases lean on this heavily. LMDB maps its entire data file and relies on the OS to manage which pages are hot. RocksDB uses it for SST file reads. SQLite supports `PRAGMA mmap_size` for the same reason: random B-tree traversal becomes pointer chasing instead of `pread()` calls. The win is largest for read-heavy, random-access workloads where traditional buffering would just add a copy.
 
-For config or reference data that's read-once-at-startup and stays warm, mmap is nearly free repeated access after the initial fault.
+For serving large files, `sendfile()` is usually better (true zero-copy to the socket), but mmap works when you need to inspect or transform content in-process before sending.
 
-### SRE relevance
+**SRE**
 
-When you see a process with high VSZ but modest RSS, that's often mmap — address space is reserved, but pages haven't faulted in yet. `pmap -x <pid>` or `/proc/<pid>/maps` will show you every mapped region with backing file and permissions. This matters when investigating memory leaks: anonymous `rw-p` regions growing over time are heap/stack; file-backed `r--p` regions are usually shared libraries or mmap'd data files, which don't count as "leaked."
+Two common production puzzles it explains: a process's VSZ (virtual size) is gigabytes while RSS is modest — that's a large mmap with few pages faulted in yet. And a cold-start latency spike with a wall of page faults in `/proc/<pid>/stat` is the application warming its mmap'd files from disk.
 
-Also relevant for performance analysis: `major_faults` in `/proc/<pid>/stat` counts page faults that required disk I/O. Elevated major faults on a process you expected to be in steady-state often means your working set exceeds available RAM and pages are being evicted and re-faulted.
+The main pitfall: a file truncated while mapped causes `SIGBUS` on the next access to the now-invalid pages — not an errno you can catch cleanly. Disk I/O errors also surface as signals, not return codes, which makes error handling awkward. And eviction is outside your control, so under memory pressure the OS may evict pages you'd rather keep, causing unpredictable latency.

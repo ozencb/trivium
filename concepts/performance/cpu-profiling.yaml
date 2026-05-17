@@ -1,0 +1,16 @@
+id: cpu-profiling
+title: CPU Profiling
+category:
+  - Performance
+  - Observability
+roles:
+  - backend
+  - frontend
+  - sre
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - garbage-collection
+dependents: []
+brief: Sampling or instrumenting code execution to produce flame graphs that expose exactly where CPU time is spent, enabling evidence-driven optimization before guessing at bottlenecks.

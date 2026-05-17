@@ -1,32 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-REST isn't just "JSON over HTTP" — it's a set of six architectural constraints that, when followed, give you a system with predictable scaling properties and decoupled components. Most APIs call themselves REST but only partially satisfy the constraints, which is why understanding them matters for reasoning about tradeoffs.
+REST (Representational State Transfer) is not a protocol but an architectural style defined by six constraints—violating them is why so many "REST APIs" are actually just HTTP-wrapped RPC that breaks caching, couples clients to servers, and resists evolution.
 
-## The Six Constraints
+**The six constraints and what they actually enforce:**
 
-**Client-Server separation**: The UI and data storage concerns are decoupled. The server doesn't care how data is rendered; the client doesn't care how data is stored. This lets you evolve them independently — swap your frontend framework without touching your API contract.
+1. **Client-Server** — separates UI concerns from data/logic. The server doesn't know how data is displayed; the client doesn't know how it's stored. This is mostly obvious today, but it's the foundation everything else builds on.
 
-**Statelessness**: Each request must contain all information needed to process it. The server holds no session state between requests. Authentication tokens, pagination cursors, filters — all of it travels in the request itself. This is what makes horizontal scaling trivial: any server instance can handle any request.
+2. **Stateless** — every request must carry all context needed to process it. No session state on the server between requests. This is where most APIs quietly cheat: storing "current user state" server-side, requiring requests in a specific order, or building workflows that assume prior calls succeeded. Violating this kills horizontal scalability because any server instance must be able to handle any request independently.
 
-**Cacheability**: Responses must declare whether they're cacheable. When done right, clients and intermediaries (CDNs, proxies) can serve cached responses without hitting your origin. The `Cache-Control` and `ETag` headers are the implementation surface.
+3. **Cache** — responses must declare their cacheability. `Cache-Control`, ETags, `Last-Modified` exist to fulfill this constraint. When you return opaque JSON with no cache headers, you're forcing every client to re-fetch data that hasn't changed and making CDN caching impossible.
 
-**Uniform Interface**: The most substantive constraint, with four sub-properties. Resources are identified by URIs. Resources are manipulated through representations (you GET a JSON document, not the database row itself). Messages are self-descriptive (Content-Type, status codes carry meaning). And HATEOAS — responses include hypermedia links to valid next actions (this is the constraint most APIs skip entirely).
+4. **Uniform Interface** — the hardest constraint, made of four sub-constraints: resource identification via URIs, manipulation through representations, self-descriptive messages, and HATEOAS (hypermedia as the engine of application state). HATEOAS is what most APIs skip entirely—it means responses include links to valid next actions, so clients don't hardcode URL patterns.
 
-**Layered System**: The client doesn't know if it's talking to the origin server, a load balancer, or a caching proxy. This enables you to introduce infrastructure layers without changing the client contract.
+5. **Layered System** — clients can't tell if they're talking to a load balancer, CDN, or origin server. This enables caching proxies, API gateways, and service meshes to sit transparently between client and server.
 
-**Code on Demand** (optional): Servers can send executable code to clients — think JavaScript or WebAssembly. Rarely used deliberately, but technically REST allows it.
+6. **Code on Demand** (optional) — servers can send executable code (JavaScript, applets). Rarely used in practice, but it's why it's technically "optional."
 
-## Mental Model
+**Mental model:** Think of REST like a vending machine. Each button press (request) is self-contained—the machine doesn't remember your last selection. The display shows what's available right now (hypermedia). The machine works whether you're standing in front of it or calling through a proxy.
 
-Think of REST like the web itself. A browser doesn't maintain a session with a web server — it sends self-contained HTTP requests. Pages link to other pages (HATEOAS in practice). CDNs cache static assets. You can put Cloudflare in front of anything. REST codifies why the web scales.
+**Where this bites backend engineers:** When you build `/api/v1/checkout/step2` that only works after `/step1`, you've broken statelessness. Now your load balancer needs sticky sessions, your API is impossible to cache, and clients are coupled to your internal workflow.
 
-## Practical Implications
+**Where this bites fullstack engineers:** Hardcoding URL patterns (`/users/{id}/posts`) in frontend code violates uniform interface—if the server restructures resources, every client breaks. HATEOAS solves this by having the server tell clients what URLs to use, but most teams skip it for pragmatic reasons and pay the cost during API versioning.
 
-**Backend**: Statelessness is the constraint with the most operational impact. It means you can't use server-side sessions — you're forced into JWTs or opaque tokens validated on each request. This feels like overhead until you need to run six instances behind a load balancer, at which point it's what saves you.
-
-**Fullstack**: Cacheability and uniform interface affect how you design your API contract. If your endpoints return resources rather than operation results (GET `/orders/123` vs POST `/getOrder`), you can attach `ETag` headers and let browsers avoid redundant fetches. This is the difference between a network tab full of 200s and one full of 304s.
-
-The constraints aren't rules for their own sake — they're design decisions that unlock specific scaling and evolvability properties. Knowing which ones you're violating (and why) is more useful than claiming REST compliance.
+The reason these constraints matter together: each one is a forcing function for a quality (scalability, evolvability, cacheability) that's easy to ignore until your API has hundreds of consumers and you need to change something.

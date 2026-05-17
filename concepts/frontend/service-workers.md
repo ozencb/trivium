@@ -1,49 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Service Workers are JavaScript files that run in a background thread separate from the main browser tab — acting as a programmable proxy between your web app and the network.
+## Service Workers
 
-## The Core Mechanism
+A Service Worker is a JavaScript file the browser registers and runs in a separate thread — no DOM access, no blocking the main thread — acting as a programmable proxy between your web app and the network. The core value proposition: you control what happens when your app makes a network request.
 
-Unlike regular JS, a Service Worker has no DOM access and runs in its own thread with a different lifecycle than your page. The key insight: it intercepts `fetch` events. Every network request your page makes passes through the Service Worker's `fetch` handler first. You decide what happens — serve from cache, hit the network, or some combination.
+### The mechanism
 
-The lifecycle is the part most people initially misunderstand:
+After registration, the browser installs the service worker and it begins intercepting `fetch` events for requests from its scope (typically the origin). You get a `FetchEvent` with the full `Request` object, and you decide: hit the network, serve from cache, return a synthetic response, or do something else entirely. This happens outside the page lifecycle — the service worker persists even when the tab is closed.
 
-1. **Register** — your page installs the SW (once, or when it changes)
-2. **Install** — SW installs, you typically pre-cache static assets here
-3. **Activate** — SW takes control, you clean up old caches here
-4. **Idle / Fetch** — SW intercepts requests while active
+The lifecycle is the tricky part. A service worker goes through `installing → waiting → active`. If a user has an old service worker active, a new version installs but won't activate until all tabs using the old one are closed. This trips up most people the first time they ship an update and wonder why nothing changed.
 
-A crucial detail: a new SW won't activate until all tabs using the old one are closed. This is intentional — no half-deployed states.
+### Mental model
 
-## Mental Model
-
-Think of it as a local reverse proxy running inside the browser. When you hit `nginx` in production, it can cache responses, rewrite URLs, serve stale-while-revalidate. A Service Worker does the same thing, but client-side, per-user, with full JS expressiveness.
+Think of it as Nginx for your browser. You're writing routing logic, cache policies, and fallback behavior — but client-side, per-origin. The `Cache API` is your backing store (key-value, request/response pairs), and you populate it during the `install` event by precaching critical assets.
 
 ```js
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      return cached ?? fetch(event.request);
-    })
+    caches.match(event.request).then(cached => cached ?? fetch(event.request))
   );
 });
 ```
 
-That's cache-first in ~5 lines. If the asset is cached, return it immediately. Otherwise hit the network.
+Cache-first: serve from cache, fall back to network. Two lines of logic, but the implications are significant — your app now works without a connection.
 
-## Practical Scenarios
+### Where this matters in practice
 
-**Frontend:** You ship a dashboard-heavy app. Without a SW, slow connections mean blank screens during load. With one, you pre-cache your shell (HTML, JS bundles, fonts) during install. First paint is instant from cache; data fetches go to the network as normal. Users on flaky connections stop complaining.
+**Frontend:** Offline-first PWAs. Cache your app shell during install, serve it immediately, then hydrate with fresh data when the network is available. This eliminates the blank screen on flaky connections.
 
-**Fullstack:** You're building a field-data entry app used in warehouses with spotty WiFi. The SW intercepts POST requests when offline, queues them via Background Sync, and replays them when connectivity returns. Your server never needed to change — the SW handles the offline/online bridging entirely on the client.
+**Fullstack:** Background sync lets you queue writes when offline and replay them when connectivity returns — without the user waiting around. Combined with push notifications (which also arrive via service workers, even when the tab is closed), you get a legitimate alternative to native apps for engagement-driven workflows.
 
-## What Makes It Different
+### Common pitfalls
 
-The Service Worker is persistent across page loads and survives the tab closing (it can wake up for push events or sync). This is what enables Web Push Notifications — the SW receives the push message even when the site isn't open.
+- **Cache invalidation**: If you cache aggressively without versioning, users get stale content indefinitely. Tie cache names to build hashes.
+- **HTTPS required**: Service workers only register on secure origins (or localhost). Non-negotiable.
+- **Scope mismatches**: A worker registered at `/app/sw.js` only controls requests under `/app/`. Unexpected behavior if your API is at `/`.
+- **The waiting trap**: Calling `skipWaiting()` forces immediate activation, but can cause subtle inconsistencies if the old and new worker have different cache strategies mid-session.
 
-It requires HTTPS (or localhost), which is intentional: a network-level proxy that can rewrite responses is a significant security surface.
-
-The SW is essentially the missing piece that lets web apps match native app capabilities — offline support, background tasks, push — without an app store.
+The abstraction unlocks Cache API, Background Sync, and Push Notifications — all of which are useless without a service worker as the underlying runtime.

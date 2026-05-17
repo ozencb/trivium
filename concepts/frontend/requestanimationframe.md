@@ -1,41 +1,50 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-`requestAnimationFrame` (rAF) is the browser's mechanism for scheduling visual updates in sync with the display's refresh cycle — use it instead of `setTimeout`/`setInterval` when you want smooth, efficient animation.
+## requestAnimationFrame
 
-## The Core Mechanism
+`requestAnimationFrame` (rAF) lets you schedule a callback to run just before the browser paints the next frame. The key insight isn't the timing — it's that the browser *tells you* when it's ready to paint, rather than you guessing with `setTimeout`.
 
-The browser paints frames at a fixed rate (typically 60fps, so ~16.67ms per frame). `setTimeout(fn, 16)` *approximates* this but drifts: timers fire based on the JS event loop, not the display hardware. Your update might land mid-frame, causing the browser to hold it until the next paint anyway — or worse, cause tearing if you're pushing DOM changes out of sync with the rendering pipeline.
+**Why this matters mechanically**
 
-rAF ties your callback to the browser's actual render loop. It fires *before* the browser paints the next frame, in the "update rendering" step — after layout thrashing from JS, but before Style/Layout/Paint/Composite. This gives you exactly one slot per frame to make changes that will be visible in that frame.
+You already know the rendering pipeline: JS → Style → Layout → Paint → Composite. rAF hooks into the start of that sequence, once per frame, synchronized to the display's refresh rate (typically 60Hz, so ~16.7ms per frame). `setTimeout(fn, 16)` seems equivalent but isn't — timers drift against the display cycle. You'll get callbacks landing mid-frame, causing the browser to render a partial state, or two callbacks firing before a single paint, wasting computation. rAF eliminates both problems by letting the browser drive the cadence.
 
-The callback receives a `DOMHighResTimeStamp` — the timestamp of the frame, not the time your callback was invoked. This is subtle but important: multiple rAF callbacks in the same frame get the *same* timestamp, letting you synchronize animations precisely.
+**The loop pattern**
 
 ```js
 function animate(timestamp) {
-  const progress = (timestamp - startTime) / duration;
-  element.style.transform = `translateX(${progress * 300}px)`;
-  
-  if (progress < 1) requestAnimationFrame(animate);
+  // timestamp is a high-res DOMHighResTimeStamp
+  const elapsed = timestamp - lastTimestamp;
+  lastTimestamp = timestamp;
+
+  updateState(elapsed); // physics, position, etc.
+  draw();
+
+  requestAnimationFrame(animate);
 }
 
-requestAnimationFrame(animate);
+const id = requestAnimationFrame(animate);
+// cancel with cancelAnimationFrame(id)
 ```
 
-Notice the recursive call — rAF is one-shot by design. You opt into each frame explicitly. This also means cancellation (`cancelAnimationFrame`) is clean and composable.
+Note the recursive structure — each invocation schedules the next. The `timestamp` arg is crucial: use it to compute `elapsed` time between frames rather than assuming 16ms. On a 120Hz display or under CPU load, frame timing varies.
 
-## Mental Model
+**When to reach for it**
 
-Think of it as subscribing to a "pre-paint" event that fires at the display's heartbeat. You're not setting a timer; you're saying "before the browser draws the next frame, run this first."
+- **Canvas/WebGL rendering loops**: the canonical use case. You need frame-locked updates and rAF gives you exactly that.
+- **JS-driven animation where CSS can't help**: animating along a SVG path, physics simulations, particle systems, anything requiring per-frame computation.
+- **Batching DOM reads/writes**: reading layout properties (getBoundingClientRect) and writing them in the same rAF callback avoids interleaved forced reflows.
 
-## Practical Scenarios
+**When not to reach for it**
 
-**Frontend:** Any time you're animating with JS — scroll-linked effects, canvas drawing loops, custom physics, parallax. Anything `requestAnimationFrame`-driven will automatically pause when the tab is hidden (browsers throttle or stop rAF in background tabs), saving battery and CPU without extra logic.
+If CSS transitions or the Web Animations API can do it, let them — the browser can optimize those off the main thread. rAF is main-thread JS, so it competes with everything else. Also avoid using it as a general throttle for non-visual work (scroll handlers, etc.) — there are better patterns for that.
 
-**Fullstack:** Less obvious but relevant when building dashboards or data-viz. If you're pushing WebSocket updates to a chart and naively re-rendering on every message, you'll paint 10× per frame during bursts. Batching updates with rAF — accumulate data changes, render once per frame — eliminates jank and reduces layout thrash significantly.
+**Pitfalls**
 
-## Where This Leads
+The most common bug in component-based frontends: forgetting to call `cancelAnimationFrame` on unmount. The loop keeps running, holding a reference to unmounted component state, causing memory leaks or errors. Always store the return value and cancel it in cleanup.
 
-rAF is the execution model underlying the Web Animations API (WAAPI), which abstracts the loop away entirely. Understanding rAF explains *why* WAAPI animations can be offloaded to the compositor thread — they're declared as frame-based intent, not imperative per-frame mutations.
+The second pitfall is blowing your frame budget. You have ~16ms total, and your rAF callback needs to finish well under that (10ms is a reasonable ceiling) to leave headroom for style/layout/paint. Profile with the browser's Performance panel — if your frame bar goes red, this is usually where to look.
+
+For fullstack engineers rendering server-pushed data (WebSockets, SSE), rAF is the right place to apply incoming updates to the DOM — buffer the data on message receipt, then flush it in the next animation frame rather than forcing a repaint on every message.

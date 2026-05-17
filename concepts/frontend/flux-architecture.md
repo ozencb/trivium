@@ -1,35 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Flux Architecture
 
-Flux is a pattern for managing application state by enforcing a **strictly unidirectional data flow** — it exists because two-way data binding between components and models becomes a debugging nightmare as apps grow.
+Flux is a pattern that enforces unidirectional data flow to make state changes in complex UIs predictable and auditable. It was designed to solve the cascading update problem that emerges when views can mutate state that other views depend on—the root cause of the "I changed this, and that broke over there" class of bugs.
 
-### The Core Mechanism
+**The core mechanism**
 
-Flux has four parts: **Action → Dispatcher → Store → View**. The critical constraint is that this is a one-way loop, never a two-way binding.
+The invariant Flux enforces is this: data flows in one direction only—Action → Dispatcher → Store → View—and views cannot write directly to state. Instead, they emit Actions (plain objects describing intent), which the Dispatcher broadcasts to all registered Stores, which update themselves and emit change events, which re-render the View.
 
-- **Action**: A plain object describing *what happened* (`{ type: 'ADD_ITEM', payload: item }`)
-- **Dispatcher**: A singleton event bus. Every action goes through it; it broadcasts to all stores
-- **Store**: Holds state and business logic. Listens to the dispatcher, updates itself, emits a change event
-- **View**: Reads from the store, renders, and dispatches new actions on user interaction
+The Dispatcher is the critical piece that's often glossed over. It's a singleton that serializes action dispatch—no action can be processed while another is being handled. This eliminates an entire class of race conditions where interleaved mutations produce inconsistent state. The Dispatcher also allows stores to declare dependencies on other stores (`waitFor`), giving you explicit, inspectable ordering of side effects.
 
-The invariant that makes this useful: **stores never call each other directly**, and **views never mutate state directly**. Everything is mediated through actions.
+**Mental model**
 
-### Mental Model
+Think of it like an accounting ledger. You don't go back and change a prior entry when a correction is needed—you append a new entry that adjusts the balance. Actions are immutable facts about what happened; stores derive current state by applying those facts in order. This makes the state at any point in time fully reproducible from the action history.
 
-Think of it like a newsroom. Reporters (views) can file stories (dispatch actions). Editors (stores) receive those stories through the wire service (dispatcher) and decide how to update the record. The published paper (view) only reflects what the editors approved. A reporter can't walk into the archive and change past issues — they file a new story.
+**Frontend**
 
-This means when a bug occurs, you trace backwards: what action fired? What did the store do with it? The causal chain is always explicit and linear.
+In a dashboard with a notification badge, a message list, and a sidebar—all showing "unread count"—a direct mutation approach creates fan-out update problems. With Flux, one `MARK_READ` action hits the MessageStore, which computes the new unread count, and every subscriber re-renders from that single source of truth. You never have views out of sync with each other.
 
-### Practical Scenarios
+**Fullstack**
 
-**Frontend:** You have a shopping cart. Without Flux, a `CartIcon` component and a `CheckoutPage` component might both hold cart state, with props drilling everywhere or ad-hoc event listeners keeping them in sync. With Flux, there's one `CartStore`. Both components read from it. A user clicking "Add to cart" dispatches `ADD_TO_CART`, the store updates, and every subscribed view re-renders. State lives in one place; the question "what's in the cart right now?" has one authoritative answer.
+When you're designing APIs for SPAs, Flux thinking shapes how you model server events. A WebSocket message arrives—it becomes an Action dispatched into the client store, not a direct property mutation on a component. This means your server-push logic and your user-interaction logic go through the same pipeline, debuggable in the same way. Redux DevTools time-travel debugging is a direct consequence of this: because state is a pure function of actions, you can replay or rewind history deterministically.
 
-**Fullstack:** Flux maps cleanly onto how you likely already think about server-side request handling — a request comes in (action), it's routed (dispatcher), a service layer mutates state (store), and a response is returned (view). When you adopt Flux on the frontend, you're essentially applying the same discipline you already use in your API layer to UI state.
+**Why it matters in senior conversations**
 
-### Why It Matters for Selector Memoization
-
-Because all state lives in stores and views are purely derived from that state, you often end up computing expensive derivations (filtered lists, aggregated totals) on every render. Selector memoization is the performance answer to that — it only makes sense as a concept once you have this single-store, derived-view model that Flux establishes.
+Flux is the architectural argument for why two-way data binding (Angular 1, early Vue) becomes painful at scale—it allows cycles. Understanding Flux lets you articulate *why* lifting state up or using a global store is the right call when component hierarchies get deep, rather than just asserting it. It also frames the selector memoization problem correctly: if every action re-derives state, you need memoized selectors to avoid recomputing expensive derivations on every dispatch.

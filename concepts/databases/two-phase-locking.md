@@ -1,37 +1,35 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Two-Phase Locking (2PL)
+## Two-Phase Locking
 
-Two-phase locking is a protocol that guarantees **serializability** — the strongest correctness guarantee for concurrent transactions — by enforcing a simple invariant on when locks can be acquired and released.
+Two-Phase Locking (2PL) is the classical protocol for achieving serializability in a concurrent database. The core problem it solves: without coordination, interleaved reads and writes across transactions can produce results that no serial execution of those transactions could have produced — fundamentally corrupting your data's logical consistency.
 
-### The Core Idea
+### The Mechanism
 
-Every transaction goes through exactly two phases:
+2PL enforces one invariant: **once a transaction releases a lock, it may never acquire another.** This splits every transaction's lifetime into two distinct phases:
 
-1. **Growing phase**: acquire locks freely, release none
-2. **Shrinking phase**: release locks, acquire none
+- **Growing phase** — locks are acquired, none released
+- **Shrinking phase** — locks are released, none acquired
 
-The rule is: once you release *any* lock, you're done acquiring locks forever. This creates a "lock point" — the moment a transaction holds its maximum set of locks — and it's this point that defines the transaction's position in the serial order.
+The transition point — where the transaction holds its maximum lock set — is called the *lock point*. This is where 2PL's correctness guarantee comes from. Each transaction's lock point defines a moment in time at which it effectively "owns" all the data it will ever touch. The set of lock points across all concurrent transactions induces a total ordering, which corresponds to a valid serial schedule. That's the proof sketch behind why 2PL guarantees serializability.
 
-Why does this work? Because if transaction T1's lock point comes before T2's, then T1 had exclusive access to every resource it touched before T2 could claim them. That's equivalent to T1 running completely before T2. The lock point creates a total ordering, which is serializability.
+### Mental Model
 
-### A Concrete Mental Model
+Imagine you're auditing a ledger and need to read five accounts to produce a consistent report. Basic mutual exclusion (a plain mutex) just stops two threads from touching the same row simultaneously — but it doesn't prevent you from reading account A (and releasing that lock), then having someone else modify A before you've finished reading accounts B through E. Your report is now inconsistent, but no lock was violated.
 
-Think of a library where you're only allowed to check out books, then return them — you can't return one book and check out another. The moment you return your first book, you're committed to releasing everything. This forces an ordering: whatever books you had checked out simultaneously define your "slot" in the overall sequence.
+2PL prevents this by forbidding lock release until you're done acquiring. You hold all five read locks simultaneously, produce your consistent snapshot, then release. No one can mutate your data mid-computation.
 
-In practice, most databases use **Strict 2PL**: hold *all* locks until commit or abort. This prevents a subtler problem — if T1 releases a row lock early and T2 reads that row, then T1 aborts, T2 has read data that never existed (a "dirty read"). Strict 2PL eliminates this by keeping locks through the commit boundary.
+### Variants in Practice
 
-### Backend Context
+Most databases don't implement vanilla 2PL because the shrinking phase can start before commit, which creates cascading abort scenarios. Instead they use **Strict 2PL**: write locks are held until commit, preventing other transactions from reading uncommitted data. PostgreSQL's `SERIALIZABLE` level and MySQL's InnoDB locking both approximate this.
 
-When you set `SERIALIZABLE` isolation in Postgres or MySQL, the engine is essentially enforcing 2PL (or a variant of it). That's why serializable transactions are slower — contention on locks can stack up. If two transactions try to lock the same rows in opposite orders, you get a **deadlock**: T1 holds row A waiting for B, T2 holds B waiting for A. Neither can proceed. 2PL doesn't prevent deadlocks; it just makes them detectable (via cycle detection in the waiter graph).
+### Backend Scenario
 
-### Data/Analytics Context
+When you issue `SELECT ... FOR UPDATE` inside a transaction, you're manually participating in 2PL — acquiring a write lock in the growing phase. If two transactions both do this on overlapping rows in opposite order, you get a deadlock. The database detects this via a wait-for graph (a cycle means deadlock) and kills one transaction. Understanding 2PL makes this behavior predictable rather than mysterious.
 
-Long-running analytical queries are why MVCC exists. Under strict 2PL, a read locks rows and blocks writers for the duration of a multi-minute scan — unacceptable for OLTP workloads. MVCC sidesteps 2PL for reads entirely by giving each reader a snapshot, which is why understanding 2PL's limitations is the prerequisite for understanding why MVCC was invented and what tradeoffs it makes.
+### Data Engineering Scenario
 
----
-
-The key insight to carry forward: 2PL's correctness comes from the lock point creating a total order, but the cost is that readers and writers contend, and deadlocks become possible. Both MVCC and deadlock detection exist as direct responses to these two problems.
+Batch ETL jobs that run concurrent writes into the same tables hit 2PL contention hard — long-running transactions hold large lock sets, and everything else queues behind them. This contention is precisely why MVCC (Multi-Version Concurrency Control) emerged as an alternative: readers get a snapshot and never block writers, trading the strict serializability of 2PL for better throughput under read-heavy workloads.

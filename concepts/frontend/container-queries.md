@@ -1,51 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-CSS Container Queries let elements respond to their *parent container's* size instead of the viewport — solving a fundamental mismatch between how components are designed and how they're actually used.
+## CSS Container Queries
 
-## The core problem with media queries
+Media queries have always been a lie for component design. You write `.card { ... }` and make it responsive based on the viewport, but the card has no idea if it's in a narrow sidebar or a wide main column—it only knows the window size. Container queries fix this by letting you query the size of a parent element instead.
 
-Media queries respond to the viewport: `@media (min-width: 768px)`. That works when you control layout globally, but it falls apart when a component gets placed in multiple contexts. A card in a full-width hero looks different than the same card in a narrow sidebar — and the viewport width tells you nothing useful about which situation you're in.
-
-## How container queries work
-
-You declare an element as a *containment context* with `container-type`, then write `@container` rules that target its descendants:
+**The core mechanism:** You declare an element as a containment context with `container-type: inline-size` (or `size`). Child elements can then write `@container` rules that fire based on that container's dimensions—not the viewport's. The browser tracks the container's computed size and applies matching rules exactly like media queries, but scoped to that layout subtree.
 
 ```css
 .card-wrapper {
-  container-type: inline-size; /* tracks width */
+  container-type: inline-size;
   container-name: card;
 }
 
-.card {
-  flex-direction: column;
-}
-
 @container card (min-width: 400px) {
-  .card {
-    flex-direction: row;
-  }
+  .card { flex-direction: row; }
 }
 ```
 
-The browser measures `.card-wrapper`'s rendered width, not the viewport. If the wrapper is 300px (e.g., in a tight sidebar), the card stacks vertically. If it's 600px (e.g., in a main content area), it goes horizontal. Same markup, same CSS file, no JavaScript.
+Now drop that card in a 300px sidebar—it stacks vertically. Drop it in a 600px content area—it goes horizontal. Same component, zero viewport knowledge required.
 
-The mental model: the component knows its *available space*, not the screen size.
+**Mental model:** think of it as the component subscribing to its own bounding box rather than `window.innerWidth`. The container is the source of truth, not the global viewport.
 
-`container-type: inline-size` is the most common variant — it tracks width only, which avoids layout circularity (an element's height often depends on its own content). You can also use `size` to track both dimensions, but that's rarer and has stricter containment requirements.
+**Where this matters in practice:**
 
-## Practical scenarios
+*Frontend:* Design systems. Before container queries, truly reusable components were mostly fiction—you'd ship a "Card" component that only looked right in specific grid contexts, and the consuming team would fight the styles every time they placed it somewhere unexpected. Now you can build components that genuinely adapt to wherever they're dropped, which makes component libraries dramatically more composable.
 
-**Frontend:** A design system card component should work correctly whether it's rendered in a 3-up grid, a 2-column layout, or a widget panel — without requiring the consumer to pass props or add modifier classes. Container queries make the component itself responsible for its layout, not the parent page.
+*Fullstack:* Any server-rendered or CMS-driven layout where the template doesn't control where a component lands. A "featured post" block might appear full-width on an article page or squeezed into a widget column on a dashboard—container queries let the component handle both without the server needing to pass layout hints.
 
-**Fullstack:** Dashboard UIs where widgets are resizable or user-configurable are the canonical use case. When a chart widget gets expanded from a quarter-width slot to half-width, it should reflow its legend without any JS measuring. Container queries handle this declaratively. Similarly, CMS block editors that drop the same component into varying column widths benefit enormously.
+**Pitfalls:**
+- `container-type: size` (both axes) requires the element to have a definite height, which is often not the case. Stick to `inline-size` unless you need height containment.
+- You can't query a container from within itself—the queried element must be a *descendant* of the container, not the container itself.
+- Nesting containers works but can get confusing fast. Name your containers explicitly with `container-name` once you have more than one level.
 
-## What to watch
+**When to reach for it:** anytime you're writing breakpoints on a component and thinking "but this only works if the grid is X columns." That thought is the signal. Also reach for it when building any component intended for reuse across different layout contexts.
 
-- `container-type` establishes a new stacking context and formatting context, which can affect `z-index` and floats — usually a non-issue but worth knowing.
-- You can't query a container from *within* that same container — only from its descendants. The element being the container and the element being styled must be different.
-- Browser support is solid (Chrome 105+, Firefox 110+, Safari 16+), so there's no real adoption barrier at this point.
-
-The shift in thinking is small but meaningful: move from "how big is the screen?" to "how much space do I have right now?"
+Browser support is now solid across all modern browsers (shipped in all major engines since late 2022), so there's no practical adoption barrier for greenfield work.

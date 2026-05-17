@@ -1,35 +1,46 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Prerendering
 
-Prerendering is the process of generating HTML for a page at build time (or on-demand, before the request hits your app server) so the browser receives fully-formed markup instead of a blank shell. The "why" is simple: you get the SEO and performance benefits of server-rendered HTML without paying a per-request rendering cost.
+Prerendering means doing the work of rendering a page *before* the user requests it, so when they do navigate there, the response is instant—either already in cache, already in the browser, or already in memory. It's latency elimination, not latency reduction.
 
-### The core mechanism
+### The core idea
 
-SSG is actually a subset of prerendering — you already know it. The broader concept is: *at some point before the user's browser asks for a page, something generates the HTML for it.* That "something" can be:
+There are two distinct things called "prerendering," and conflating them causes confusion:
 
-- **Build-time** (classic SSG): Runs once during `npm run build`. Output is static files on a CDN.
-- **On-demand / ISR (Incremental Static Regeneration)**: First request triggers a render; the result is cached and served to subsequent visitors until a revalidation threshold passes.
-- **Request-time with edge caching**: The server renders on first miss, CDN caches the response. Looks like SSG from the browser's perspective.
+**Build-time prerendering (SSG):** You already know this one. At build time, a framework like Next.js or Astro renders routes to static HTML. When a user hits `/about`, they get a file, not a render.
 
-The key distinction from runtime SSR: the HTML exists (or gets cached) independently of any individual user's request. The server isn't re-executing React/Vue/etc. per visitor.
+**Speculative prerendering:** The browser (or a CDN/edge layer) *predicts* where the user is going and starts rendering that page *now*, while they're still on the current one. By the time they click, the page is ready. This is the newer, more interesting half.
+
+The Speculation Rules API (Chrome 109+) is how you opt into speculative prerendering declaratively:
+
+```json
+<script type="speculationrules">
+{
+  "prerender": [{ "urls": ["/checkout", "/product/123"] }]
+}
+</script>
+```
+
+The browser fetches and fully renders those pages in a hidden context—executing JS, fetching data, everything—so navigation is effectively zero-latency. This is stronger than `<link rel="prefetch">`, which only fetches the HTML but doesn't execute it.
 
 ### Mental model
 
-Think of it like compiling vs. interpreting. SSR is interpreted — every request executes the render. Prerendering is compiled — you pay the rendering cost once (or rarely), then serve the artifact. The tradeoff is staleness vs. speed.
+Think of it like a restaurant pre-plating the most commonly ordered meal before anyone orders it. If you order it, you're eating in 30 seconds. If not, they toss it. Speculative prerendering has the same tradeoff: you're burning CPU/network on a bet.
 
-### Practical scenarios
+### Where it matters in practice
 
-**Frontend engineer building a marketing site or docs:**  
-Every page is prerendered at build time. Content changes require a rebuild. For low-churn content this is ideal — a CDN serves static HTML globally, zero server cost, instant TTFB. Frameworks like Astro and Next.js (`output: 'export'`) do this natively.
+**Frontend:** Static marketing sites and docs are the easy win—build-time SSG handles this already. Speculative prerendering adds value on top: prerender the `/pricing` page for users browsing `/features`, or the product detail page when a user hovers over a product card.
 
-**Fullstack engineer with semi-dynamic content (e.g., a product catalog):**  
-Full rebuilds on every product update are impractical at scale. ISR solves this — Next.js `revalidate: 60` means the page is prerendered, served stale for up to 60 seconds, then regenerated in the background. Users always get fast HTML; staleness is bounded and acceptable.
+**Fullstack:** Checkout flows are the classic target. Prerender the payment page while the user reviews their cart. The catch: pages with personalized content or auth-gated data can't safely be prerendered speculatively unless you're careful about what gets rendered versus fetched at runtime.
 
-**The nuance to watch for:**  
-Prerendering isn't always the right tool for highly personalized pages (user dashboards, cart contents). Those either need client-side hydration to fetch user-specific data, or full SSR. Mixing strategies per-route — prerender the shell, hydrate the dynamic parts — is the standard pattern in mature Next.js/Nuxt apps.
+### Pitfalls to know
 
-The mental shift from SSG to prerendering-as-a-concept is recognizing that *when* HTML is generated is a dial, not a binary, and choosing the right point on that dial per route is a first-class architectural decision.
+- **Side effects on load:** If your page fires analytics events or mutates state on mount, speculative prerender will fire them prematurely. Pages need to be "prerender-safe."
+- **Cache invalidation on SSG:** Build-time prerendering is static—stale content is a real problem for anything with high update frequency.
+- **Over-speculation:** Prerendering 20 pages on every route is wasteful. It works best when you have high-confidence signals (hover, likely navigation paths) or a small set of high-probability destinations.
+
+The Speculation Rules API gives you `"eagerness"` controls (`immediate`, `eager`, `moderate`, `conservative`) to tune how aggressively the browser bets.

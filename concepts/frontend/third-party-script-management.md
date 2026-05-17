@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Third-Party Script Management
+Third-party scripts are the leading cause of uncontrolled main-thread work in production apps — because you don't own them, they can change behavior after you ship, and most load strategies treat them as trusted first-party code. Managing them well means treating every external script as a potential threat to performance, layout stability, and data privacy simultaneously.
 
-Third-party scripts—analytics, chat widgets, A/B testing tools, ad networks—are the leading cause of uncontrollable performance regressions in production web apps. Managing them means deciding when, how, and whether to load code you don't own but your business depends on.
+**Core mechanism**
 
-### The Core Problem
+Browsers give third-party scripts the same privileges as your own code by default: same-thread execution, same DOM access, same network origin capability. A tag manager loading five analytics libraries is five separate long tasks you didn't schedule, running synchronously on the main thread, potentially reading cookies, and phoning home to origins you never audited.
 
-When you load a third-party script, you hand the browser a blank check. That script runs on your main thread, can block rendering, fire arbitrary network requests, and introduce long tasks you can't fix by optimizing your own code. Even with `async` or `defer`, a 200KB analytics bundle that takes 300ms to parse is your users' problem—not the vendor's.
+The control surface has three layers:
 
-The fundamental mechanism of third-party script management is **deferring or constraining execution until the cost is acceptable**. This plays out in a few patterns:
+1. **Loading strategy** — `async` and `defer` prevent parser blocking, but don't isolate execution time. For non-critical scripts (chat widgets, A/B testing), load them `type="module"` or inject them after `load` fires via `requestIdleCallback`. Scripts that can wait until user interaction should be facade-loaded (a dummy element that swaps in the real script on hover or click).
 
-**Facade pattern**: Instead of loading Intercom on page load, render a fake chat button with CSS. On click, inject the real script and initialize it. Users who never open chat pay zero cost. This is how you turn a 400KB blocking resource into a lazy-loaded, interaction-triggered one.
+2. **Sandboxing** — `<iframe sandbox>` is the strongest isolation: script runs in a separate browsing context, no DOM access to the parent. This is how responsible ad networks operate. For analytics that need DOM access but not cookies, a web worker proxy pattern works: postMessage telemetry data to a worker that batches and flushes, keeping the collection path off-thread.
 
-**Intersection/event-based loading**: Use `IntersectionObserver` to load an embedded video player only when it scrolls into view, or load a feedback widget only after the user has been idle (via `requestIdleCallback`).
+3. **CSP and SRI** — Content Security Policy defines which origins can load scripts and send data. `script-src` controls execution, `connect-src` controls XHR/fetch/beacon destinations. Subresource Integrity (`integrity` attribute) pins the exact hash of a script, so a CDN compromise or vendor update can't silently change what runs on your page.
 
-**iframe sandboxing**: For heavyweight or high-risk scripts (ads, untrusted embeds), load them in a sandboxed `<iframe>`. They can't access your DOM, can't block your main thread, and their long tasks don't show up in your Long Tasks API data.
+**Concrete example**
 
-### Mental Model
+A chat widget loads a 200KB script on every page, fires `DOMContentLoaded` handlers, and sets a third-party cookie. You can't remove it, but you can: load it only when the user clicks the chat button (facade), move it behind an `iframe` so it can't read form fields, and add its origin to `connect-src` while blocking `*` — now you know exactly what it's allowed to do.
 
-Think of your main thread as a single-lane road. Your own JavaScript is scheduled traffic. Third-party scripts are trucks that show up unannounced, block the lane for 300ms, then leave. Script management is traffic control: you decide when trucks are allowed in, which lane they use, and whether some of them need to take the bypass route (iframe).
+**Where this matters in practice**
 
-### Practical Scenarios
+*Frontend:* Use the Long Tasks API (PerformanceObserver) to attribute blocking time to specific scripts. You can name tasks with `scheduler.postTask` to diff what's yours versus third-party. This is how you build the case to product for removing a vendor.
 
-**Frontend**: A marketing team wants to add five new tracking pixels. Instead of adding them directly to `<head>`, route everything through a tag manager (GTM) with a strict loading policy—only fire tags after `load` event, never block `DOMContentLoaded`. Audit with Chrome's Coverage tab and block expensive ones behind a consent check.
+*Fullstack:* Server-side tag management (Google Tag Manager Server-Side, Cloudflare Zaraz) proxies third-party requests through your origin, giving you CSP simplification, cookie lifetime control, and the ability to strip PII before it leaves your infrastructure. This is increasingly the right default for GDPR-sensitive apps.
 
-**Fullstack**: Your SSR app ships HTML with analytics scripts that fire before hydration completes, causing Time to Interactive to bloat. Move third-party initialization into a `useEffect` with a `requestIdleCallback` fallback, or use Next.js's `<Script strategy="lazyOnload">` which handles this scheduling for you. On the server side, inject only the minimal snippet needed for first render; defer everything else to the client.
-
-The payoff: you stop treating third-party scripts as set-and-forget `<script>` tags and start treating them as dependencies with explicit resource budgets.
+Senior engineers get asked about this in system design because it sits at the intersection of performance, security, and organizational reality — you rarely have authority to remove the offending script, so your value is knowing exactly how much rope to give it.

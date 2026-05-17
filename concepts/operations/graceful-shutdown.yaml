@@ -1,0 +1,17 @@
+id: graceful-shutdown
+title: Graceful Shutdown
+category:
+  - Operations
+  - Reliability
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - health-checks
+  - timeout-patterns
+dependents:
+  - connection-draining
+brief: Stopping a service by first marking it unhealthy, draining in-flight requests within a bounded deadline, and flushing buffers before process exit to avoid dropped requests during deploys.

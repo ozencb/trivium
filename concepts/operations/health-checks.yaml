@@ -1,0 +1,17 @@
+id: health-checks
+title: Health Checks
+category:
+  - Operations
+  - Reliability
+roles:
+  - backend
+  - sre
+  - devops
+lenses:
+  - practical
+prerequisites:
+  - circuit-breaker
+dependents:
+  - graceful-shutdown
+  - kubernetes-scheduling
+brief: Liveness, readiness, and startup probes that expose application state to orchestrators and load balancers so they automatically remove unhealthy instances from traffic rotation.

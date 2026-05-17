@@ -1,41 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Contract Testing
 
-Contract testing verifies that two services agree on their shared interface — the "contract" — without requiring both to run simultaneously. It exists because integration tests are expensive and brittle; contract tests give you confidence about service boundaries at unit-test speed.
+Contract testing is the practice of verifying service interactions against a shared specification — the "contract" — without requiring both services to be running simultaneously. It exists because integration tests that spin up full service meshes are slow, brittle, and block independent deployments.
 
-### Core Mechanism
+**The core mechanism**
 
-The key insight is separating two concerns that integration tests conflate:
-- Does the **consumer** use the API correctly?
-- Does the **provider** fulfill what the consumer needs?
+A contract is a recorded set of request/response pairs that a consumer (the caller) expects from a provider (the service). The process splits into two independent verification steps:
 
-You express this as a contract document — typically JSON — that captures specific interactions: "when the consumer calls `GET /orders/42`, the provider will respond with `{orderId, status, items}` shaped like this." Both sides test against this contract independently.
+1. The **consumer** generates the contract by running its own tests against a mock provider. If those tests pass, it publishes the contract to a broker (like Pact Broker).
+2. The **provider** fetches the contract and replays those recorded requests against itself, verifying its responses match what the consumer declared it needs.
 
-The dominant implementation is **Pact** (the tool + protocol). The flow:
-1. Consumer writes a test against a local mock server. Running it generates a `.pact` file (the contract).
-2. That file is published to a Pact Broker (a shared registry).
-3. Provider runs its own verification test that replays the recorded interactions against the real provider code.
+Neither side needs the other deployed. The broker is the source of truth.
 
-If the provider renames `items` to `lineItems`, step 3 fails — before anyone deploys anything.
+This is where the connection to property-based testing is worth noting: like PBT, contract testing shifts focus from "does this specific scenario work?" to "does this service satisfy the behavioral properties its consumers depend on?" The contract encodes the *properties* of the interaction, not just one snapshot.
 
-This is *consumer-driven*: the consumer team defines what they need, and the provider team verifies they're meeting it. It inverts the usual dynamic where providers ship whatever they want and consumers adapt.
+**Concrete example**
 
-### Concrete Mental Model
+Your `order-service` calls `user-service` to fetch a user's email and tier. In your consumer test, you define: "when I GET `/users/42`, I expect a 200 with `{ email: string, tier: 'free' | 'pro' }` in the body." That becomes the contract.
 
-Think of it like a typed interface, but enforced at runtime across a network boundary and owned by the consumer. It's the difference between "here's our API docs" and "here's a runnable spec of what we actually depend on."
+The `user-service` team can now refactor their database layer, rename internal fields, or upgrade their framework — as long as their provider verification passes against that contract, they can deploy independently. If they add a required field or change a response shape, the verification catches it before any deployment.
 
-### Practical Scenarios
+**Backend scenarios**
 
-**Backend (microservices):** Service A calls Service B's `/inventory` endpoint and expects `{available: boolean, count: number}`. Service B's team refactors and renames `available` to `inStock`. Without contract testing, this breaks in staging. With it, B's provider verification fails locally as soon as the change is made.
+In microservice architectures, this is most valuable at service mesh boundaries where teams own different services. Without contract testing, you're either doing end-to-end tests that require full orchestration (slow, fragile), or you're hoping staging environments catch breaking changes (they don't, reliably). Contract tests give you a fast, decoupled signal in CI.
 
-**Fullstack:** Your React app calls a BFF (backend-for-frontend). The frontend team writes Pact consumer tests that capture exactly what shapes they depend on. The backend team runs provider verification in CI. Teams stay decoupled — the frontend doesn't need a running backend for its tests, and the backend knows exactly what the frontend needs without reading frontend code.
+**Fullstack scenarios**
 
-### Comparison to What You Know
+The frontend is a consumer too. If your React app calls `/api/dashboard/stats` and expects `{ totalRevenue: number, activeUsers: number }`, that expectation can be codified as a contract the BFF (backend-for-frontend) verifies. Frontend and backend teams can iterate independently without coordination overhead.
 
-If you're familiar with property-based testing: PBT explores invariants *within* a component (for all valid inputs, this function behaves correctly). Contract testing explores invariants *at the boundary between components* (for these specific interactions, the provider and consumer agree). Both are about expressing expectations rigorously rather than testing by example.
+**Where it earns its keep**
 
-The main gotcha: contracts only cover what the consumer actually uses, not the full provider API. A provider can break unused fields without failing contracts. That's a feature — you only care about breakage that affects real consumers — but it means contracts don't replace API documentation or schema validation.
+Contract testing shines when you have explicit team boundaries and independently deployed services. It's overkill for a monolith or when you already have fast, reliable integration tests. The senior engineer instinct here is recognizing that contracts shift the *coordination cost* from runtime (production incidents) to development time (broker failures in CI) — and that trade-off is almost always worth it once you're operating across team boundaries.

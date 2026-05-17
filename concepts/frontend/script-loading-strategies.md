@@ -1,32 +1,39 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Script Loading Strategies
 
-When a browser encounters a `<script>` tag, it has to decide when to fetch it and when to execute it — and those choices directly determine how fast your page renders. Script loading strategies give you control over that timing.
+The browser's HTML parser is single-threaded — when it hits a `<script>` tag, it stops, fetches, parses, and executes the script before continuing. Script loading strategies let you break that synchronous chokehold, choosing exactly when fetch and execution happen relative to parsing.
 
-### The core mechanism
+### The Core Mechanism
 
-The HTML parser is single-threaded. By default, hitting a `<script>` tag blocks parsing entirely: fetch the resource, execute it, then resume. This is why scripts in `<head>` used to be notorious for blank-screen delays.
+There are four meaningful positions/attributes, each with distinct fetch and execution timing:
 
-Three attributes change this behavior:
+**Blocking (default, no attribute):** Parser halts on encounter. Fetch + execute before HTML parsing resumes. Use for truly critical inline logic only — anything that must run before the DOM exists.
 
-- **`defer`**: fetches in parallel with parsing, executes after the DOM is fully parsed, preserves document order. The script runs before `DOMContentLoaded`.
-- **`async`**: fetches in parallel, but executes *immediately* when downloaded — interrupting parsing if it's still happening. Order is not guaranteed.
-- **`type="module"`**: deferred by default, always strict mode, supports static `import`. Inline module scripts also defer.
+**`async`:** Fetch happens in parallel with parsing. Execution happens *immediately when the fetch completes* — parser pauses at that point. Scripts can execute out of order relative to each other. Good for independent third-party scripts (analytics, ads) where order doesn't matter and you don't need the DOM ready.
 
-There's also the runtime layer: `import()` (dynamic import) lets you split code and load it on demand — no `<script>` tag at all, just a Promise that resolves to a module.
+**`defer`:** Fetch happens in parallel with parsing. Execution is deferred until HTML is fully parsed, and scripts execute *in document order*. This is the right default for most first-party scripts — you get parallelized fetch with predictable, ordered execution.
 
-### Mental model
+**`type="module"`:** Behaves like `defer` by default. Also enables ESM `import`/`export`, scoped module context (no global leakage), and strict mode automatically. Modern bundler output typically lands here.
 
-Think of the parser as a chef and scripts as trips to the pantry. Default scripts: chef stops cooking, walks to pantry, grabs ingredient, returns, then continues. `defer`: sous-chef makes the pantry run, chef keeps cooking, ingredient arrives before service. `async`: sous-chef runs, but the chef has to stop and use the ingredient the *moment* it arrives, even mid-dish. Dynamic import: chef decides mid-recipe to add something optional — goes and gets it only if needed.
+### Mental Model
 
-### Practical implications
+Imagine HTML parsing as a conveyor belt. Default scripts are workers who physically stop the belt to do their job. `async` workers step in whenever they're personally ready, stopping the belt briefly but unpredictably. `defer` workers queue up, wait for the belt to finish, then go in order. `type="module"` workers do the same as defer but operate in a clean room with their own tools.
 
-**Frontend:** Third-party analytics or ad scripts are classic `async` candidates — you don't care about execution order and don't want them blocking render. Your own application bundle typically wants `defer` so it can safely touch the DOM. For heavy features that aren't needed on initial load (modals, chart libraries, rich text editors), dynamic `import()` lets you load them on interaction.
+### Practical Scenarios
 
-**Fullstack (SSR context):** When server-rendering, you're often injecting scripts into the response stream. `defer` is almost always the right default for app chunks — it won't block the browser from progressively rendering streamed HTML. Frameworks like Next.js or Remix abstract this, but they're making these decisions under the hood: Next's `<Script strategy="afterInteractive">` maps to deferred loading, `"beforeInteractive"` injects blocking scripts in `<head>`.
+**Frontend:** You're building a React SPA. The bundled JS is enormous but shouldn't block initial HTML render. `defer` on the bundle script lets the browser paint the shell (skeleton, nav) while the script fetches. Users see something faster even if interactivity lags.
 
-The real trap is mixing strategies incorrectly — `async` on a script that depends on jQuery being available, or forgetting that inline scripts are always parser-blocking and can't be deferred without dynamic injection.
+**Fullstack (SSR/hydration):** You're server-rendering a Next.js or Astro page. The HTML comes pre-rendered, so you want the hydration script to wait until the full DOM is present — `defer` again. If you use `async` here, the hydration script might execute before SSR'd HTML is parsed, leading to mismatches or double-renders.
+
+### Common Pitfalls
+
+- Using `async` for scripts that depend on each other — load order is non-deterministic, things break randomly.
+- Putting `defer` on inline scripts — it's silently ignored; inline scripts always execute synchronously.
+- Assuming `type="module"` is always slower — browsers cache modules aggressively and deduplicate imports.
+- Placing scripts in `<head>` without `defer`/`async` — classic mistake that tanks time-to-first-contentful-paint.
+
+The practical rule: `defer` for your own scripts, `async` for isolated third-party tags, `type="module"` if you're shipping ESM.

@@ -1,0 +1,17 @@
+id: etag-conditional-requests
+title: ETags and Conditional Requests
+category:
+  - Networking
+  - Caching
+roles:
+  - backend
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - cache-invalidation
+  - rest-constraints
+dependents:
+  - content-delivery-strategy
+brief: HTTP validators (ETags, Last-Modified) paired with conditional headers (If-None-Match, If-Modified-Since) that let clients revalidate cached resources without re-downloading unchanged content.

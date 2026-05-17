@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Consumer Groups
 
-A consumer group is how Kafka scales consumption horizontally while maintaining ordered, exactly-once-per-message delivery within a group. Instead of every consumer seeing every message, Kafka partitions the work across group members.
+A consumer group is how Kafka turns a single topic into a parallelizable workload: multiple consumer instances share a group ID, and Kafka's group coordinator assigns each partition to exactly one member at a time. Since you already know partitions are the unit of ordering, this maps cleanly — the guarantee is per-partition, not per-topic, so two consumers in the same group never race on the same partition.
 
-### Core Mechanism
+**The core mechanism**
 
-Each partition in a topic is assigned to exactly one consumer within a group at a time. If you have 6 partitions and 3 consumers in a group, each consumer owns 2 partitions and reads from them independently. No coordination is needed during reads — consumers just pull from their assigned partitions and commit offsets.
+When a consumer joins or leaves a group, Kafka triggers a *rebalance*: the group coordinator (a broker) pauses all consumers and redistributes partition assignments. This is why consumer group membership changes are expensive. Each consumer tracks its own offset per partition, committing back to Kafka so that after a crash, a replacement consumer picks up where its predecessor left off — not from the beginning.
 
-The group coordinator (a Kafka broker) tracks membership. When a consumer joins, leaves, or crashes, a **rebalance** triggers: partitions are redistributed across the current live members. During a rebalance, consumption pauses — this is the main operational cost.
+The number of active consumers in a group is bounded by the number of partitions. If you have 12 partitions and 15 consumers in the same group, 3 sit idle. This is the hidden tax: scaling your consumer fleet beyond partition count gives you nothing except faster failover.
 
-One hard constraint: you can't have more active consumers in a group than you have partitions. The extras sit idle. Partition count is your parallelism ceiling.
+**Mental model**
 
-Crucially, offset tracking is **per group**. Two groups reading the same topic maintain completely independent positions — group A can be at offset 1000 while group B is at offset 50. This is what lets multiple systems consume the same event stream without interfering.
+Think of partitions as lanes on a highway and consumer instances as toll booths. A consumer group is the toll plaza — one booth per lane. Adding booths beyond the lane count just means idle staff. Different consumer groups are entirely separate plazas: each gets its own independent offset pointer and processes every message. This is how you fan-out the same topic to a billing service and an analytics pipeline without coupling them.
 
-### Mental Model
+**In practice**
 
-Think of a group as a team of workers and partitions as work queues. Each worker owns specific queues; no worker steals from another's queue. If a worker quits mid-shift, their queues get redistributed. If you hire more workers than there are queues, the extras stand around.
+*Backend*: Order processing services use one group per logical concern — one for fulfillment, one for notifications. They consume the same `orders` topic independently and at their own pace. If fulfillment is slow (backpressure), it doesn't block notifications.
 
-### Practical Scenarios
+*Data*: ETL pipelines consuming from a raw events topic use a dedicated group. Since each pipeline has its own offsets, you can rewind a failing pipeline to replay events without touching any other consumer.
 
-**Backend:** A payment service with 12 partitions runs 12 consumer instances. Traffic spikes? Scale to 12 instances and you hit full parallelism. Scaling beyond 12 does nothing until you repartition the topic.
+*SRE*: Lag monitoring is per-group, per-partition. When you see lag climbing on a subset of partitions, it usually means one consumer instance is overloaded or stuck — not the whole group. The per-partition granularity makes it easy to identify whether you need more consumers (and thus more partitions) or just a fix to a slow handler.
 
-**Data:** Multiple pipelines consume the same `user-events` topic — one feeds a real-time dashboard (group: `dashboard-v2`), another feeds a data warehouse (group: `dw-ingestion`). They advance independently; the warehouse can replay from offset 0 without affecting the dashboard.
+**Common pitfall**
 
-**SRE:** Rebalance storms are a common incident pattern. If you deploy rolling restarts on 20 consumers without tuning `session.timeout.ms` and `max.poll.interval.ms`, each restart triggers a rebalance that briefly pauses all consumption. With static membership (`group.instance.id`), Kafka can skip rebalancing for rejoining members it recognizes, which matters for high-throughput topics where even seconds of pause creates lag.
-
-The connection to backpressure: consumer groups don't slow the producer, but a slow consumer accumulates lag in its assigned partitions. Monitoring lag per group-partition (not just total lag) tells you which consumer is the bottleneck.
+Committing offsets too eagerly — before processing is confirmed — means a crash after commit but before actual work results in silent message loss. Committing too late means reprocessing on restart. The pattern that holds up: process, *then* commit, and design handlers to be idempotent so duplicate processing on failure is safe rather than catastrophic.

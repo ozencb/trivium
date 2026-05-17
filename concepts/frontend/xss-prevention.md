@@ -1,39 +1,54 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## XSS Prevention
 
-XSS (Cross-Site Scripting) lets attackers inject script into your page that runs in another user's browser — stealing sessions, hijacking actions, or exfiltrating data. Prevention is fundamentally about controlling what the browser treats as executable vs. inert text.
+XSS (Cross-Site Scripting) happens when user-controlled data ends up in a browser context where it's interpreted as code instead of content. The consequence is an attacker's script running in a victim's browser session — with access to cookies, tokens, the DOM, and any API the user is authenticated against.
 
-### The core mechanism
+### The Core Mechanism
 
-The browser has no concept of "intended" HTML vs. "injected" HTML. It renders whatever string ends up in the DOM. XSS exploits this: if user-controlled input flows into the DOM without transformation, the attacker controls markup, and markup can contain `<script>` tags, event handlers (`onerror`, `onclick`), or `javascript:` URIs.
+The browser has no idea where content "came from." It just parses what it receives. If you insert `<script>stealCookies()</script>` into the DOM via `innerHTML`, the browser executes it. The fix isn't filtering — it's **context-aware encoding**: transforming characters so the browser treats them as data, not syntax.
 
-The fix is **contextual output encoding** — transforming characters that have structural meaning in a given context so they render as text, not as code:
+The critical insight is that "context" matters enormously:
 
-- In HTML body: `<` → `&lt;`, `>` → `&gt;`, `&` → `&amp;`
-- In HTML attributes: additionally encode `"`, `'`
-- In JavaScript strings: escape `\`, `"`, newlines
-- In URLs: percent-encode everything outside safe chars
+- **HTML body**: `<` becomes `&lt;`, `>` becomes `&gt;`
+- **HTML attribute**: `"` becomes `&quot;`, and the attribute must be quoted
+- **JavaScript string**: `'` and `"` must be escaped, and you can't just HTML-encode here
+- **URL parameter**: requires percent-encoding
+- **CSS value**: its own encoding rules
 
-The "contextual" part matters. Encoding `<` as `&lt;` is correct inside HTML body but wrong inside a `<script>` block or a `href` attribute — different characters are dangerous in different positions. Mismatched context encoding is a common source of missed XSS.
+This is why "just escape HTML" is insufficient. A string injected into a JS context (`var x = "<USER_INPUT>"`) needs JS escaping, not HTML escaping — they're different transforms for different parsers.
 
-### Concrete mental model
+### Concrete Mental Model
 
-Think of a SQL injection analogy you likely know: raw string concatenation into a query is dangerous; parameterized queries fix it by separating structure from data. XSS is the same idea for HTML: when you concatenate user input into an HTML string, you're conflating structure and data. Encoding is the parameterization.
+Think of output sinks — places where data lands — and ask: *what parser will consume this?*
 
-### Stored vs. reflected vs. DOM-based
+```js
+// Dangerous: innerHTML is an HTML sink
+element.innerHTML = userInput;
 
-- **Stored**: payload saved to DB, served to every visitor of that page. High impact.
-- **Reflected**: payload in the URL/query, echoed back in the response. Requires phishing a link.
-- **DOM-based**: no server involvement — client-side JS reads `location.hash` or `document.referrer` and writes to `innerHTML`. Often missed because the server response looks clean.
+// Safe: textContent is not a parser sink
+element.textContent = userInput;
 
-### Practical scenarios
+// Dangerous: URL sink, can accept javascript: URIs
+anchor.href = userInput;
 
-**Frontend**: The main exposure is `innerHTML`, `outerHTML`, `document.write`, and framework escape hatches like React's `dangerouslySetInnerHTML`. Prefer text node APIs (`textContent`, `createTextNode`) or let your framework handle interpolation — React, Vue, and Angular all auto-encode by default. When you genuinely need to render user HTML (rich text editors, markdown), use a sanitizer like DOMPurify rather than rolling your own allowlist.
+// Safer: validate scheme explicitly
+const url = new URL(userInput);
+if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+anchor.href = url.toString();
+```
 
-**Fullstack**: Server-rendered HTML (Jinja, ERB, Handlebars, etc.) requires the same contextual encoding, and most template engines handle it automatically when you use their default interpolation syntax. The bugs appear when you use "raw" or "unescaped" output helpers — often needed for trusted HTML, misused for untrusted data.
+The DOM APIs themselves are your primary defense. `textContent`, `setAttribute` for non-URL attributes, and `createElement` with proper construction are all safe by default. `innerHTML`, `outerHTML`, `document.write`, and `eval` are sinks that require scrutiny.
 
-The next layers of defense — Content Security Policy and Trusted Types — assume XSS encoding is already in place and add restrictions on what the browser will execute even if an injection slips through.
+### Practical Patterns
+
+**Frontend**: React, Vue, and Angular escape HTML by default in their template bindings — but they all have escape hatches (`dangerouslySetInnerHTML`, `v-html`, `[innerHTML]`). Treat those as code-review red flags that require sanitization with a vetted library (DOMPurify is the standard).
+
+**Fullstack**: Stored XSS is where backend engineers get caught — user content persisted to a database and later rendered. The correct position is: sanitize on *output*, not on input. Sanitizing on input corrupts data (what if it's rendered in a non-HTML context?) and creates a false sense of security when you add a new rendering path.
+
+### Why This Matters at Senior Level
+
+In design reviews, the question isn't "are we escaping inputs?" but "what are all our rendering paths and sink types?" Senior engineers recognize that a rich text editor, a PDF renderer, and an HTML template each require different sanitization strategies. This also directly precedes understanding Content Security Policy — a browser-enforced allowlist that limits damage even if injection occurs — and Trusted Types, which enforces safe DOM manipulation at the API level.

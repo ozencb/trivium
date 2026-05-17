@@ -1,37 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Change Data Capture
 
-CDC is the practice of treating every row-level change in your database — inserts, updates, deletes — as an event that can be streamed to downstream consumers. The core motivation: instead of polling tables or maintaining complex dual-write logic, you let the database itself be the source of truth for what changed and when.
+CDC taps directly into the database's replication log — the same stream your read replicas consume — to emit a structured event for every insert, update, and delete. Unlike polling a `updated_at` column or firing application-level hooks, it's exhaustive and decoupled: the database itself is the source of truth, not your code.
 
-### The Mechanism
+**The core mechanism**
 
-You already know the WAL is a durability guarantee — every committed write goes there before it touches the actual data files. CDC exploits this: a log reader process tails the WAL, decodes each record into a structured change event (before/after image of the row, operation type, timestamp, LSN), and publishes those events to a stream.
+Every major database maintains an ordered, append-only log of mutations before (or as) they're committed — Postgres calls it the WAL, MySQL calls it the binlog. Replication already reads this to keep replicas in sync. CDC tools like Debezium register as a "logical replication slot" (Postgres) or a replica (MySQL), receive that same stream, and re-publish it — typically to Kafka — as structured JSON events with before/after row images.
 
-This is fundamentally different from triggers or application-level dual-writes. The WAL already exists and is exhaustive — CDC just reads it. Tools like Debezium connect to Postgres's logical replication slot (or MySQL's binlog, or MongoDB's oplog) and emit change events as the replication stream flows.
+The critical detail: this log is the ground truth. It captures *everything* that actually committed, including changes made by migrations, background jobs, or other services that bypass your application code. That's the gap that polling and app-level hooks both have.
 
-The Transactional Outbox Pattern is a manual approximation of this idea — you write to an outbox table in the same transaction so you don't lose the event. CDC with WAL tailing makes the outbox unnecessary: the WAL *is* the outbox. The commit itself is atomic with the change record.
+**A concrete mental model**
 
-### Concrete Mental Model
+Think of it like a bank statement vs. a running balance. Your application might know the current account balance, but CDC gives you the *ledger* — every debit and credit in commit order. That ordering and completeness is what makes it powerful.
 
-Imagine your `orders` table. A CDC stream for it looks like:
+**Where it earns its keep**
 
-```
-{ op: "INSERT", table: "orders", after: { id: 42, status: "pending", ... }, lsn: 12345 }
-{ op: "UPDATE", table: "orders", before: { status: "pending" }, after: { status: "shipped" }, lsn: 12401 }
-```
+*Cache invalidation*: Instead of manual cache busting scattered across service code, a CDC consumer watches for row changes and evicts or refreshes proactively. No more stale cache bugs from a missed hook.
 
-Every downstream system — a cache, a search index, a data warehouse — can subscribe to this stream and stay synchronized without ever touching the source database with queries.
+*Event-driven integrations*: Service A owns a `orders` table. Service B needs to react to order state changes. Rather than coupling B into A's codebase, B consumes CDC events from Kafka. The contract is the schema of the row, not an internal API.
 
-### Practical Scenarios
+*Data pipelines*: Syncing OLTP → OLAP (Postgres → BigQuery, say) via CDC is dramatically more efficient than full-table dumps and handles deletes correctly — something bulk exports routinely get wrong.
 
-**Backend:** You have a microservice that owns the `accounts` table but three other services need to react to account state changes. Rather than calling them via API (tight coupling) or implementing outbox manually in every write path, CDC emits change events that each service consumes independently. It also gives you exactly-once delivery guarantees tied to LSN position, so consumers can resume without re-reading the source.
+**Where it gets complicated**
 
-**Data:** Your analytics warehouse needs near-real-time data but ETL jobs run hourly and strain the production database with bulk reads. CDC lets you stream changes continuously into a Kafka topic, which Flink or a Spark streaming job transforms and loads incrementally. No full-table scans, no polling overhead, and the latency drops from hours to seconds.
+Schema changes are the main hazard. If you rename a column, your CDC consumers break silently or loudly depending on how they're parsing events. You need a schema registry (Confluent or otherwise) and a deployment discipline around schema evolution.
 
-### The Tradeoff to Know
+Replication lag is real: CDC events are near-real-time, not synchronous. A consumer acting on a CDC event is operating on data that was consistent *when committed*, but downstream state may have moved on.
 
-CDC consumers are coupled to your schema. A column rename or type change in the source table is a breaking change for every downstream consumer. Schema registries (like Confluent's) exist to manage this, but it's the main operational friction.
+Replication slots in Postgres hold WAL segments until consumed — a lagging or dead consumer will cause disk to fill. Monitor slot lag.
+
+**The seniority signal**
+
+Knowing CDC exists is table stakes. What differentiates seniors is understanding *when not to use it*: if you control all writers and can use the Transactional Outbox Pattern reliably, you get ordering guarantees and simpler failure semantics without the operational complexity of a replication slot. CDC shines when you *don't* control all writers, or when you need a complete audit trail of all mutations without instrumenting every code path.

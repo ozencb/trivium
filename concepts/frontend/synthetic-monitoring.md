@@ -1,30 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Synthetic Monitoring** is the practice of simulating user interactions against your production system on a schedule, so you detect failures and regressions before real users do. Unlike real-user monitoring (RUM), which tells you what happened, synthetic monitoring is proactive—it tells you what's happening right now, even at 3am with zero traffic.
+**Synthetic Monitoring** is the practice of running scripted, automated interactions against your production (or staging) environment on a schedule—before real users hit a problem. Unlike Real User Monitoring (RUM), which captures what actually happened to real visitors, synthetic monitoring tells you what *would* happen to a user right now, giving you a ground truth that's fully under your control.
 
 ## Core Mechanism
 
-You write scripted "user journeys"—login, add to cart, checkout, whatever matters—and a monitoring agent executes them from external infrastructure (often multiple geographic locations) at fixed intervals. The agent measures wall-clock time for each step, captures screenshots on failure, and fires alerts when things break or degrade past a threshold.
+A synthetic monitor is essentially a headless browser (Playwright, Puppeteer, or a managed service like Datadog Synthetics or Checkly) executing a script: navigate to URL, wait for element, click button, assert response. This runs from multiple geographic locations every N minutes. The result is a time-series of latency, availability, and assertion pass/fail—indexed against *your* infrastructure state, not user variance (device, network, browser cache).
 
-The key distinction from uptime pings: a 200 from your server doesn't mean your app works. Synthetic monitoring actually runs your JavaScript, waits for renders, clicks buttons, and validates that the right content appeared. It catches a broken checkout flow that returns 200 with a blank modal just as well as a 500.
+The key insight is that you own the signal. RUM is noisy—users have slow phones, flaky 4G, browser extensions. Synthetic runs eliminate that variance. If your synthetic monitor degrades, it's your stack.
 
-## Mental Model
+## Concrete Mental Model
 
-Think of it as hiring a robot QA engineer who runs your smoke test suite against prod every five minutes. The robot doesn't care that it's 2am or that there's no traffic. It cares that the "Place Order" button is still clickable and the confirmation page loads in under 2s.
+Think of synthetic monitoring as a canary that flies your most important user journeys around the clock. You script the checkout flow, the login sequence, the dashboard load. Each run is a data point: did it complete? How fast? The moment a deploy breaks the add-to-cart button at 3am, your pager fires—not because a user complained, but because the canary died.
 
 ## Practical Scenarios
 
-**Frontend:** You set a performance budget for LCP < 2.5s on your product listing page. Deploy goes out Friday afternoon. Synthetic monitoring catches that LCP jumped to 4.1s (a mis-configured lazy-load attribute shipped) within 10 minutes—before your weekend traffic surge hits.
+**Frontend**: You set a [performance budget](performance-budget) of 2.5s LCP on the product detail page. A synthetic monitor measures LCP on every deploy. When a new image carousel ships and LCP jumps to 4.1s, the monitor catches it before the feature flags roll out to 100% of users. This is the feedback loop that keeps performance budgets enforceable rather than aspirational.
 
-**Fullstack:** Your API gateway occasionally returns stale cached responses that make the dashboard appear to load but show no data. Uptime checks pass, error rates look fine. A synthetic script that logs in, loads the dashboard, and asserts `document.querySelectorAll('.metric-card').length > 0` catches this in the next polling cycle.
+**Fullstack**: You have an API-backed search feature. The synthetic script queries the endpoint directly and asserts p95 < 300ms. When a bad query plan sneaks in via a migration, the synthetic catches the latency spike within one polling cycle—before any user session is affected and before it shows up in your slow-query logs.
 
-**SRE:** You're running a multi-region deployment. Synthetic monitors from AWS us-east, eu-west, and ap-southeast give you per-region health as a baseline. During an incident, you immediately know whether it's a global outage or a regional routing issue—no need to wait for users to complain from specific regions.
+**SRE**: Multi-region synthetic checks running from us-east, eu-west, ap-southeast give you a global availability map. A CDN misconfiguration that only affects APAC users is invisible to US-based on-call engineers checking their browser—but the synthetic monitor in Singapore fires immediately.
 
-## The Performance Budget Connection
+## Why This Differentiates Senior Engineers
 
-Synthetic monitoring is how performance budgets get enforced in production rather than just in CI. You set the budget as a threshold, the synthetic runner measures against it continuously, and you get alerted the moment real production diverges from the contract you defined. Without synthetic monitoring, budgets tend to erode silently between releases.
-
-Common tools: Datadog Synthetics, Checkly, New Relic Synthetics, or self-hosted Playwright scripts on a cron with a metrics sink.
+Junior engineers reach for synthetic monitoring reactively—after an outage. Senior engineers treat scripted journeys as first-class artifacts owned by the team, versioned alongside code, and mapped to SLOs. In design discussions, the question isn't "should we monitor this?" but "what's the minimum synthetic coverage that lets us deploy confidently at any hour?" That framing—monitoring as a deployment gate, not a dashboard—is what separates operational maturity from operational theater.

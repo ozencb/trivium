@@ -1,30 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## MVCC (Multi-Version Concurrency Control)
+## Multi-Version Concurrency Control (MVCC)
 
-Instead of locking rows so readers and writers don't collide, MVCC lets them coexist by keeping multiple versions of each row — readers see an older snapshot, writers create new versions. This eliminates the most painful bottleneck in 2PL: readers blocking writers and vice versa.
+MVCC solves reader-writer contention by keeping multiple versions of each row rather than forcing readers to wait for writers. Instead of lock-based blocking, each transaction gets a consistent snapshot of the database at the moment it starts — readers and writers proceed independently.
 
-### The core mechanism
+**The mechanism**
 
-Every row carries hidden metadata: the transaction ID that created it and the transaction ID that deleted or replaced it. When a transaction starts, it's assigned a transaction ID and takes a snapshot — a point-in-time view of which transaction IDs are committed. A row is visible to your transaction if it was created by a committed transaction that started before your snapshot, and not yet deleted (or deleted by a transaction that started after yours).
+Every row carries version metadata: in PostgreSQL, each tuple has `xmin` (the transaction ID that created it) and `xmax` (the transaction ID that deleted or superseded it). When a transaction begins, it captures a snapshot — essentially a record of which transaction IDs had committed at that instant. A row is visible to a transaction if its `xmin` is in the snapshot's committed set and its `xmax` is not. Writers insert new row versions; they never modify the old ones in place. Old versions accumulate until `VACUUM` reclaims them, which is why long-running transactions on write-heavy tables cause table bloat.
 
-When you `UPDATE` a row, the database doesn't overwrite it. It marks the old version as expired (using your transaction ID) and inserts a new version. Both versions coexist on disk until garbage collection removes the old one.
+**Mental model**
 
-### Mental model
+Think of it as per-row Git history. A reader checks out the commit at their transaction's start time and sees a frozen view. A writer creates a new commit. Neither operation touches the other's view. The "current" version is just the latest commit; older ones persist until garbage collected.
 
-Think of it like Git. Each row write is a commit. When you start a transaction, you're doing a `git checkout` at a specific commit hash. Other transactions can keep committing new changes, but your view of the world is frozen at your snapshot. When you commit, you're merging your branch — and if someone else modified the same rows, you might get a conflict.
+**Where it breaks: snapshot isolation anomalies**
 
-### Where this matters in practice
+MVCC typically gives you snapshot isolation, which is *not* the same as serializability. The classic trap is **read skew**:
 
-**Backend:** This explains the behavior you've probably seen but maybe not fully attributed — you read a row, do some work, then try to update it and get a serialization error or a lost update. Your transaction's snapshot was taken at start, so you might be operating on stale data by the time you write. Libraries like SQLAlchemy's `SELECT FOR UPDATE` or explicit optimistic locking patterns exist specifically because MVCC doesn't protect you from write-write conflicts — it only handles read-write contention.
+- T1 reads account A (balance: 100), then reads account B (balance: 200)  
+- T2 transfers 100 from A→B and commits between T1's two reads  
+- T1 sees A=100 (old version) and B=300 (new version) — a total of 400 that never existed atomically
 
-**Data:** MVCC is why Postgres can run a multi-minute analytical query without blocking your app's OLTP writes. The analytical query holds a snapshot; OLTP writes create new versions that the analytical query simply doesn't see. This is the architecture that makes "run analytics on prod" even remotely viable, and it's why data warehouse patterns on Postgres (or tools like Redshift, which uses a similar model) don't need separate read replicas just for query isolation.
+Each individual read was internally consistent, but T1 observed a state the database never actually had. **Write skew** is the same pattern under writes: two transactions each read overlapping data and make decisions that would conflict if they'd seen each other's writes.
 
-### The tradeoffs
+**Practical implications**
 
-- Old row versions accumulate until cleaned up — Postgres's `VACUUM` exists for this reason. Heavy write workloads on long-running transactions can cause table bloat.
-- Write-write conflicts still need explicit handling. MVCC only sidesteps read-write contention.
-- Snapshot isolation (what most databases actually implement) is weaker than full serializability — you can still get write skew anomalies unless you use `SERIALIZABLE` isolation, which adds another layer of conflict detection on top of MVCC.
+*Backend:* "Read, check, write" logic is not safe under snapshot isolation. If you read a row to validate a constraint and then write based on that, another transaction can sneak in between. You need `SELECT FOR UPDATE` to acquire a row lock, or bump to `SERIALIZABLE` isolation. Most ORMs default to snapshot isolation without advertising it.
+
+*Data/analytics:* Long-running analytical queries hold their snapshot open, which prevents VACUUM from reclaiming dead tuples for the entire duration. A single forgotten `idle in transaction` connection can cause unbounded table bloat proportional to the write rate during its lifetime. Monitoring `pg_stat_activity` for long-running transactions is standard PostgreSQL ops hygiene for this reason.
+
+**The design interview edge**
+
+The differentiating knowledge: snapshot isolation has anomalies that serializable doesn't; `REPEATABLE READ` in MySQL gives snapshot isolation while in PostgreSQL it additionally prevents certain phantom reads; and "reads don't block writes" is a tradeoff, not a free lunch — version storage and GC overhead are real costs that show up under high write throughput.

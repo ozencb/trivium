@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Long polling is a technique for pushing data from server to client before true server-push protocols existed — it simulates real-time updates over plain HTTP by exploiting the request lifecycle.
+## Long Polling
 
-## The Mechanism
+Long polling is a technique where the client sends an HTTP request and the server deliberately delays responding until it has something meaningful to send — then the client immediately re-issues the request. It's the closest approximation of server-to-client push that standard HTTP allows without persistent connections.
 
-Normal HTTP is pull-only: client requests, server responds immediately, connection closes. If you need fresh data, you poll on an interval — but that's wasteful (empty responses most of the time) and introduces latency proportional to your interval.
+### The Mechanism
 
-Long polling flips the timing. The client makes a request, but the server **holds the connection open** rather than responding immediately. It only responds when it has new data to send (or a timeout elapses). The client receives the response, processes it, and immediately opens another long-poll request. From the outside it looks like a persistent update stream.
+Normal polling: client asks "anything new?" every N seconds, server always responds immediately (usually "nope"). This generates noise proportional to your polling interval regardless of activity.
 
-The key insight: HTTP doesn't require immediate responses. You can hold a connection in a pending state server-side, and the client's socket stays open the whole time. Nothing in TCP says the response has to come fast.
+Long polling flips the model. The server holds the request open — potentially for seconds or minutes — blocking in a suspended state until an event occurs or a timeout is hit. When data arrives, the server responds, and the client fires off a new request immediately. From the outside it looks like a live feed; underneath it's a rapid succession of request/response cycles.
 
-## Concrete Mental Model
+The server-side implementation usually looks like: receive request, register a listener or join a wait queue, suspend the handler, and resume (or time out) when new data comes in. Timeouts matter because proxies and load balancers silently kill idle connections — so you respond with an empty payload after ~30s and let the client retry.
 
-Think of a courier waiting at a post office: instead of checking every 5 minutes whether a package has arrived ("short polling"), they just stand there until one comes in. Once they get the package and deliver it, they return to wait for the next one. The server is the post office, the client is the courier.
+### Mental Model
 
-## Practical Scenarios
+Think of it like a restaurant where you ask the waiter "is my order ready?" and instead of walking back to ask every two minutes, you stand in the kitchen doorway until the chef either hands you the plate or asks you to wait outside after 30 seconds so you don't block traffic.
 
-**Backend:** You hold the incoming request in memory (e.g., a queue or a map keyed by client ID), and when an event fires — a new message, a job completing, a price update — you look up any waiting requests and flush them. Server frameworks handle concurrent held connections via async I/O (Node.js event loop, Go goroutines, async Python). The scaling concern is connection count, not CPU.
+### Practical Scenarios
 
-**Frontend:** You chain requests manually. `fetch` resolves, you handle the response, then immediately call `fetch` again. You also need to handle timeouts gracefully — if the server closes with no data (keep-alive timeout), reopen without treating it as an error.
+**Backend:** Long polling creates connection-per-client pressure. If 10,000 clients are polling, you're holding 10,000 open connections — each consuming a thread or file descriptor depending on your server model. Node.js handles this better than thread-per-request Java, because async I/O means a suspended long poll doesn't block a thread. The bigger risk is your load balancer's idle timeout killing connections before your server does, causing the client to receive a silent disconnect it may not handle gracefully.
 
-**Fullstack:** Long polling is how early chat apps (Facebook, GMail) pushed notifications before WebSockets were standardized. It's also still the correct choice when WebSockets are unavailable (some proxies/firewalls block upgrades) or when you need request-level auth semantics that don't carry over to WebSocket connections cleanly.
+**Frontend:** You implement it with a recursive fetch-then-retry loop rather than `setInterval`. Error handling matters here — network failures, 502s from proxy timeouts, and intentional 204/empty responses all need distinct handling. If you just retry on any error without backoff, you'll hammer the server during an outage.
 
-## Why It Matters for WebSockets
+**Fullstack:** Long polling is a reasonable choice when WebSockets are blocked by your infrastructure (some corporate proxies strip upgrade headers) or when you need simple stateless delivery without the operational overhead of managing persistent connections. It's also easier to scale horizontally since each request is self-contained — no sticky sessions required unless you're doing server-side fan-out.
 
-WebSockets are the upgrade from long polling — they give you a true bidirectional channel instead of a sequence of one-directional held requests. Long polling's architecture (hold, respond, re-request) is a useful mental model because WebSockets solve the same problem but collapse that cycle into a single persistent connection with a framing protocol on top.
+### When to Reach For It
+
+Use it when you need near-real-time updates, WebSockets aren't available, and connection volume is manageable. Beyond a few thousand concurrent clients, the connection overhead becomes the bottleneck — which is exactly why WebSockets (and Server-Sent Events) exist to replace it.

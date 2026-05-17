@@ -1,32 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-CORS (Cross-Origin Resource Sharing) is a browser-enforced policy that lets servers declare which external origins can read their responses — it exists because browsers would otherwise let any page silently make authenticated requests to any server the user is logged into.
+## CORS (Cross-Origin Resource Sharing)
 
-## The actual mechanism
+Browsers enforce a same-origin policy by default: a script loaded from `app.example.com` cannot read responses from `api.example.com`. CORS is the negotiation protocol that lets servers opt specific origins back in — without it, the modern web's split between frontend hosts and API hosts would be impossible.
 
-The browser enforces the **Same-Origin Policy** by default: JS on `app.com` can *send* requests anywhere, but cannot *read* responses from a different origin (scheme + host + port triple). CORS is the server-side opt-in that relaxes this restriction.
+### The Mechanism
 
-Two request categories matter:
+Two request paths matter:
 
-**Simple requests** (GET, HEAD, some POSTs with plain content types): The browser sends the request immediately with an `Origin` header. The server either includes `Access-Control-Allow-Origin` in its response or doesn't. If it doesn't match, the browser receives the response but blocks JS from reading it — the request already happened.
+**Simple requests** (GET/POST with standard headers and form-encoded/plain-text bodies): the browser sends the request with an `Origin` header, the server responds normally, and the browser checks `Access-Control-Allow-Origin` before exposing the response to your JavaScript. If the header is missing or doesn't match, the response is silently dropped — the request *did* reach the server.
 
-**Preflighted requests** (PUT/DELETE, custom headers, JSON body): The browser first sends an `OPTIONS` request to ask "will you accept this?". The server must respond with the right `Access-Control-Allow-*` headers before the browser proceeds with the actual request. This is the mechanism that protects against state-mutating cross-origin requests.
+**Preflighted requests** (anything with custom headers, JSON content-type, or non-standard methods): the browser fires an OPTIONS request first. The server must respond to that preflight with `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, and `Access-Control-Allow-Headers` before the browser sends the real request. This is the one that trips people up — an API that handles POST but ignores OPTIONS will break preflight silently.
 
-Critical nuance: **CORS is entirely browser-enforced**. The server just sends headers. `curl`, Postman, server-to-server calls — none of them see CORS. When you get a CORS error, the request usually *did* reach your server.
+The critical mental model: **CORS is enforced by the browser, not the server.** A `curl` or Postman request sees nothing. Your API is not "protected" by CORS — a malicious server-side script still hits it freely. CORS only governs what browser-loaded scripts can read back.
 
-## The `credentials` gotcha
+### Common Pitfalls
 
-`Access-Control-Allow-Origin: *` is a wildcard, but it cannot be used alongside `Access-Control-Allow-Credentials: true`. If you need cookies or auth headers sent cross-origin, you must echo back the specific requesting origin, not `*`. Forgetting this causes confusing failures where CORS works for anonymous requests but breaks for authenticated ones.
+`Access-Control-Allow-Origin: *` breaks the moment you add `credentials: 'include'` to a fetch. Browsers explicitly forbid wildcard + credentials — you must echo back the specific requesting origin and set `Access-Control-Allow-Credentials: true`. This combination frequently leads to the "fix": dynamically reflecting whatever `Origin` header arrives. That's a security hole — always maintain an allowlist.
 
-## Practical angles
+Forgetting OPTIONS handling is probably the most common backend bug. Your framework's CORS middleware handles this; rolling it by hand is where things go wrong.
 
-**Backend**: You configure CORS in middleware — Express's `cors()`, Django's `django-cors-headers`, Spring's `@CrossOrigin`. The decision is: which origins get access, which methods/headers are allowed, and whether credentials flow. Misconfiguring `allow-credentials: true` with `origin: *` opens you to CSRF-like attacks.
+### Practical Angles
 
-**Frontend**: You see the OPTIONS preflight in DevTools before your actual request. If you're debugging CORS, check whether the preflight succeeded separately from the real request. A 200 on OPTIONS but failure on the actual call points to a different problem than a 403 on OPTIONS.
+**Backend:** Configure CORS at the framework level (Express `cors()`, FastAPI `CORSMiddleware`, etc.) rather than manually on each route. Treat your allowed-origins list like an allowlist — don't be lazy with `*` on APIs that handle auth.
 
-**Fullstack**: The classic pain is local dev — React on `:3000` hitting an API on `:8080`. Different ports = different origin = CORS applies. The fix is either configuring CORS on the API for `localhost:3000`, or using a dev proxy (Vite's `server.proxy`, CRA's `proxy` field) to make requests appear same-origin to the browser.
+**Frontend:** A CORS error in the browser console means the response was blocked, not that the request failed to send. Check the Network tab — you'll likely see the response sitting there with a 200. In local dev, use your bundler's proxy (`vite.config.ts` → `server.proxy`) to route API calls through the same origin, bypassing CORS entirely during development.
 
-The mental model that holds up: CORS is a *browser feature* for protecting users, not a server security layer. It prevents a malicious page from reading your bank's API response using your session cookie — not from making requests to your server.
+**Fullstack:** The canonical case — React on `app.example.com`, API on `api.example.com` — requires explicit origin config on the API. If you're behind a CDN or reverse proxy, confirm the CORS headers aren't being stripped or cached incorrectly; this is where preflight caching via `Access-Control-Max-Age` also matters for performance.

@@ -1,38 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Race Conditions
 
-A race condition occurs when the correctness of a program depends on the relative timing of concurrent operations — and that timing isn't guaranteed. They're subtle because the code looks correct in isolation; the bug only manifests when two threads of execution interleave in a specific way.
+A race condition occurs when a program's correctness depends on the relative timing of concurrent operations — two or more threads read and write shared state, and the final outcome varies based on which thread "wins" an implicit race. The bug isn't in any single thread; it's in the *combination* of their interleavings.
 
 ### The Core Mechanism
 
-The fundamental issue is that operations you think of as atomic often aren't. Consider `counter++`. At the machine level this is: read the value, increment it, write it back — three distinct steps. If two threads execute this "simultaneously," both can read the same initial value, both increment their local copy, and both write back — losing one increment entirely. The window of vulnerability between read and write is called a **critical section**.
+The root pattern is **read-modify-write**: a thread reads a value, computes a new value, then writes it back. The problem is that this is never atomic at the hardware level unless you make it so. Between the read and the write, another thread can read the same stale value, compute its own new value, and write it back — and your write will silently overwrite theirs (or vice versa).
 
-The nasty part: this doesn't always fail. Most of the time the scheduling works out fine. Race conditions are heisenbugs — they appear intermittently, often under load, and vanish when you add logging (which changes timing).
+```
+Thread A: read balance (100) → compute 100+50 → write 150
+Thread B: read balance (100) → compute 100+30 → write 130
+Final balance: 130. Lost $50.
+```
 
-### Mental Model
+Both writes succeeded. No exception. No log entry. Just a wrong number.
 
-Think of two people editing the same Google Doc, but with a 10-second sync delay. Person A reads "Total: 5", adds 3, and will write "Total: 8". Person B reads "Total: 5" at the same time, adds 1, will write "Total: 6". Last write wins — you lose an update. This is check-then-act: the state you checked is no longer valid by the time you act on it.
+The non-determinism comes from OS scheduling: threads get preempted at arbitrary instruction boundaries. In testing, you might never hit the interleaving that causes the bug. In production under load, you'll hit it constantly.
 
-### Backend Scenarios
+### What Makes It Subtle
 
-**Inventory systems**: You check that stock > 0, then decrement. Under concurrent requests, two buyers can both pass the check before either decrement lands. Result: overselling.
+The pattern isn't always obvious. A counter increment (`x++`) is read-modify-write. A cache invalidation followed by a re-fetch is read-modify-write. Even checking a boolean flag before taking action (`if (!locked) acquire()`) is read-modify-write at the logical level. **Anything with a gap between observation and action is a candidate.**
 
-**Job queues**: A worker checks if a job is "pending", marks it "processing", starts work. If the check and update aren't atomic, two workers claim the same job.
+### Practical Scenarios
 
-**Balance transfers**: Read balance, verify sufficient funds, deduct. Classic lost-update problem under concurrent transfers.
+**Backend (account balance, inventory):** Classic case. A flash sale reduces stock: `SELECT count WHERE id=X`, then `UPDATE count = count - 1`. Two requests land simultaneously, both read `count=1`, both write `count=0`, you've oversold by one. Fix: atomic `UPDATE ... WHERE count > 0` or a database-level lock.
 
-The fix is usually one of: a database transaction with proper isolation, a `SELECT FOR UPDATE` pessimistic lock, or an atomic CAS (compare-and-swap) operation. This is exactly what **optimistic locking** and **MVCC** solve — they let you detect that the state changed between your read and write, rather than preventing concurrent reads entirely.
+**Fullstack (optimistic UI + API):** User edits a document. Frontend POSTs changes. Meanwhile another tab (or user) POSTed changes to the same resource. Last-write-wins unless you detect the conflict — which requires the read-modify-write to include a version check (this is exactly what optimistic locking solves, and why it's a natural next concept).
 
-### Fullstack Scenarios
+**Session/cache layer:** Two services both check Redis for a cached value, both get a miss, both query the DB, both write to cache. Usually harmless, but in a thundering-herd scenario it's expensive — and if the write involves a counter or aggregation, it's correctness-breaking.
 
-**Double-submit prevention**: User clicks "Pay" twice fast. Both requests hit the server before either response lands. Without idempotency keys or a database-level unique constraint, you charge them twice.
+### The Invariant to Protect
 
-**Optimistic UI updates**: Frontend updates local state immediately, fires the API call. If two tabs do this concurrently to the same resource, the last write wins and one user's change silently disappears.
-
-**Session state**: Reading then writing session data (e.g., cart operations) without locking can corrupt state under concurrent requests from the same user.
-
-The key shift in thinking: stop reasoning about individual operations and start reasoning about **interleavings**. Any time two concurrent actors touch shared mutable state, assume the worst-case ordering is possible.
+The fix is always about making the read-modify-write atomic with respect to other threads: locks, atomic CPU instructions, database transactions, or version-based conflict detection. Recognizing *which* pattern you have determines which tool fits.

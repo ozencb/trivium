@@ -1,36 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Idempotency
 
-An operation is idempotent if applying it multiple times produces the same result as applying it once. This matters because you already know at-least-once delivery guarantees duplicates — idempotency is how you make those duplicates harmless without coordinating at the transport layer.
+Since you already understand at-least-once delivery, you know the uncomfortable truth: in distributed systems, messages get delivered more than once. Idempotency is the property that makes this survivable — an operation you can apply 10 times and get the same outcome as applying it once.
 
-### The Core Mechanism
+**The core mechanism**
 
-Idempotency isn't about deduplicating the *call* — it's about making the *effect* safe to repeat. Two approaches:
+The formal definition is f(f(x)) = f(x). The engineering insight is about *state transitions*, not just return values. An idempotent operation reaches a deterministic final state regardless of how many times it runs. This is subtly different from "returns the same response" — it's about what happens to the system.
 
-**Natural idempotency**: some operations are inherently safe to repeat. `SET status = 'verified'` is idempotent; `SET login_count = login_count + 1` is not. The question to ask: does the second execution change anything the first didn't?
+Two primary mechanisms:
+- **Natural idempotency** — some operations are inherently idempotent. `SET user.status = 'active'` is; `INCREMENT user.login_count` is not.
+- **Idempotency keys** — the caller provides a unique identifier for the operation. The server records it. On duplicate delivery, it detects the key, skips re-execution, and returns the original result.
 
-**Idempotency keys**: for operations that aren't naturally idempotent, the client generates a unique ID (UUID) per logical operation and sends it with each attempt. The server records processed keys and their results — on a duplicate, it returns the cached result instead of re-executing.
+**Mental model**
 
-Mental model: a light switch labeled ON/OFF is idempotent — flipping to ON twice leaves you in the same state. A toggle switch is not — two presses undoes the first.
+A hotel room key card. Re-swiping it doesn't check you in again — the system recognizes the request was already fulfilled. The card is the idempotency key; the "already checked in" record is your deduplication store.
 
-### Backend
+**Backend**
 
-Payment processing is the canonical example. Stripe requires idempotency keys precisely because payment requests time out. Without one: did the charge go through? Retry and risk a double charge. With one: retry freely — the server returns the original response if it already processed that key.
+Payment processing is the canonical case. A charge request times out — did it go through? With idempotency keys (Stripe does this explicitly), you retry with the same key. The processor either executes it (first time) or returns the committed result (duplicate). Without this, retries cause double charges.
 
-Database writes: `INSERT ... ON CONFLICT DO NOTHING` with a natural unique key makes bulk ingestion pipelines safe to replay. This matters when reprocessing a Kafka partition after a consumer crash — you replay from the last committed offset, duplicates included.
+Database write patterns matter too. `INSERT ... ON CONFLICT DO NOTHING` or upsert semantics turn non-idempotent inserts into idempotent ones. When designing event consumers, ask: if this event replays, does my handler produce the same state? If not, you need deduplication logic before the handler runs.
 
-Message consumers: if your consumer handler is idempotent, you decouple correctness from broker-level delivery guarantees. Processing a message twice has no effect, so you never need to pause and ask "did this already run?"
+**Fullstack**
 
-### Fullstack
+On the API boundary, POST endpoints break idempotency by default — PUT and DELETE are spec'd to be idempotent; POST isn't. A common pattern: generate an idempotency key client-side (UUID), send it as a header, let the server deduplicate. This makes "submit order" safe to click twice or retry on network failure.
 
-Form submissions: generate a submission token server-side when rendering the form, embed it as a hidden field. The backend deduplicates on it. Double-clicks and browser retries become safe — the second request is a no-op.
+**Where senior engineers differentiate**
 
-Optimistic UI mutations: when a mutation fails and you retry, an idempotent endpoint means you don't need to first check whether the original attempt actually succeeded. Retry unconditionally.
+The non-obvious part is *scope*. Idempotency isn't just about the database write — it covers all side effects: emails sent, webhooks fired, downstream services called. A truly idempotent endpoint must make all side effects idempotent, or gate them behind the same deduplication check. Missing one is how double-send bugs happen in production.
 
-### The Connection Forward
-
-Exactly-once delivery at the infrastructure level is either impossible or requires expensive coordination (two-phase commit, distributed transactions). Idempotency lets you accept at-least-once at the transport layer and achieve effectively-once *outcomes* at the application layer. That's the practical trade-off the industry settled on.
+This is also the foundation for exactly-once semantics — which isn't really "deliver exactly once" (impossible to guarantee end-to-end), it's "deliver at-least-once, consume idempotently, achieve exactly-once *effect*." That reframe is worth internalizing.

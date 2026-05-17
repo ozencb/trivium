@@ -1,36 +1,41 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Container Internals
+## Container Internals: Namespaces and Cgroups
 
-A container is not a lightweight VM — it's a regular Linux process running with restricted visibility into the host system. The "isolation" is an illusion crafted by the kernel, not hardware virtualization.
+Containers are not lightweight VMs — they're processes running on the host kernel with carefully scoped visibility and resource budgets. The two Linux primitives that make this work are **namespaces** (what a process can see) and **cgroups** (what a process can use).
 
-### The core mechanism: namespaces + cgroups
+### Namespaces: Scoped Visibility
 
-Linux namespaces are the isolation primitive. When you `docker run`, the kernel creates a new process and assigns it to several namespaces:
+A namespace wraps a global resource and presents each process with its own isolated view. Linux has several:
 
-- **PID namespace** — the process sees itself as PID 1, can't see host processes
-- **net namespace** — gets its own network stack (interfaces, routing table, iptables rules)
-- **mnt namespace** — has its own mount table; sees a different filesystem root via `chroot`
-- **uts namespace** — its own hostname
-- **ipc/user namespaces** — isolated IPC, optionally remapped UIDs
+- **pid**: process sees its own PID 1, can't signal processes outside the namespace
+- **net**: private network stack — own interfaces, routing table, iptables rules
+- **mnt**: own filesystem tree (this is how `chroot` fits in — layered on top)
+- **user**: remaps UIDs, so container root (0) maps to an unprivileged host UID
+- **uts**: own hostname
+- **ipc**: isolated shared memory and message queues
 
-cgroups (control groups) handle the *resource* side: CPU shares, memory limits, I/O bandwidth. When Kubernetes sets `resources.limits.memory: 512Mi`, it's writing to a cgroup file like `/sys/fs/cgroup/memory/docker/<id>/memory.limit_in_bytes`.
+When you run `docker run`, the runtime (`runc`) calls `clone()` with these namespace flags, forking a child that inherits a stripped view of the world. The child thinks it's alone; the host kernel knows otherwise. Crucially, **no kernel is copied** — the container shares yours.
 
-The filesystem you see inside a container is a union mount (OverlayFS). Each layer in your Dockerfile is a read-only directory. At runtime, a thin writable layer sits on top — writes copy-up from the lower layers. This is why two containers from the same image share disk space but don't interfere.
+### Cgroups: Resource Accounting and Limits
 
-### Mental model
+Cgroups (control groups) are a kernel accounting hierarchy. You assign processes to a cgroup and set limits: CPU shares, memory cap, I/O bandwidth, PIDs. The kernel enforces these at scheduler and allocator level.
 
-Think of it as: the kernel is the only real kernel. Containers share it. Docker just calls `clone()` with namespace flags and then `execve()` into your entrypoint. You can verify this — `docker run` shows up as a regular process in `ps aux` on the host.
+A memory-limited container that tries to allocate beyond its cgroup ceiling gets an OOM kill — not the host, just that cgroup's processes. This is how `--memory=512m` actually works, and why a misconfigured limit can cause mysterious OOM crashes with no host-level symptoms.
 
-### Practical implications
+### Mental Model
 
-**Backend**: When a service OOMs inside a container, it's because the cgroup memory limit was hit, not the host's physical RAM. The kernel's OOM killer fires against the cgroup, killing processes in that container. This is distinct from hitting virtual memory limits.
+Think of a container as: **a process tree + a namespace bundle + a cgroup leaf**. The filesystem (layers, overlay mounts) is separate — it's just how the root namespace gets populated. The "container" abstraction is the runtime stitching these three primitives together.
 
-**SRE**: `docker stats` and `kubectl top` read from cgroup accounting, not `/proc` directly. If your container has no memory limit set, `free -m` inside shows the *host's* RAM — a common footgun where apps size their heap off that and exceed what's actually available.
+### Why This Matters in Practice
 
-**DevOps**: Port binding in containers (your prerequisite) works because each container has its own net namespace with a virtual eth interface. When you do `-p 8080:80`, Docker adds an iptables NAT rule on the host that forwards traffic from host port 8080 into the container's namespace on port 80. This is exactly the model Kubernetes builds on — each pod gets its own net namespace, and kube-proxy/CNI plugins manage the routing rules between them.
+**Backend**: If your service leaks memory, the cgroup OOM killer terminates it. Understanding cgroup hierarchies explains why Kubernetes's `requests` vs `limits` distinction exists — requests influence scheduling (which node), limits set cgroup caps (enforcement).
 
-Understanding namespaces makes Kubernetes scheduling intuitive: the scheduler places pods, but namespace setup is the container runtime's job, which is why CNI plugins exist as a separate layer.
+**SRE**: Container breakouts almost always exploit shared kernel surface — a `ptrace` vulnerability, a misconfigured user namespace, a privileged mount. Knowing that containers share the kernel makes you correctly skeptical of "just run it in a container" as a security boundary without `seccomp`, `AppArmor`, or user namespace hardening.
+
+**DevOps**: Namespace leaks (e.g., host network mode) silently remove isolation. Seeing `--net=host` in a Dockerfile should trigger immediate scrutiny — that container shares the host's network namespace entirely, defeating a significant portion of the isolation model.
+
+The senior-engineer signal in interviews: knowing that `pid` namespace isolation is why you need a proper init process (`tini`, `dumb-init`) inside containers, because PID 1 is responsible for reaping orphaned child processes — and without it, zombies accumulate.

@@ -1,45 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Swap and Swapping
 
-When a system runs out of physical RAM, the OS doesn't crash — it extends memory onto disk by moving inactive pages out of RAM and into a reserved area called swap space. Swapping is the mechanism that makes this work without processes knowing their memory might be on disk.
+When physical RAM is exhausted, the OS evicts cold memory pages to a reserved area on disk (the swap space) to make room for active ones. The cost is severe: disk I/O is 100–1000x slower than RAM, so any access to a swapped-out page blocks until the kernel reads it back.
 
----
+### The mechanism
 
-### The Core Mechanism
+The Linux kernel maintains LRU page lists and tracks which pages haven't been accessed recently. When free memory drops below a watermark, `kswapd` wakes up and starts evicting cold pages to swap. When a process later touches an evicted page, a **page fault** fires, execution stalls, the kernel reads the page back from disk (swap-in), and potentially evicts another cold page to make room (swap-out). If you're under sustained memory pressure, this swap-in/swap-out churn becomes continuous.
 
-Physical RAM is finite. The OS manages memory in pages (typically 4KB chunks), and each page in a process's virtual address space is either resident in RAM or not. When RAM is full and a process needs a new page, the OS must evict something.
+`vm.swappiness` (0–100, default 60) controls whether the kernel prefers evicting anonymous memory (heap, stack) vs. dropping filesystem cache. For latency-sensitive services, setting it to 1 tells the kernel: *prefer dropping file cache first, only swap as a last resort.*
 
-The page replacement algorithm (LRU or approximations of it) picks a victim — typically a page that hasn't been accessed recently. That page gets written to swap space (a dedicated disk partition or file like `/swapfile`), and its page table entry is marked as "not present." The new page takes its slot in RAM.
+### Mental model
 
-When a process accesses a swapped-out page, it triggers a **page fault**. The hardware traps to the kernel, which reads the page back from disk into RAM, updates the page table, and resumes execution. The process never knew anything happened — from its perspective, the memory was always there.
+RAM is your desk. Swap is a filing cabinet across the room. When the desk is full, you put untouched papers in the cabinet. Retrieval is slow, but manageable — until you keep needing those same papers, at which point you're making constant trips and getting nothing else done.
 
----
+### Backend patterns
 
-### Why This Hurts
+A JVM service under memory pressure will GC more aggressively, and between GC cycles, heap pages can get swapped out. When those pages are touched again, latency spikes. This looks exactly like "GC pause problems" or "slow endpoints" — the diagnosis lands on the application when the actual culprit is the OS. If tuning heap size or GC settings doesn't help, check whether the host is swapping.
 
-The cost difference is stark:
-- RAM access: ~100ns
-- NVMe SSD swap read: ~100µs (1,000x slower)
-- Spinning disk swap: ~10ms (100,000x slower)
+Same pattern with Python workers: RSS grows gradually, swap kicks in, and suddenly p99 latency on your API doubles. The symptom is irregular, load-correlated spikes with no obvious code-level cause.
 
-**Thrashing** is the pathological case: the system is so memory-constrained that it spends more time swapping pages in and out than doing actual work. Page fault rate spikes, CPU time in kernel context balloons, and throughput collapses. You'll see high `si`/`so` in `vmstat` (swap in/out rates) as the diagnostic signal.
+### SRE patterns
 
----
+`vmstat 1` — watch the `si` (swap-in) and `so` (swap-out) columns. Nonzero `si` on a production host under load is a red flag. Cross-reference with `/proc/meminfo` SwapUsed and your latency percentiles.
 
-### Backend Context
+For Kubernetes, set resource `requests == limits` to prevent the scheduler from packing more pods onto a node than RAM can support. The alternative is swap-induced thrashing followed by OOM kills — the kubelet evicts pods, but only after latency has already spiked.
 
-JVM processes are particularly sensitive. GC pauses become unpredictable when the heap spans swap — a minor GC that should take 20ms can balloon to seconds if it touches pages that need to be faulted in. Redis explicitly [recommends](https://redis.io/docs/management/optimization/latency/#latency-due-to-transparent-huge-pages) either disabling swap or setting `vm.swappiness=1` to push the kernel toward preferring RAM.
-
-`vm.swappiness` (0–100) controls aggressiveness. At 0, the kernel swaps only when it has no other option. At 60 (default), it'll preemptively swap anonymous pages to keep file cache warm — often the wrong tradeoff for latency-sensitive services.
-
----
-
-### SRE Context
-
-Swap usage trending upward is a leading indicator of memory pressure, not just a lagging one. By the time you're seeing OOM kills, you've already blown past the warning. Track swap utilization and page fault rates as separate signals.
-
-On Kubernetes: nodes historically required swap disabled (kubelet would refuse to start). As of 1.28, Kubernetes has alpha-level swap support, but it's still off by default — most production clusters treat swap as absent. A node running unexpectedly low on memory will trigger the OOM killer before any swapping helps, so resource limits and requests matter more than swap configuration in k8s environments.
+One nuance: a small, stable swap usage isn't inherently bad. A nightly backup job parked in swap while inactive is fine. The bad pattern is *active, continuous swapping during normal load* — that's when it becomes a latency disaster.

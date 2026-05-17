@@ -1,42 +1,44 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Paint Timing API
 
-The Paint Timing API exposes timestamps for when the browser first renders pixels to the screen, giving you ground truth about perceived load speed rather than network or JS execution times. It exists because users experience paint events, not DOMContentLoaded.
+The Paint Timing API gives you precise timestamps for when the browser first put any pixels on screen (First Paint) and when it rendered the first meaningful content (First Contentful Paint). Without it, you're guessing at render performance from synthetic benchmarks; with it, you get real user measurements from production traffic.
 
 ### Core mechanism
 
-The browser distinguishes two paint milestones:
+The browser emits two `PerformanceEntry` events during page load: `first-paint` (FP) and `first-contentful-paint` (FCP). FP fires when *anything* is drawn — even a background color change. FCP fires when the first DOM content (text, image, SVG, canvas) is painted. The delta between them is often small, but a large gap signals the browser painted a blank-ish frame first, which users perceive as a flash of nothing.
 
-- **First Paint (FP)** — any visual change from a blank screen (even a background color)
-- **First Contentful Paint (FCP)** — the first render of actual content: text, image, SVG, or non-white canvas
-
-These are exposed via the `PerformanceObserver` API with the entry type `"paint"`. The timestamps are relative to the [navigation start](https://www.w3.org/TR/navigation-timing/) — the same epoch as everything else in the Performance Timeline, so you can correlate them with TTFB, resource timing, and long tasks without unit mismatch.
+You consume these via `PerformanceObserver`:
 
 ```js
-const observer = new PerformanceObserver((list) => {
-  for (const entry of list.getEntries()) {
-    console.log(entry.name, entry.startTime); // "first-paint", "first-contentful-paint"
+new PerformanceObserver((list) => {
+  for (const entry of list.getEntriesByType('paint')) {
+    console.log(entry.name, entry.startTime); // 'first-paint', 'first-contentful-paint'
   }
-});
-observer.observe({ type: "paint", buffered: true });
+}).observe({ type: 'paint', buffered: true });
 ```
 
-`buffered: true` is critical — paint events often fire before your observer is attached, and without it you miss them entirely.
+The `buffered: true` is critical — without it, you miss entries that fired before your observer registered, which happens constantly on fast connections.
 
-### Mental model
+### Practical mental model
 
-Think of FP and FCP as two different answers to "is something happening?" FP answers "did anything change?" (the white screen is gone). FCP answers "did the user see real content?" (not just a spinner or background). The gap between them tells you how long your loading skeletons or spinners are showing — which is often longer than you think.
+Think of FCP as the user's "is this working?" signal. If FCP is at 3s, the user has been staring at a blank screen for 3 seconds wondering if the site is broken. FCP doesn't measure *usefulness* — that's LCP's job — but it measures *responsiveness*.
 
-### Practical relevance
+### By role
 
-**Frontend:** FCP is your primary signal for render-blocking resources. If FCP is high, look at what's in the critical rendering path — blocking scripts, render-blocking CSS, or large synchronous font loads. FCP directly feeds into Lighthouse scores and Core Web Vitals reporting.
+**Frontend:** Use FCP to catch regressions introduced by render-blocking resources. A new third-party script added to `<head>` will push FCP measurably. Track FCP per route — a slow FCP on `/checkout` is more damaging than on `/about`.
 
-**Fullstack:** Server-rendered apps (Next.js, Remix, Rails) typically have better FCP than SPAs because HTML arrives with content. But if your server response is slow or your HTML is large, FCP degrades even with SSR. Monitoring FCP alongside TTFB tells you whether the bottleneck is server or client-side render work.
+**Fullstack:** FCP is a server-side proxy too. High TTFB (slow server response) directly delays FCP because the browser can't paint DOM content it hasn't received. If FCP degrades after a backend deploy, the root cause is often there, not in the JS.
 
-**SRE:** FCP is a user-facing SLI you can actually instrument in RUM (Real User Monitoring). Unlike synthetic probes that measure from a datacenter, Paint Timing data collected from real browsers captures CDN cache misses, slow mobile networks, and resource contention. You can feed it into your SLO dashboards via the Beacon API or a RUM service and alert on p75/p95 regressions across regions or device classes.
+**SRE:** Aggregate FCP as a p75/p95 metric in your RUM pipeline (Datadog, New Relic, or a custom beacon). Spike in p95 FCP during a deployment window is an early signal of user-visible degradation, often before error rates move. Segment by region and device class — FCP on a mid-range Android on 4G will look completely different than desktop Chrome on fiber.
 
-FCP is also the conceptual foundation for LCP (Largest Contentful Paint) — LCP extends the same idea by tracking not just the first content render, but the largest element, which correlates more strongly with perceived load completion.
+### Common pitfalls
+
+- Treating FP and FCP as interchangeable — they're not; FP can fire on a blank white flash.
+- Not bucketing by connection type or device memory; averages hide the worst-case user experience.
+- Forgetting `buffered: true` and silently collecting no data.
+
+FCP is your first checkpoint on the path to understanding LCP — if FCP is slow, LCP will be slow by definition.

@@ -1,45 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Web Storage API** gives browsers a simple key-value store that persists across page loads — a client-side escape hatch from the stateless nature of HTTP, without the overhead and automatic server-transmission of cookies.
+## Web Storage API
 
-## Core Mechanism
+Both `localStorage` and `sessionStorage` are synchronous, origin-scoped key-value stores for strings—but they differ on *which boundary* gates access, and that boundary mismatch is the source of almost every bug people hit with them.
 
-There are two stores: `localStorage` and `sessionStorage`. Both implement the same synchronous, string-keyed API. The difference is lifetime:
+### Core mechanism
 
-- `localStorage` persists indefinitely until explicitly cleared (or the user clears site data)
-- `sessionStorage` is scoped to the tab's session — gone when the tab closes, and *not* shared between tabs even on the same origin
+The storage unit for both is the **origin** (scheme + host + port). But `localStorage` is persisted to disk and shared across every browsing context under that origin—all tabs, all windows, even across browser restarts. `sessionStorage` is scoped to a single **browsing context** (roughly: a tab), lives in memory, and is destroyed when that context closes.
 
-Both are origin-scoped (`scheme + host + port`), so `https://app.com` and `http://app.com` get separate storage. There's no cross-origin access.
+The subtle invariant: two tabs open to `https://example.com` share one `localStorage` namespace but have *independent* `sessionStorage` namespaces. Writes to sessionStorage in tab A are invisible to tab B, full stop.
 
-The storage limit is typically 5–10MB per origin depending on browser — orders of magnitude more than cookies, but still not a database.
+There's one known trap here: when a new tab is opened via `window.open()` or a link without `rel="noopener"`, the new tab inherits a *snapshot copy* of the opener's sessionStorage at creation time. After that moment, the two are independent—but that initial copy surprises people expecting full isolation.
 
-```js
-localStorage.setItem('theme', 'dark');
-const theme = localStorage.getItem('theme'); // 'dark'
-localStorage.removeItem('theme');
+### Concrete mental model
 
-// Everything is stringified — objects need JSON round-trips
-localStorage.setItem('user', JSON.stringify({ id: 42, role: 'admin' }));
-const user = JSON.parse(localStorage.getItem('user'));
-```
+Think of `localStorage` as a shared clipboard for the origin and `sessionStorage` as a clipboard local to each tab. The shared one persists across sessions; the local one vanishes when you close the tab.
 
-The synchronous API is the subtle footgun: reads and writes block the main thread. For large payloads or frequent writes, this matters — prefer IndexedDB for anything heavier.
+### Practical implications
 
-## Mental Model
+**Auth flows:** JWTs or session tokens in `localStorage` are shared across tabs—a logout operation that clears the token will work, but you need to listen for the `storage` event on other tabs to react to it synchronously. If you store auth state in `sessionStorage`, you get natural per-tab session isolation for free (useful for multi-account UIs), but the user is "logged out" every time they close the tab—which may be a feature or a bug depending on your security model.
 
-Think of it as the browser's equivalent of a process environment — simple string pairs that survive restarts (`localStorage`) or exist only for the current "session" (`sessionStorage`), with no knowledge by the server unless you explicitly send the values.
+**Tab isolation:** `sessionStorage` is the right primitive when you want per-tab state that doesn't bleed between contexts—think multi-step wizards, shopping carts in separate tabs, or any scenario where two concurrent instances of the same page should be independent.
 
-## Practical Scenarios
+**SSR and hydration:** Neither API exists in Node.js. Any access to `localStorage` or `sessionStorage` at module evaluation time or during server rendering will throw. The fix is deferring reads to `useEffect` or guarding with `typeof window !== 'undefined'`. The sneakier version of this bug is a hydration mismatch: the server renders one thing, but the client reads sessionStorage during hydration and diverges—React will silently produce inconsistent DOM until it reconciles, or throw in strict mode.
 
-**Frontend:** UI preferences (dark mode, sidebar collapsed state, dismissed banners) are the canonical use case. You want these to survive a refresh but don't need or want them server-side. Also common: caching API responses for fast initial renders before a fresh fetch completes.
-
-**Fullstack:** Auth token storage is where most engineers have opinions. Storing JWTs in `localStorage` is convenient but exposes them to XSS — any injected script can read storage. `httpOnly` cookies are safer for tokens. A common compromise: store non-sensitive session metadata (user display name, preferences) in `localStorage`, keep auth tokens in `httpOnly` cookies managed server-side.
-
-Also relevant for fullstack: persisting draft state (unsaved form data), storing A/B test variant assignments, or holding device fingerprint values that feed analytics without a server round-trip on every page.
-
-## One Thing That Bites People
-
-`storage` events fire in *other* tabs on the same origin when `localStorage` changes — not in the originating tab. This is actually useful for cross-tab state sync (sign out everywhere, real-time preference propagation), but it surprises engineers who expect the event to fire locally.
+The fundamental rule: if you need state shared across tabs, use `localStorage` and design for concurrent writes. If you need per-tab isolation with no persistence requirement, use `sessionStorage`. If you need persistence *and* isolation, you need a server-side session.

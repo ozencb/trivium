@@ -1,0 +1,21 @@
+id: database-transactions
+title: Database Transactions
+category:
+  - Databases
+  - Concurrency
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - acid-properties
+  - two-phase-locking
+dependents:
+  - distributed-transactions
+  - optimistic-locking
+  - mvcc
+  - materialized-views
+brief: Logical units of work grouping reads and writes atomically, where isolation levels (read committed, repeatable read, serializable) determine the tradeoff between consistency and concurrency.

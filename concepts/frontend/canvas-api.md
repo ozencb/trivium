@@ -1,41 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Canvas 2D API
 
-The Canvas 2D API gives you a pixel-level drawing surface in the browser via an immediate-mode rendering model — you issue draw commands, pixels change, and there's no retained scene graph or DOM to manage.
+An immediate-mode 2D drawing surface where you issue imperative draw commands each frame, requiring explicit dirty tracking since the browser retains no scene graph.
 
-### Core Mechanism
+Unlike the DOM—where you declare structure and the browser handles rendering, hit-testing, and updates—Canvas 2D is a pixel buffer. You draw to it, and that's it. The browser has no memory of what you drew: no elements, no event listeners, no layout engine. You own the pixels.
 
-Unlike SVG or HTML elements (which create persistent objects the browser tracks and re-renders), Canvas is a dumb bitmap. You get a `CanvasRenderingContext2D` from a `<canvas>` element and call methods on it that directly manipulate pixels. Once drawn, the canvas has no memory of what created those pixels — there are no "rectangles" or "paths" to query back. To move something, you clear and redraw.
-
-This is the essential trade-off: DOM/SVG composites retained objects and handles hit-testing, reflow, accessibility. Canvas is a framebuffer — fast for dense, frequently-updated visuals; awkward for interactive UI elements.
-
-The rendering model uses a **state machine**. Properties like `fillStyle`, `strokeStyle`, `lineWidth`, and transform matrices are part of a persistent context state. You set them, draw, set them again. `save()` and `restore()` push/pop that state onto a stack — critical when you're composing complex scenes where sub-routines shouldn't pollute each other's transform or style state.
+**Core mechanism:** You get a `CanvasRenderingContext2D` from a `<canvas>` element, then call methods like `fillRect`, `drawImage`, `arc`, `stroke`. Each call mutates the pixel buffer immediately. State (fill color, transform, clip region) is managed through a stack you push/pop explicitly with `save()`/`restore()`. There's no diffing, no retained object model. If you want to animate something, you clear the canvas and redraw everything from scratch each frame—typically inside a `requestAnimationFrame` loop.
 
 ```js
 const ctx = canvas.getContext('2d');
 
-ctx.save();
-ctx.translate(100, 100);  // move origin
-ctx.rotate(Math.PI / 4);  // rotate 45°
-ctx.fillStyle = 'steelblue';
-ctx.fillRect(-25, -25, 50, 50);  // draws centered square, rotated
-ctx.restore();  // undo translate + rotate without explicitly reversing
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'red';
+  ctx.fillRect(x, y, 50, 50);
+  requestAnimationFrame(render);
+}
 ```
 
-### Mental Model
+**Mental model:** Think of it like a whiteboard with no undo. When you want to change something, you erase the whole board and redraw it. The "scene" lives in your application state, not in the canvas.
 
-Think of it like a physical whiteboard with a marker: you draw, it stays until you erase. There's no "undo layer" — just pixels. The API is the marker; the state machine is which color/size tip is currently loaded.
+This is where the friction shows up. Hit detection? You have to implement it yourself—often by maintaining a list of shapes with their bounding boxes and running manual intersection tests on mouse events. Layering? Either manage draw order carefully or use multiple stacked `<canvas>` elements. Accessibility? Canvas content is invisible to screen readers unless you add fallback DOM content manually.
 
-### Practical Scenarios
+**When to reach for it:**
 
-**Frontend:** Data visualization libraries (Chart.js, D3 canvas renderers) use Canvas when rendering thousands of data points where SVG would choke on DOM node counts. Games and interactive simulations — particle systems, physics playgrounds — use Canvas for its raw throughput. Image manipulation UIs (crop, filter, annotate) manipulate pixel data directly via `getImageData`/`putImageData`.
+- *Frontend:* Custom data visualizations (charting libraries like Chart.js use it under the hood), image editing tools, sprite-based 2D games, generative art. Anything where the DOM's overhead—style recalculation, layout, compositing—becomes a bottleneck or where you need per-pixel control.
+- *Fullstack:* Server-side image generation with Node.js (via `node-canvas` or similar), generating thumbnails, watermarking, producing chart PNGs for email reports.
 
-**Fullstack:** Server-side rendering with `node-canvas` (a Node.js native binding) lets you generate charts, thumbnails, or dynamic OG images at request time without a browser. You write the same Canvas 2D API code; the output is a PNG buffer you stream to the client or store in S3.
-
-### Why It Matters
-
-Canvas 2D is the stepping stone to WebGL — WebGL uses the same `<canvas>` element but replaces the 2D context with a GPU pipeline. Understanding that Canvas is a dumb bitmap, that state is imperative, and that drawing is one-way makes the WebGL mental model much less alien. `OffscreenCanvas` extends this further by letting you move the canvas off the main thread entirely.
+**Where it breaks down:** Complex interactive UIs with many independent elements are painful to manage—you'll end up reinventing a scene graph. At that point, either SVG (retained-mode, DOM-integrated) or WebGL (GPU-accelerated, for 3D or high-throughput 2D) is the better fit. Canvas 2D sits in the middle: more control than SVG, far lower complexity than WebGL. Understanding it well also makes OffscreenCanvas intuitive—it's the same API, but running off the main thread in a Worker.

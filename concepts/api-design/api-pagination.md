@@ -1,41 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## API Pagination
 
-Pagination is how a REST API returns a bounded subset of a large result set, letting clients request data in manageable chunks rather than receiving (or waiting for) the entire collection at once.
+When a collection endpoint returns thousands or millions of records, sending them all in one response is both impractical and dangerous — it blows memory budgets, kills latency, and can take down clients that aren't expecting the payload size. Pagination is how you expose large datasets incrementally, letting clients fetch what they need without either side drowning.
 
-### The Core Mechanism
+### The core tension: where does "page N" start?
 
-The fundamental idea is that a client sends a request with parameters describing *which slice* of the total dataset it wants. The server executes a constrained query, returns that slice, and includes enough metadata for the client to request adjacent slices.
+**Limit/offset** is the intuitive approach: `GET /posts?limit=20&offset=40` fetches rows 41–60. The database maps this almost directly to `LIMIT 20 OFFSET 40`. Simple to understand, easy to implement, and completely stateless on the server.
 
-The simplest form is **offset/limit pagination**: the client says "give me 25 items, starting at position 50." In SQL terms, this maps directly to `LIMIT 25 OFFSET 50`. The response typically includes the page of results plus some combination of total count, current page, and links to adjacent pages.
+The problem surfaces under real usage. If someone inserts or deletes a row between page 1 and page 2, the offset shifts — you either skip a record or show a duplicate. At high offsets (`OFFSET 500000`), the database still scans and discards all preceding rows, so performance degrades linearly. And on busy tables, this scanning behavior can cause lock contention.
+
+**Cursor-based pagination** (also called keyset pagination) sidesteps both problems by encoding *position* rather than row count. Instead of "skip 40 rows," you say "give me 20 rows after the row with `id = 83221`." The server returns an opaque cursor token with each page — the client passes it back as a parameter to get the next page.
 
 ```
-GET /articles?limit=25&offset=50
+GET /posts?limit=20
+→ { data: [...], next_cursor: "eyJpZCI6IDgzMjIxfQ==" }
 
-{
-  "data": [...],
-  "total": 342,
-  "limit": 25,
-  "offset": 50
-}
+GET /posts?limit=20&after=eyJpZCI6IDgzMjIxfQ==
+→ { data: [...], next_cursor: "eyJpZCI6IDgzNDQxfQ==" }
 ```
 
-The subtle complexity is *where* the pagination contract lives. The client controls the window, but the server controls the sort order, filter application, and whether `total` is even calculated (it often requires a separate `COUNT(*)` query — expensive on large tables). You're negotiating a view into a moving dataset.
+The cursor typically encodes the sort key(s) of the last seen row. The query becomes `WHERE id > 83221 LIMIT 20` — which uses the index directly and doesn't care how many rows came before it.
 
-### Where It Gets Interesting
+### When to reach for each
 
-Offset pagination has a well-known pathology: if items are inserted or deleted between page requests, the client can see duplicates or skip items. Page 2 of a query sorted by `created_at DESC` will shift if new items arrive before the client fetches it. This is why offset pagination is described as *stateless but unstable*.
+**Limit/offset** is fine when the dataset is small (under ~10k rows), the collection is relatively static, or users genuinely need arbitrary page jumps ("jump to page 47"). Admin dashboards, search results with total counts, or anything where "page X of Y" is part of the UX.
 
-For a read-heavy list that rarely mutates (a product catalog, historical logs), this usually doesn't matter. For feeds, activity streams, or anything with high write volume, the instability becomes a real product problem — and that's exactly what cursor-based pagination solves, which you'll hit next.
+**Cursor pagination** is the right call for feeds, activity streams, real-time data, or anything that updates frequently. Mobile infinite-scroll is the canonical case — the user just wants "more," and they'll never ask for page 47.
 
-### Practical Scenarios
+### Practical notes for backend and fullstack
 
-**Backend:** When designing an endpoint over a large table, you choose between offset pagination (simple, SQL-native, allows jumping to arbitrary pages) and alternatives. The pagination strategy directly influences your query patterns, index design, and whether you expose `total` (often worth avoiding — it doesn't scale). You also need to decide what to paginate *by*: primary key, timestamp, or a compound key.
+On the **backend**: cursor pagination requires a stable sort key. Using `created_at` alone fails if two rows share a timestamp — combine it with `id` to make it unique. The cursor should be opaque to clients (base64-encode the underlying values) so you can change the implementation without breaking callers.
 
-**Fullstack:** On the client side, you're either implementing "load more" / infinite scroll (append model, works well with cursor-based) or a page navigator (requires offset + total for rendering page numbers). The choice of pagination style upstream forces a UX pattern downstream. Infinite scroll with offset pagination is a common mistake — the dataset shifting mid-scroll produces subtle bugs that are hard to reproduce.
+On the **fullstack** side: limit/offset lets you render "Page 3 of 14" easily; cursor-based doesn't give you a total count by default (counting is expensive). If the product requires total counts, you'll either query them separately on a delay, cache them, or accept an approximation.
 
-The pagination strategy is an API contract. Changing it after clients depend on it is a breaking change, so the decision deserves more upfront thought than it usually gets.
+The choice is ultimately a product question: "can the user seek to an arbitrary page?" If yes, offset. If no, cursors.

@@ -1,32 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Split-Brain** occurs when a network partition causes two or more node groups to each believe they are the authoritative cluster, leading them to independently accept writes and diverge in state. It's the failure mode where "the network broke" becomes "the data broke."
+## Split-Brain
 
-## The Core Mechanism
+When a network partition isolates two node groups that each independently believe they are the authoritative cluster, and both accept writes, you end up with divergent state that cannot be automatically reconciled — you need human judgment to determine which history is canonical, often after already serving inconsistent data to clients.
 
-Consensus algorithms prevent this under normal operation — a leader can only be elected with quorum agreement. But split-brain usually sneaks in through configuration errors or timing edge cases that bypass consensus guarantees.
+### The Mechanism
 
-The classic scenario: a primary receives a GC pause or is slow to respond. Replicas time out, elect a new primary, and start accepting writes. Meanwhile, the original primary comes back, doesn't know it was deposed, and also accepts writes. You now have two nodes that both believe they're authoritative, diverging in silence.
+The invariant every consistent distributed system tries to maintain is: **at most one leader at any time**. Consensus algorithms like Raft enforce this through quorum — a write only commits if a majority (N/2 + 1) of nodes acknowledge it. A 5-node cluster partitioned 2+3 means only the 3-node side can form quorum; the minority side goes read-only. No split-brain.
 
-This is distinct from a simple partition. In a partition, nodes know they can't reach each other. In split-brain, they *think they can* — or they don't care that they can't.
+The failure mode isn't a flaw in the algorithm — it's what happens when that invariant is violated, either by misconfiguration, a bug in the fencing mechanism, or an operator forcing a failover while the old leader is still running.
 
-## Mental Model
+### Concrete Example
 
-Think of it like two datacenter halves during a fiber cut. Both halves have enough replicas to form a quorum *within themselves* if your quorum size is set too loosely. Both halves elect leaders. Both accept writes for 20 minutes until the fiber is restored. Reconciliation is now your problem.
+5-node Postgres with Patroni using etcd for coordination. Network partition creates {primary + 1 replica} vs {3 replicas}. The 3-node side elects a new primary through etcd quorum and starts accepting writes. The old primary loses etcd connectivity but is still reachable by some clients — if it doesn't step down (STONITH failed, or wasn't configured), it also continues accepting writes. Partition heals. You now have two divergent WAL histories. Which writes win? Which clients got stale or conflicting reads? There's no automatic answer.
 
-The danger isn't the partition itself — it's that both sides kept moving.
+The reason recovery is hard: unlike a node crash (replay from log, monotonic history), split-brain means two valid-looking but incompatible histories, both potentially externally visible.
 
-## Practical Scenarios
+### Practical Scenarios
 
-**Backend:** Elasticsearch "split-brain" was notorious pre-7.x. If `minimum_master_nodes` was misconfigured as `1` in a 3-node cluster, a partition could produce two clusters each thinking they were primary. Indexes would diverge, and rejoining would require manual intervention (often data loss). The fix — setting it to `(n/2)+1` — is exactly quorum enforcement.
+**Backend:** Distributed locks are a common trap. If your lock service (Redis, ZK, etcd) partitions and two processes both successfully acquire the same lock, any "exactly once" guarantee you were relying on is broken — background job deduplication, payment processing, inventory updates. Fencing tokens (monotonically increasing lock version that downstream systems validate) are the standard defense here.
 
-Redis Sentinel has a similar footgun: if sentinels are partitioned from each other but each can still reach a different Redis instance, you can end up with two sentinels promoting two different primaries.
+**SRE:** Runbooks for leader failover should never just say "promote replica." They must include verification that the old primary is fenced — either confirmed down, demoted, or unreachable from the new leader's perspective. Automated failover without fencing is a split-brain generator. This is why STONITH ("Shoot The Other Node In The Head") exists as a concept: when in doubt, kill the node you can't confirm is stopped.
 
-**SRE:** Split-brain is a primary concern when designing failover logic. Aggressive health check timeouts + automatic failover = higher split-brain risk. This is the tradeoff behind "fencing" (STONITH in cluster management) — you don't promote a new primary until you've guaranteed the old one is dead, not just unresponsive. The operational cost of being wrong is too high.
+### The Real Danger
 
-## The Connection to Quorum Reads
-
-Quorum reads are the read-side mitigation. If writes require quorum acknowledgment and reads also require quorum acknowledgment, you can guarantee reading the most recent write even if some nodes are stale — because the read and write quorums must overlap by at least one node. Split-brain makes quorum reads *necessary*, not just a performance tradeoff.
+Split-brain is insidious because the system *appears healthy* on both sides of the partition. Metrics look fine, writes succeed, no errors. The damage is invisible until the partition heals — and by then you've served inconsistent state. Understanding this is foundational to quorum reads: you read from a majority specifically to avoid silently reading from the minority side of a past or present split.

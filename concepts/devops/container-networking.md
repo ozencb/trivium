@@ -1,30 +1,24 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Container Networking
 
-Containers get their own isolated network stack via Linux network namespaces, but they still need to talk to each other and the outside world — container networking is the set of mechanisms that make that possible without collapsing the isolation.
+Containers get network isolation through Linux kernel namespaces — each container has its own network stack (interfaces, routing table, iptables) invisible to others. But isolation alone doesn't help; containers need to reach each other and the outside world. That's where virtual interfaces and overlay networks come in.
 
-### Core Mechanism
+**The core mechanism:** When a container starts, the runtime creates a virtual ethernet pair (veth pair) — two ends of a virtual cable. One end lives in the container's network namespace, the other in the host's. A bridge (like `docker0` or a CNI-managed bridge) connects all host-side veth ends, acting as a software switch. Each container gets an IP from a private subnet. Traffic between containers on the same host traverses this bridge; traffic leaving the host gets NAT'd through the host's real interface.
 
-Each container gets a network namespace: its own routing table, iptables rules, and network interfaces. The runtime creates a **veth pair** — a virtual Ethernet cable with two ends. One end lives inside the container's namespace (as `eth0`), the other end is attached to a bridge on the host (like `docker0`). Traffic leaving the container travels through this veth pair to the bridge, which acts like a virtual switch routing between containers on the same host.
+Cross-node traffic is harder. When container A on Node 1 needs to reach container B on Node 2, packets have to travel through the actual network — but the container IPs are private and meaningless to the underlying network. Overlay networks (VXLAN, Geneve) solve this by encapsulating the container-addressed packet inside a UDP packet addressed to the destination node. The receiving node unwraps it and delivers it. This is what Flannel, Calico in overlay mode, and Weave do.
 
-For cross-host traffic, runtimes use **overlay networks** (VXLAN being the most common). Packets from container A are encapsulated in UDP and tunneled to the host running container B, where they're decapsulated and delivered. The containers see flat L2 addresses; the encapsulation/decapsulation is invisible to them.
+**CNI plugins** are the glue. Kubernetes calls the configured CNI plugin whenever a pod starts, and the plugin is responsible for: creating the veth pair, assigning an IP from the cluster's pod CIDR, and programming the routes so other nodes know how to reach that pod. Different plugins make different tradeoffs — Calico in BGP mode avoids overlay overhead entirely by advertising pod routes to your actual network fabric, which is why it's preferred in bare-metal or cloud environments where you control routing.
 
-DNS ties it together: in Kubernetes, each pod's `/etc/resolv.conf` points to the cluster DNS (CoreDNS), which resolves `service-name.namespace.svc.cluster.local` to a ClusterIP. That VIP doesn't correspond to a real interface — iptables/IPVS rules on each node intercept packets destined for it and DNAT them to one of the backing pod IPs.
+**kube-proxy** handles Service IPs. A Service's ClusterIP isn't assigned to any real interface anywhere — it's a virtual IP that kube-proxy programs into iptables (or IPVS) rules on every node. When your app connects to `10.96.0.1:443`, the kernel intercepts it pre-routing and rewrites the destination to a real pod IP. DNS resolution (`my-svc.namespace.svc.cluster.local`) gives you the ClusterIP; iptables gives you load balancing and failover.
 
-### Mental Model
+**Where this matters in practice:**
 
-Think of it as a three-layer stack: **namespaces** give isolation, **veth + bridge** give local connectivity, **overlay or BGP routes** give cross-node connectivity. When you `curl http://my-service`, the chain is: DNS lookup → ClusterIP → iptables DNAT → backend pod IP → veth pair → container's eth0.
+- **SRE:** Mysterious timeout between services often traces to a missing iptables rule (kube-proxy fell behind), MTU mismatch (VXLAN adds ~50 bytes overhead, breaking packets on networks assuming 1500 MTU), or a NetworkPolicy silently dropping traffic.
+- **DevOps:** CNI plugin choice directly affects your cluster's network performance ceiling and security posture. Switching later is painful — it typically requires node drains.
+- **Backend:** If your service does anything with source IPs (rate limiting, audit logs), understand that NodePort services SNAT by default, so you see the node IP, not the client IP. `externalTrafficPolicy: Local` fixes this at the cost of uneven load distribution.
 
-### Practical Scenarios
-
-**SRE:** When a service is unreachable, the failure could be at any layer — DNS resolution, iptables rules, overlay tunnel, or network policy. `kubectl exec` + `curl` tests L7; `tcpdump` on the veth or the host bridge tells you if packets are arriving at all. CNI misconfiguration (e.g., IPAM exhausted pod CIDR) shows up as pods stuck in `ContainerCreating`.
-
-**DevOps:** CNI plugin choice (Calico, Cilium, Flannel) affects your networking model. Calico uses BGP to advertise pod routes without encapsulation overhead; Cilium uses eBPF to bypass iptables entirely. This matters for latency-sensitive workloads and at scale where iptables rule churn becomes a bottleneck.
-
-**Backend:** Localhost is not shared between containers in the same pod — they share a network namespace, so `127.0.0.1:8080` in a sidecar reaches your app container. But two separate pods on the same node are fully isolated. A missed assumption here causes subtle "works on my machine" bugs when someone hardcodes localhost expecting a shared network.
-
-Understanding this mechanism is the foundation for service mesh: Envoy sidecars intercept traffic by redirecting it via iptables (or eBPF in Cilium) before it ever leaves the pod's network namespace.
+Understanding this layer is the prerequisite for Service Mesh — which adds a sidecar to intercept exactly the same traffic flows you now understand.

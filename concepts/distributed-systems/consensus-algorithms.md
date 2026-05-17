@@ -1,32 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Consensus algorithms solve a deceptively hard problem: how do N independent nodes agree on a single value when any of them can crash, stall, or lose messages — without a coordinator they all implicitly trust?
+**Consensus algorithms are the mechanism by which distributed nodes agree on a single value even when some nodes crash or messages are lost.** Without them, replication is guesswork — two replicas might accept conflicting writes and diverge permanently.
 
-**The core problem**
+## The Core Problem
 
-You can't just do a majority vote naively. Imagine three nodes voting simultaneously: each sends its vote, waits for others, then commits. If node A crashes after committing but before the others receive its vote, B and C see two nodes and can't know whether A committed "yes" or nothing. They're stuck — moving forward risks inconsistency, waiting risks blocking forever. This is the fundamental tension consensus must resolve.
+Distributed consensus sounds simple: ask everyone, take the majority answer. The hard part is that "asking" is unreliable. A node that doesn't respond might be dead, or it might just be slow — you can't tell. And if you commit a value before you're sure a majority has it, a partition can leave you with two independent clusters that both believe they're authoritative.
 
-**How Raft (and Paxos family) approaches it**
+## The Mechanism (Raft as the mental model)
 
-Raft structures the problem around *leader election* and *log replication*. One node is elected leader per *term* (a logical clock). The leader receives all writes, appends them to its log, and replicates to followers. A write is only committed once a *quorum* (majority) acknowledges it. If the leader dies, a new election happens — but only a node with the most up-to-date log can win. This invariant means a newly elected leader always has all committed entries.
+Raft makes this concrete. The cluster elects a single **leader** via a term-numbered vote — each node votes for at most one candidate per term, and a candidate needs a majority to win. This alone prevents two simultaneous leaders in the same term.
 
-The key insight: you don't need all nodes to agree simultaneously. You need a majority to agree, and any two majorities share at least one node. That overlap node acts as the source of truth across elections.
+The leader then drives **log replication**: it appends an entry locally, fans it out to followers, and waits for a **quorum** (majority) to acknowledge. Only after quorum acknowledgment does it commit — meaning even if the leader dies immediately after, enough nodes hold the entry that any future leader will inherit it.
 
-**Mental model**
+The invariant: **a committed entry is always present on a majority, and any future leader must win a majority vote, so it must overlap with at least one node that has the committed entry.** That overlap is what preserves safety across failures.
 
-Think of it like a relay baton. The baton (committed log) must be in at least one hand in any majority group. When leadership transfers, the new leader finds someone holding the baton and reconstructs ground truth from there. No committed write is ever lost because it always lives in the overlap.
+## Practical Implications
 
-**Practical scenarios**
+**Backend:** When you use etcd or ZooKeeper for distributed locks, leader election, or feature flag consensus — Raft is running underneath. The key mental model: reads/writes go through the leader, which means higher latency than a local cache but linearizability guarantees. Don't use these for hot paths.
 
-*Backend:* You're building a distributed rate limiter. Multiple app servers need to agree on a counter. Without consensus, concurrent increments race. With it (via etcd or ZooKeeper), one node serializes writes — you get linearizability without a single point of failure.
+**SRE:** Quorum size is a reliability knob. A 3-node cluster tolerates 1 failure; 5-node tolerates 2. Stretching clusters across AZs gives you partition tolerance, but cross-AZ latency now sits on every write path. Raft can't help you if your network round-trips are 80ms — that's just physics.
 
-*SRE:* Your service discovery system (Consul, etcd) uses Raft internally. When you lose a minority of nodes, the cluster keeps serving. But lose a majority, and it stops accepting writes deliberately — this is by design, not a bug. Understanding this shapes your alerting: "lost quorum" is a different severity than "lost one node."
+**DevOps/Infrastructure:** Kubernetes uses etcd for all cluster state. This means etcd quorum loss = cluster brain death. If you're running k8s, your etcd backup story and node count are consensus questions, not ops hygiene questions.
 
-*DevOps:* Kubernetes control plane (etcd) requires a quorum to schedule pods. A 3-node etcd cluster tolerates 1 failure; a 5-node cluster tolerates 2. This directly informs your HA infrastructure decisions — running 2 etcd nodes is *worse* than 1 because you've added failure surface without gaining fault tolerance (quorum of 2 requires both).
+## Common Pitfalls
 
-**Why it matters for Split-Brain and Distributed Locks**
+- **Mistaking availability for consensus:** A 5-node cluster with 3 nodes in one AZ and 2 in another will lose quorum if the larger partition is isolated — even though 3 nodes are still running.
+- **Underestimating leader bottleneck:** All writes serialize through the leader. Sharding is the escape hatch, not tuning Raft.
+- **Confusing consensus with consistency:** Consensus gives you agreement on *ordering*; your application still defines what "correct" means for your data model.
 
-Split-brain happens when consensus breaks down — two partitions each believe they have quorum. Distributed locks depend on consensus to ensure mutual exclusion survives node failures. Both problems are essentially "what happens when consensus isn't working correctly."
+Consensus is what separates "a bunch of nodes that share data" from "a reliable system." It's not cheap, but it's the only rigorous foundation for anything that needs to be both replicated and correct.

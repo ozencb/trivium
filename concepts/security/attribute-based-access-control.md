@@ -1,45 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Attribute-Based Access Control (ABAC)
 
-ABAC is an authorization model where access decisions are made by evaluating arbitrary attributes of the subject, resource, action, and environment — rather than checking membership in a role. It's what you reach for when RBAC's coarse-grained assignments start generating combinatorial role explosion.
+RBAC asks "what role does this user have?" ABAC asks "what is true about this user, this resource, and this moment?" That shift from identity to predicate evaluation is what makes ABAC expressive enough for real-world authorization complexity — and what makes it worth understanding when RBAC starts feeling like duct tape.
 
-### Core Mechanism
+**The core mechanism**
 
-In RBAC, you ask: *does this user have role X?* In ABAC, you evaluate a **policy** against a set of attributes, and the policy is a logical expression that can reference any of them:
+ABAC evaluates policies as boolean expressions over attribute sets. Every access decision takes three inputs: subject attributes (user department, clearance level, employment status), resource attributes (document classification, owner, project tag), and environment attributes (time of day, IP range, geo-region). A policy engine — often following the XACML model or a simpler custom DSL — evaluates rules against this context and returns Permit or Deny.
 
-- **Subject attributes**: `user.department = "engineering"`, `user.clearance_level = 3`
-- **Resource attributes**: `document.classification = "confidential"`, `document.owner = user.id`
-- **Action**: `read`, `write`, `delete`
-- **Environment attributes**: `request.time < 18:00`, `request.ip in corporate_ranges`
+The key insight: attributes are data, so authorization becomes a query rather than a lookup. Instead of "is user in role `doc-editor`?", you evaluate "does `user.department == doc.department AND user.clearance >= doc.classification AND env.time in working_hours`?". That's three RBAC roles collapsed into one policy rule.
 
-A policy might say: *"Allow write if the user's department matches the resource's owning department AND the request comes from within the corporate network."* No role can express that cleanly — especially the dynamic parts like ownership matching or time-of-day constraints.
+**A concrete model**
 
-The policy engine (often following the XACML or Rego/OPA model) evaluates these policies at request time against the current attribute values. The key insight is that attributes are **resolved dynamically**, so the same user can have different access to different resources without any explicit per-resource assignment.
+Think of ABAC like a SQL WHERE clause for permissions. Your policy is the query, attributes are the columns, and the authorization engine runs the evaluation. When requirements change — say, "contractors can only access resources their sponsor created, and only during business hours in their timezone" — you update the policy expression, not the role matrix.
 
-### Concrete Example
+**For backend engineers**
 
-You have a document management system. With RBAC, you might create roles like `engineering-doc-editor`, `finance-doc-viewer`, etc. — and immediately hit trouble when a finance user needs to edit only *their own* documents, or when a contractor needs read access only during their engagement period.
+ABAC becomes necessary when row-level or field-level authorization logic starts leaking into service code. If you're writing `if user.team_id == document.team_id` scattered across handlers, you've already implemented informal ABAC — badly. A proper ABAC system centralizes that logic in a policy engine (OPA, Cedar, Casbin) that services call at decision points. The tradeoff: you're now maintaining a policy language alongside your application code, which is a real operational burden.
 
-With ABAC:
-```
-allow if:
-  user.department == document.department AND action == "write"
-  OR user.id == document.created_by AND action IN ["write", "delete"]
-  OR user.role == "admin"
-```
+Integration usually means adding a PDP (Policy Decision Point) sidecar or library and ensuring attribute data is available at request time — often via enriched JWTs or a fast attribute store. The hard part is attribute freshness: a revoked clearance needs to propagate before the next request, not the next token refresh.
 
-One policy handles department-scoped writes, owner-specific deletes, and admin override — no new roles needed.
+**For SREs**
 
-### Practical Scenarios
+ABAC is increasingly relevant for infrastructure authorization — think: which engineers can run commands on which hosts, based on their on-call schedule, the host's criticality tier, and the current incident severity. Tools like AWS IAM condition keys and GCP IAM conditions are ABAC in production. When you're writing IAM policies with `aws:RequestedRegion` or `resource-tag/Environment` conditions, you're already using it.
 
-**Backend**: Multi-tenant SaaS where a user can edit records they own, managers can edit records in their team, and admins can edit anything. ABAC lets you encode this in a single policy file (OPA/Rego is common here) rather than scattering `if user.is_owner or user.is_manager` logic across service handlers. The policy becomes auditable and testable independently.
+The operational concern is observability: when an access denial happens, debugging requires knowing which attribute failed evaluation, not just "denied." Policy engines that emit structured decision logs with attribute snapshots are essential for this.
 
-**SRE**: Environment-scoped access to infrastructure. Attributes like `environment=production`, `resource.criticality=high`, or `incident.active=true` can gate who can run destructive commands. You can enforce "only on-call engineers can restart production services, and only during an active incident" without creating a `production-on-call-incident-restarter` role that someone inevitably leaves permanently assigned.
+**Where it differentiates**
 
-### RBAC vs ABAC
-
-RBAC is simpler to reason about and audit when access patterns are stable and coarse-grained. ABAC adds power but also complexity — policy debugging and attribute trust boundaries become real concerns. Many systems use both: roles as one attribute among many, not the sole axis of control.
+Knowing RBAC is table stakes. Being able to articulate *when* RBAC breaks down — combinatorial role explosion, inability to express context-dependent rules, authorization logic bleeding into application code — and proposing ABAC with awareness of its policy management cost is what reads as senior thinking in a system design conversation.

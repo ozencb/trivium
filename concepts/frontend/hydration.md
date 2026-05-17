@@ -1,28 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Client-Side Hydration
 
-Hydration is the process by which a client-side framework takes ownership of server-rendered HTML and makes it interactive. SSR gives you fast, parseable markup; hydration is the step that closes the gap between "looks ready" and "actually works."
+SSR gives you fast first paint and crawlable HTML, but the browser needs to wire up interactivity after the fact. Hydration is that wiring step: the framework walks the existing DOM, reconciles it against its virtual representation, and attaches event handlers — without touching the nodes themselves.
 
-### The Core Mechanism
+**The core mechanism**
 
-The server renders your component tree to static HTML and sends it. The browser paints it immediately — no JS required. Then the JS bundle arrives and the framework needs to attach event listeners, initialize state, and set up reactivity. Rather than blowing away the DOM and re-rendering from scratch, the framework *walks the existing DOM tree* and reconciles it against the component tree it would have produced, reusing nodes instead of recreating them.
+When React (or any VDOM-based framework) hydrates, it does a tree walk comparing what the server sent with what `renderToString` (or equivalent) *would* produce on the client. If they match, React skips creating new nodes and just binds state and event listeners in place. This is why the invariant is strict: **server-rendered markup must be byte-for-byte equivalent to what the client would render from the same props.** A mismatch forces React to throw away the server HTML and re-render from scratch — you get a hydration error and lose the SSR benefit entirely.
 
-The critical invariant: the server output must match what the client would render on first pass. If they diverge — say, a component reads `Date.now()` or `window.innerWidth` — the framework detects a mismatch and falls back to a full client-side re-render, discarding the server HTML entirely. This is expensive and the source of many subtle SSR bugs.
+Under the hood, React 18 uses `hydrateRoot` instead of `createRoot`. The difference: `createRoot` creates a fresh tree, `hydrateRoot` adopts the existing DOM. The fiber tree gets built in memory, but DOM mutations only happen on mismatch.
 
-### Mental Model
+**Mental model**
 
-Think of server HTML as a fully built stage set — structurally complete, visually correct, but with no electricity. Hydration is the crew wiring up the lighting rigs, motors, and sound systems without tearing down and rebuilding the set. The audience (user) sees the set the whole time; they just can't interact with it until the crew finishes.
+Think of SSR output as a puppet with no strings, and hydration as attaching the strings. The puppet's shape doesn't change — you're not re-carving it — you're just making it controllable. The danger: if the puppet you receive doesn't match the pattern your string-attacher expects, you have to rebuild from scratch.
 
-### In Practice
+**Where mismatches come from**
 
-**Frontend:** In a Next.js app, your product page renders immediately, but the "Add to Cart" button is inert until hydration completes. Users can read content, but interactions are blocked. For slow connections or JS-heavy bundles, this window — visually ready but non-interactive — is a real UX problem, measurable as Time to Interactive vs. First Contentful Paint diverging.
+The most common pitfall is time/environment-dependent rendering: `new Date()`, `window.innerWidth`, `localStorage` reads, or anything that differs between Node and browser. A component that renders `"Welcome back, Alice"` on the server but `"Welcome back, undefined"` on the client will cause a mismatch. The fix is to defer that rendering to `useEffect` or use suppression (`suppressHydrationWarning`) sparingly for genuinely unavoidable differences.
 
-**Fullstack:** Any data fetched server-side must be serialized into the HTML (typically a `<script>` tag with JSON) and re-consumed by the framework during hydration. This is the dehydrate/rehydrate pattern in React Query or TanStack Router's SSR support. If the client fetches fresh data instead, the tree won't match and you'll trigger a remount. The serialization cost is real — large payloads bloat your HTML and slow hydration.
+**Practical implications**
 
-### Why This Matters for What's Next
+*Frontend:* In a Next.js app, any component that reads browser APIs (`window`, `document`, navigator) needs special handling — either dynamic imports with `ssr: false`, or gating the render behind a mounted-state check. Skipping this is probably the #1 source of hydration bugs in production Next apps.
 
-Full hydration treats the entire component tree as interactive, regardless of which parts actually need to be. That's the inefficiency that Partial Hydration addresses — skip hydrating components that have no client-side behavior, shrink the JS bundle, and reduce Time to Interactive. Understanding hydration as a *reconciliation pass over the full tree* makes it clear why partial approaches are non-trivial: you have to tell the framework which subtrees to skip, and those subtrees become static boundaries.
+*Fullstack:* When you control the data fetching (e.g., tRPC or server actions), ensuring the serialized props passed from server to client exactly match what the client would derive independently is critical. The `__NEXT_DATA__` JSON blob embedded in the HTML is the single source of truth; any drift between that and what the component renders will cascade into hydration failures.
+
+This concept is the foundation for **partial hydration** — the idea that you don't need to hydrate the entire tree upfront, only the interactive islands. Once you understand that hydration is a reconciliation pass over existing DOM, it's obvious why you could skip it entirely for static subtrees.

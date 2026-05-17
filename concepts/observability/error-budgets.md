@@ -1,32 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Error Budgets
 
-An error budget is the quantified amount of unreliability you're *allowed* to have before you're violating your SLO — it turns an abstract availability target into a concrete operational resource you can spend or conserve.
+An error budget is the acceptable failure allowance derived directly from your SLO — if your SLO is 99.9% availability, your error budget is 0.1% of requests (or time) that *can* fail. The power isn't in the math; it's in what the budget enables: a shared, objective language between product and engineering for when to slow down and fix things.
 
-### The Core Mechanism
+**The core mechanism**
 
-Your SLO defines the minimum acceptable reliability. The error budget is simply the complement: if your SLO says 99.9% of requests must succeed over 30 days, you have 0.1% of requests — roughly 43 minutes of downtime — to "spend." Every failed request, every slow response that misses your latency SLO, every deployment-induced blip draws from that budget.
+Your SLO target implicitly defines two states: budget remaining, and budget exhausted. Most teams set a consumption rate policy on top of this. If you're burning through budget 10x faster than expected (a "burn rate alert"), something is seriously wrong — not just "we had an incident," but "at this rate, we'll breach SLO before the month ends." This is what makes error budgets operationally useful rather than just a reporting metric.
 
-The budget resets on a rolling window (or calendar period). This is key: it's not a one-time allowance. It's a continuous measure of how much cushion you currently have.
+The key insight is that the budget doesn't belong to ops or product — it belongs to the team. When there's budget to spare, you can move fast, deploy aggressively, run experiments. When it's nearly gone, reliability work takes precedence, full stop. No negotiation, no "just one more feature" — the budget made the decision for you.
 
-### Mental Model
+**Concrete mental model**
 
-Think of it like a checking account with a fixed monthly deposit. You start with $100 at the top of the month. Incidents withdraw from it. When it hits zero, you're in the red — your users are experiencing more unreliability than you promised. The goal isn't to end the month at $100 (that means you were too conservative), and it isn't to constantly overdraft. It's to spend the budget *intentionally*.
+Think of it like a sprint velocity buffer. If your team has 40 story points of capacity and you've burned 38 by Wednesday, you don't take on new work — you protect what's already in flight. Error budgets work the same way, but the "capacity" is system reliability and the "work" is user-facing failures.
 
-### Concrete Example
+**Where this matters in practice**
 
-Say you run a payment API with a 99.95% success-rate SLO on a 28-day window. That's ~20 minutes of allowed downtime equivalent. You ship a bad deploy on day 5 that causes 12 minutes of elevated errors. You've spent 60% of your monthly budget in one incident. Now your team has to decide: do you risk another deploy this week, or do you freeze changes and let the budget recover? That decision is now data-driven, not a gut call.
+*For SREs:* Error budget policies formalize what happens post-incident. If a bad deploy burns 30% of the monthly budget in a weekend, there's a clear trigger for a deployment freeze or a mandatory post-mortem with engineering changes as prerequisites for resuming. Without the budget framing, these conversations are political; with it, they're just math.
 
-### Practical Scenarios
+*For DevOps engineers:* When you own CI/CD pipelines and release cadence, error budgets give you a principled argument for slowing down deployments. "We've consumed 80% of our Q2 error budget and it's May 10th" is a much stronger case for tightening rollout controls than "I feel nervous about our deploy frequency."
 
-**SRE:** Error budgets are the mechanism that enforces the tension between reliability and velocity. When the budget is healthy, the SRE team greenlit new deployments and experiments. When it's exhausted, they can enforce a feature freeze — not as a political fight, but as a contractual consequence of the SLO. It removes the "ops vs. dev" dynamic because the budget is shared.
+**Why it differentiates senior engineers**
 
-**DevOps:** In CI/CD pipelines, budget awareness can gate releases automatically. Some teams integrate error budget burn rate into deployment policies: if you've burned >50% of the budget in the last 6 hours, the pipeline blocks non-critical deploys. This makes reliability a first-class concern in the delivery process rather than something handled reactively post-incident.
-
-### What Makes It Powerful
-
-The budget forces an honest conversation about risk. Reliability isn't free — it costs engineering time you could spend on features. The error budget makes that tradeoff explicit and quantitative. Teams that don't have error budgets tend to treat every incident as equally catastrophic or equally dismissible. With budgets, you can say "we burned 30% of our budget, that's notable but we're not in crisis" — which is a much healthier operating mode.
+Junior engineers think about reliability as binary: is it up or is it down? Mid-level engineers track SLOs. Senior engineers use error budgets to *govern trade-offs* — they can walk into a design review and say "this architecture decision trades 0.05% availability for 40% latency reduction; here's what that costs us in monthly budget." That framing turns reliability from a gut feeling into a first-class engineering constraint, which is exactly the conversation happening in staff-level design discussions.

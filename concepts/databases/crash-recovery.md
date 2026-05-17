@@ -1,34 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-Crash recovery is the mechanism that brings a database back to a consistent, durable state after an unclean shutdown — it's the enforcement arm of the "D" in ACID.
+## Crash Recovery
 
-## The Core Mechanism
+After an unclean shutdown, a database can't trust what's on disk — a committed transaction might not have flushed its pages, and an uncommitted one might have partially written. Crash recovery is the process of bringing the database back to a consistent state using the WAL as the source of truth.
 
-You already know the WAL writes every change before it touches actual data pages. Crash recovery works by replaying that log. The dominant algorithm is ARIES (used by Postgres, MySQL InnoDB, and most serious databases), and it operates in three phases:
+### The mechanism
 
-**1. Analysis** — Scan forward from the last checkpoint to rebuild two things: which transactions were active (not yet committed) at crash time, and which data pages were "dirty" (modified in memory, not necessarily flushed to disk).
+Recovery happens in three phases (ARIES is the canonical algorithm):
 
-**2. Redo** — Replay *all* logged operations forward from the oldest dirty page, including uncommitted transactions. This sounds wrong but it's intentional — after redo, the on-disk state mirrors what was in memory the instant before the crash. This is called the "repeating history" principle.
+**Analysis**: Scan the WAL forward from the last checkpoint to reconstruct which transactions were in-flight at crash time, and which dirty pages hadn't been written back to disk.
 
-**3. Undo** — Walk backward through the log and reverse all operations belonging to transactions that weren't committed. The database is now consistent: only committed work survives.
+**Redo**: Replay *all* logged operations forward from the oldest dirty page — even ones belonging to transactions that never committed. This gets disk back to exactly the state it was in at the crash moment.
 
-The key insight is that redo and undo are separate concerns. Redo restores durability (committed data isn't lost). Undo restores atomicity (partial transactions are invisible).
+**Undo**: Walk backward through the log, rolling back every transaction that was active but never committed. These get "compensating" log records written so that if *another* crash happens mid-recovery, the undo work isn't repeated.
 
-## A Mental Model
+The key invariant: the WAL is written before the page it describes. So any committed transaction is fully represented in the log, even if its pages never made it to disk. Any uncommitted transaction might be partially in both — hence the redo-then-undo sequence.
 
-Think of it like ledger reconciliation after a bank's systems go offline mid-day. You don't throw out the day's records — you replay every transaction to get back to the exact state at cutoff, then reverse any that weren't fully authorized. The ledger (WAL) is ground truth; the database pages are just a cache of it.
+### Mental model
 
-## Practical Scenarios
+Think of the WAL as a court transcript and the data pages as a whiteboard. The whiteboard might be in any state after a power cut. Recovery re-reads the transcript to figure out the final authoritative state — replaying legitimate writes, erasing unauthorized ones.
 
-**Backend:** Your app's Postgres pod gets OOM-killed during a bulk insert — 50,000 rows half-written. On restart, Postgres runs recovery automatically. Committed batches survive; the in-flight one vanishes cleanly. Your connection pool reconnects and the schema is fully consistent. No manual intervention needed, no corrupt rows.
+Checkpoints exist to bound how far back you need to replay. Without them, recovery would replay from the beginning of time.
 
-**SRE:** Recovery time scales with the gap between the last checkpoint and the crash point. If checkpoints are infrequent (Postgres defaults to every 5 minutes or 1GB of WAL), a crash could mean minutes of replay on a busy system. This directly sets your RTO floor. Tuning `checkpoint_timeout` and `checkpoint_completion_target` isn't just about write performance — it's about how long the database is unavailable after an incident.
+### Practical implications
 
-Also: WAL segment loss or corruption breaks recovery entirely. This is why WAL archiving is non-negotiable for any production database — it's not just for PITR, it's crash recovery insurance if your primary's local WAL gets corrupted.
+**For backend engineers**: This is why `fsync` matters. If your OS or storage layer lies about data being durable (common with certain cloud disk types or RAID controllers with write caching), the WAL assumptions break. A crash can leave the log in a state where "committed" log records never actually hit stable storage. Postgres's `synchronous_commit` and `fsync` settings directly trade durability guarantees against write latency — know what you're turning off when you disable them.
 
-## What People Miss
+**For SREs**: Recovery time is bounded by the distance between checkpoints and how much redo work accumulates. Under heavy write load, if you crank up `checkpoint_completion_target` too high or reduce checkpoint frequency, you're trading slower recovery time for smoother I/O. A database that crashed under load might take minutes to recover — this is expected, not a bug. Monitoring `pg_stat_bgwriter` or equivalent gives you visibility into checkpoint pressure before it becomes a problem.
 
-Recovery is not "restore from backup." It happens automatically on every unclean restart, takes seconds to minutes, and is completely transparent. Most engineers only notice it's happening when they see `LOG: database system was not properly shut down` in the Postgres logs. By then, it's already done.
+The failure mode to watch for: "torn writes" — where a single 8KB page write is split across a power failure, leaving half old data and half new. Postgres uses full-page writes to mitigate this: after each checkpoint, the first write of a page includes the full page image in the WAL so recovery can restore it cleanly.

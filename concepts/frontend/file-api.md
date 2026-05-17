@@ -1,39 +1,51 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## File API
 
-The File API lets browsers read files from the user's filesystem entirely client-side — no upload required. It's the machinery behind image previews, CSV parsers, and any UI that processes files before (or instead of) sending them to a server.
+The browser's File API gives JavaScript structured access to files the user selects or drags into the page — without a round trip to a server. It's the difference between immediately previewing an image the user picked versus uploading it blind and waiting for a response.
 
 ### Core mechanism
 
-When a user selects a file via `<input type="file">` or drops one onto a drop zone, you get a `FileList` containing `File` objects. A `File` is just a `Blob` with metadata (name, size, lastModified, MIME type) bolted on.
+When a user interacts with `<input type="file">` or a drop target, the browser hands you `FileList` — a collection of `File` objects. A `File` is a `Blob` subclass, which matters: it means you get the full Blob interface (slicing, streaming) plus file-specific metadata (`name`, `size`, `type`, `lastModified`) that's available **synchronously** because the browser already read it from the filesystem's directory entry.
 
-Reading the actual contents is done through `FileReader` — or more cleanly today, through the Blob methods that return Promises:
+Reading the *contents* is always async. The modern path uses promise-based methods directly on the File object:
 
 ```js
 const file = input.files[0];
+console.log(file.name, file.size); // sync — no I/O needed
 
-// Modern approach
-const text = await file.text();           // UTF-8 string
+const text = await file.text();        // UTF-8 string
 const buffer = await file.arrayBuffer(); // raw bytes
-const url = URL.createObjectURL(file);   // in-memory object URL
+const stream = file.stream();          // ReadableStream for large files
 ```
 
-`URL.createObjectURL` is underused: it creates a temporary `blob:` URL that points directly to the file in memory. You can drop this into an `<img src>` or `<video src>` for instant preview without reading the whole file into a JS string.
+The older `FileReader` API (`.readAsDataURL()`, `.readAsText()`, etc.) is event-driven and still common in legacy code, but you rarely need it for new work.
 
-### Mental model
+### The mental model
 
-Think of `File` as a read-only file handle. The browser has sandboxed access to the file the user explicitly chose — you can't browse the filesystem freely (that's the separate File System Access API). What you get is a snapshot: the file contents at selection time, loaded into memory only when you ask for them.
+Think of `File` as a handle — a reference to bytes sitting on disk. Metadata is on the handle itself; the bytes are behind an async door. The browser controls when that door opens, which is why there's no synchronous content read: it protects the main thread from blocking on potentially slow disk I/O.
 
-### Practical scenarios
+### Where this shows up
 
-**Frontend:** Image upload workflows almost always use this. Read the file as an object URL for the preview, read it as an ArrayBuffer if you need to validate magic bytes (checking it's actually a PNG, not just named `.png`), then POST the original `File` object directly in a `FormData` — no re-encoding needed.
+**Image preview before upload.** Read the file as a data URL or call `URL.createObjectURL(file)` (which creates a temporary object URL backed by the file's bytes, never touching your server) and drop it into an `<img>`. Instant preview with zero bandwidth cost.
 
-**Fullstack:** Client-side CSV/JSON import features. Parse the file in the browser, validate structure and data types before hitting the API, then send only the processed payload. This catches 90% of user errors without a round-trip and avoids storing malformed uploads on the server.
+**Client-side validation.** Check `file.type` and `file.size` before sending anything. Reject a 200MB video meant for a profile photo before the user waits through a pointless upload.
 
-**Edge case worth knowing:** Large files. `file.text()` loads everything into memory at once. For files over ~50MB, stream through a `ReadableStream` via `file.stream()` instead — same interface as the Fetch body API, so the mental model transfers directly.
+**Chunked uploads.** This is where `Blob.slice()` earns its keep. Large files can be split into fixed-size chunks and uploaded in parallel or sequentially with resume support:
 
-The API surface is small, but the key insight is that `File` being a `Blob` means it composes cleanly with Fetch, WebSockets, canvas, and audio/video — anywhere that accepts binary data.
+```js
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
+  const chunk = file.slice(offset, offset + CHUNK_SIZE);
+  await uploadChunk(chunk, offset);
+}
+```
+
+**CSV/JSON parsing.** Read the file as text, parse it, and render a table — common in internal tools where users import data without you needing an upload endpoint at all.
+
+### Pitfalls
+
+`file.type` is derived from the file extension, not the actual content — a renamed `.txt` file with image bytes will claim `text/plain`. For anything security-sensitive, validate magic bytes in an `ArrayBuffer` instead. Also, object URLs from `URL.createObjectURL()` leak memory until you call `URL.revokeObjectURL()` or the document unloads.

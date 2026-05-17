@@ -1,0 +1,18 @@
+id: incident-response
+title: Incident Response
+category:
+  - Observability
+  - Reliability
+roles:
+  - sre
+  - backend
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - slo-sli-sla
+  - alerting
+dependents:
+  - on-call-practices
+brief: The structured process of detecting, triaging, mitigating, and learning from production incidents through severity classification, escalation paths, and blameless postmortems.

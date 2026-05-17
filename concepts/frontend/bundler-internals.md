@@ -1,35 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Bundler Internals
 
-A bundler takes a graph of module files and emits a smaller set of files browsers can load efficiently. The problem it solves isn't just concatenation — it's resolving a dependency graph, transforming each node, and stitching references back together correctly.
+A bundler's job is to take a graph of modules with arbitrary dependencies and produce a minimal set of files a browser can load efficiently. The interesting part isn't the file concatenation — it's the series of passes that make correctness and optimization possible simultaneously.
 
 ### The Core Mechanism
 
-Starting from an entry point, the bundler does four things in a loop:
+Bundlers work in four conceptually distinct phases:
 
-1. **Parse** the file into an AST
-2. **Collect** all import/require/dynamic-import statements
-3. **Resolve** each specifier to a file path (using `node_modules` resolution, aliases, extensions)
-4. **Recurse** into each dependency until the full graph is built
+**1. Resolution** — Starting from entry points, the bundler walks `import` statements and resolves each specifier to an absolute file path using Node's resolution algorithm (or a configured override). This produces a directed graph where nodes are modules and edges are imports. Circular dependencies are legal; the bundler tracks visited nodes to avoid infinite loops and handles cycles by deferring binding resolution.
 
-The result is a directed acyclic graph (DAG) where every node is a module and edges are import relationships. This graph is the bundler's internal world model — everything downstream (tree shaking, code splitting, hashing) operates on it.
+**2. Transformation** — Each module is passed through a transform pipeline (Babel, SWC, esbuild's internal parser, etc.) before graph edges are established. Transforms operate on the AST of a single file: stripping types, downleveling syntax, injecting helpers. Critically, transforms run *per module* and are stateless across the graph — cross-module analysis happens later.
 
-Once the graph exists, the bundler **links** it: each module gets wrapped or rewritten so its exports are accessible to its importers without relying on native `import` at runtime. In older CommonJS-style output, this was a module registry (`__webpack_require__`). In modern ESM output (Rollup, Vite), this is often just inlining — the module's code is literally moved to where it's imported, with variable names scoped to avoid collisions.
+**3. Chunking** — The resolved graph gets partitioned into output chunks. Static imports that are always needed together collapse into one chunk. Dynamic `import()` calls become split points, creating async chunks loaded on demand. The bundler solves a set-cover problem: modules shared across multiple chunks get hoisted into a shared chunk to avoid duplication, but only if the trade-off (an extra network round-trip) is worth it.
 
-### Mental Model: It's a Linker
+**4. Emit** — Each chunk is serialized: module code gets concatenated, a runtime shim handles the module registry (for non-ESM targets), and each output file gets a content hash derived from the chunk's complete dependency subtree — not just the file itself. This is why changing a utility deep in your graph causes a hash change to anything that imports it.
 
-If you've ever compiled C, you know the linker's job: take `.o` files, resolve symbol references across them, and produce one binary. Bundlers are the same idea. `import { foo } from './utils'` is an unresolved symbol reference. The bundler's link phase resolves it and replaces the reference with the actual value — statically where possible (enabling tree shaking), or via a runtime lookup where dynamic imports require it.
+### Mental Model
 
-### Why This Matters in Practice
+Think of it as a compiler pipeline where the "program" is your entire app. Resolution = parsing includes. Transformation = preprocessing. Chunking = link-time optimization (inlining, dead code). Emit = object file output with symbol addresses finalized.
 
-**Frontend**: When you write `import Button from './Button'` in a React component, the bundler has already traced that back through potentially dozens of re-exports, figured out exactly which code paths are reachable, and emitted only what's used. The output chunk boundaries (what lands in `main.js` vs. a lazy chunk) are decisions made on the dependency graph, not the file system.
+### Practical Consequences
 
-**Fullstack (Next.js, Remix, etc.)**: The bundler runs *twice* with different configurations — once targeting Node (server bundle, no DOM polyfills, can omit client-only code) and once targeting browsers (client bundle, no `fs`, `crypto`, etc.). They share the same source but produce completely different graphs because the entry points and platform targets differ. This is why `server-only` and `client-only` packages work: they throw at graph-construction time if they end up in the wrong graph.
+**Frontend:** When you see a vendor chunk that invalidates on every deploy, it usually means application code leaked into it — something in your app imports a module that also gets imported by a vendor, and the bundler placed it in the wrong chunk. Fixing it means understanding how chunk assignment works, not just adding `splitChunks` config blindly.
 
-### What This Unlocks
+**Fullstack (SSR):** Server and client bundles share source but need separate graphs — the server bundle must not reference `window`, the client bundle must not bundle `fs`. Bundlers handle this via *conditions* in `package.json` exports (`browser` vs `node`), which alter resolution at the graph-walk stage. Getting this wrong produces silent failures: code that works in one environment but ships dead/broken code to the other.
 
-Once you see the bundler as a graph problem, tree shaking (pruning unreachable nodes), code splitting (partitioning the graph into async boundaries), source maps (recording the transform history per node), and content hashing (fingerprinting output chunks) all follow naturally — they're just different passes over the same structure.
+The hashing strategy is what makes long-term caching viable: a correctly configured bundler ensures that unchanged modules produce identical output hashes across builds, so users only re-download what actually changed.

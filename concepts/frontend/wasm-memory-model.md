@@ -1,31 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## WebAssembly Memory Model
 
-WebAssembly gives each module instance a single, flat, byte-addressable linear memory — essentially a managed `ArrayBuffer` your Wasm code treats as its entire heap. Understanding the memory model matters once you bring in threads, because the rules governing how concurrent Wasm agents observe each other's writes are surprisingly nuanced.
+WASM doesn't get native heap access — it operates on a single flat byte array, and everything your module allocates lives inside that buffer. This constraint is deliberate: it makes WASM sandboxable and portable, but it forces you to think about memory in ways that JS developers rarely have to.
 
-### The core mechanism
+**The mechanism**
 
-Wasm memory is a contiguous address space starting at byte 0. Your module reads and writes it with typed load/store instructions (`i32.load`, `f64.store`, etc.) using integer byte offsets — no pointer indirection, no GC, no segmentation. From JavaScript, this same memory is visible as a plain `ArrayBuffer` (or `SharedArrayBuffer` if shared).
+When a WASM module instantiates, it declares a `Memory` object — essentially a `WebAssembly.Memory` backed by an `ArrayBuffer` (or `SharedArrayBuffer` for threaded modules). This is a contiguous region of bytes, addressable by 32-bit integer offsets (64-bit with the memory64 proposal). The module sees only integer addresses; there are no pointers in the C sense, no GC, no heap fragmentation across separate allocations — just a flat address space starting at byte 0.
 
-The interesting part is the **memory consistency model**, which Wasm inherits from a SC-DRF (sequentially consistent for data-race-free) guarantee — the same model C++11 and Java use. Here's what that means:
+Boundary enforcement happens automatically: any out-of-bounds access traps immediately, rather than corrupting adjacent memory. This is the invariant that makes WASM safe without OS-level protection rings.
 
-- If your program is **data-race-free** (all concurrent accesses to shared locations are mediated by atomic operations), then all threads observe a sequentially consistent order — as if operations happened in some single global sequence.
-- If you have **races** (non-atomic read/write to the same location from two threads), behavior is defined (no undefined behavior like C++), but individual loads can return stale or torn values. You're in weakly ordered territory.
+**Mental model**
 
-This is distinct from the JS memory model, which assumes single-threaded execution except where you explicitly opt into `SharedArrayBuffer` + `Atomics`. Wasm threads are real OS threads via Web Workers sharing a `SharedArrayBuffer`-backed linear memory, so weak ordering is observable.
+Think of it as a giant `Uint8Array` the size of your module's declared memory. Your C/Rust code is compiled to treat numeric offsets into that array as pointers. `malloc` inside WASM is just a bookkeeping function that hands out non-overlapping slices of this one buffer. When you grow memory (`memory.grow`), the buffer gets replaced with a larger one — which means any JS reference to the old `ArrayBuffer` is now stale.
 
-### Concrete mental model
+**Where this bites you**
 
-Think of each Wasm thread as a CPU core with its own store buffer. Without atomics, writes from thread A may not be visible to thread B immediately — the hardware is free to reorder. `atomic.store` / `atomic.load` in Wasm (or the equivalent `Atomics.store` from JS) flush those buffers and establish happens-before edges.
+*Copying overhead*: Passing a string from JS into WASM means encoding it into bytes, allocating space inside the WASM linear memory, and copying it in. The reverse is the same. Libraries like `wasm-bindgen` automate this, but the copies are still happening — they're just hidden. For hot paths (image processing, audio, tight loops), this round-trip cost dominates.
 
-### Practical scenarios
+*Shared memory threading*: With `SharedArrayBuffer`, the `memory` object can be shared across Web Workers. Now you're dealing with genuine shared-memory concurrency, and the Atomics API becomes necessary for synchronization — same guarantees as you'd expect from a TSO memory model. The WASM threads proposal maps directly to this.
 
-**Frontend:** If you're running a Wasm image codec or physics engine off the main thread via a Worker, and you need to signal "frame is ready," use an atomic flag in shared Wasm memory rather than a plain store. Non-atomic signaling can silently fail on ARM due to weaker hardware memory ordering.
+*Memory growth invalidation*: On the frontend, if you hold a view into `memory.buffer` (e.g., a `Uint8ClampedArray` for pixel manipulation), a `memory.grow` call mid-execution silently invalidates it. You need to re-derive the view after any potential growth — a subtle bug that only manifests under load.
 
-**Fullstack (Node/edge):** In Node.js with Wasm multi-threading (via worker_threads sharing a `SharedArrayBuffer`), the same rules apply. If you're building a Wasm-based data pipeline that partitions work across threads and aggregates results, ensure your partition boundaries write atomically — otherwise your aggregation thread might read partially-written state and produce corrupt output with no error signal.
+*Fullstack*: In WASI runtimes (Wasmtime, Wasmer), the same linear memory model applies. Your Rust-compiled-to-WASM function can't just return a `Vec<u8>` — you're passing a pointer and length, and the host runtime reads out of the module's memory at that offset.
 
-The key shift in thinking: Wasm's memory model isn't about garbage collection or safety — it's about **visibility guarantees** across concurrent agents. Atomics aren't just locks; they're the mechanism that opts you into the stronger consistency tier.
+The upshot: WASM's memory model is minimal by design. Its constraints are what make it safe and fast — but they surface the copying and lifetime concerns that managed runtimes normally hide from you.

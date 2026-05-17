@@ -1,0 +1,17 @@
+id: capacity-planning
+title: Capacity Planning
+category:
+  - Operations
+  - SRE
+roles:
+  - sre
+  - backend
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - load-testing
+  - metrics-collection
+dependents: []
+brief: Projecting future resource requirements from growth trends and traffic models to provision headroom before autoscaling limits are hit and latency degrades at system boundaries.

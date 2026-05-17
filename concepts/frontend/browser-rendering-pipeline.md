@@ -1,34 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Browser Rendering Pipeline
 
-The browser rendering pipeline is the sequence of steps a browser takes to turn HTML, CSS, and JavaScript into pixels on screen. Understanding it explains why some code is fast and some code is invisible-tax slow.
+The browser rendering pipeline is the deterministic sequence of operations a browser must complete before any pixel appears on screen. Understanding it matters because each stage is a potential performance cliff — work done in one stage may invalidate and force re-execution of later stages.
 
 ### The Mechanism
 
-After the browser receives bytes over the network, it runs through five distinct phases:
+The pipeline has five distinct stages:
 
-1. **Parse** — HTML is tokenized into a DOM tree; CSS is parsed into a CSSOM tree. These are independent and can be blocked by `<script>` tags (which halt HTML parsing) or `@import` chains (which stall CSSOM construction).
+**Parse** — HTML is tokenized and built into a DOM tree. CSS is parsed into a CSSOM tree. JavaScript can block both: a `<script>` tag halts HTML parsing until the script executes, because JS can mutate the DOM mid-parse. These two trees are merged into the **Render Tree**, which contains only visible nodes with their computed styles.
 
-2. **Style (Recalc)** — The browser combines DOM + CSSOM into a Render Tree: only visible elements, each with their final computed styles. This is where `display: none` elements drop out entirely, but `visibility: hidden` elements stay.
+**Layout (Reflow)** — The browser calculates the exact geometry of every render tree node: position, size, and relationship to siblings and ancestors. This is expensive because layout is *relational* — changing one element's width can cascade and force recalculation of its parent, siblings, and all descendants. The browser works in a constraint-propagation model, not just top-down.
 
-3. **Layout (Reflow)** — The browser walks the Render Tree and computes the *geometry* of every element — its position, size, relationship to its parent. This is expensive because it's a dependency graph: changing one element's width can cascade and force siblings, parents, and children to recalculate.
+**Paint** — The browser records drawing instructions for each layer: fill this rectangle, draw this text, apply this border. This is not yet pixels — it's a display list, more like a vector recording than a bitmap.
 
-4. **Paint** — The browser rasterizes each element into pixel layers: fills, borders, text, shadows. It doesn't necessarily paint the whole page at once — it can split into separate paint layers.
-
-5. **Composite** — Painted layers are uploaded to the GPU and composited (flattened) into the final frame. This step runs off the main thread, which is why GPU-composited animations (`transform`, `opacity`) don't jank even when the main thread is busy.
+**Composite** — Layers are uploaded to the GPU and combined in the correct stacking order. This is the only stage that runs entirely off the main thread.
 
 ### Mental Model
 
-Think of it like a newspaper layout team. First they gather all the text and photos (parse). Then a designer marks what's visible and styled (style). Then a layout editor positions everything on the page (layout). Then the printer renders it (paint). Then the printing press stacks and binds pages (composite). Changing a headline on page 1 potentially forces the layout editor to redo everything that follows.
+Think of layout as a spreadsheet with circular references: change one cell and Excel recomputes the entire dependency chain. Paint is like recording a macro of draw calls. Composite is playing that macro on a GPU that can do it in parallel across layers.
 
-### Practical Implications
+The key invariant: **you can only skip earlier stages, never later ones**. A CSS `transform` only triggers composite (cheap). Changing `width` triggers layout → paint → composite (expensive). Changing `color` skips layout but triggers paint → composite (medium).
 
-**Frontend:** This is the root cause of layout thrashing. Reading a layout property (`offsetWidth`, `getBoundingClientRect`) forces the browser to flush pending layout work synchronously. If you then *write* a style and *read* again in a loop, you're triggering a full layout on every iteration. Batching reads before writes eliminates this.
+### Practical Scenarios
 
-**Fullstack:** Server-rendered HTML still hits this full pipeline on the client. A page that ships 400KB of CSS forces a massive CSSOM build and style recalc before anything paints. SSR gives you fast TTFB but doesn't skip the pipeline — it just shifts parse work earlier. That's why CSS-in-JS with deferred injection can sometimes *hurt* SSR performance despite looking clean in code.
+**Frontend:** Animating `top`/`left` causes layout thrashing on every frame — 60fps means 60 full pipeline runs per second. Using `transform: translateX()` instead keeps work in the composite stage only, where the GPU handles it without touching the main thread.
 
-The compositing step is the escape hatch: promoting elements to their own composited layer (`will-change: transform`, `transform: translateZ(0)`) lets the GPU handle them without touching layout or paint. It costs memory, but it buys you main-thread independence.
+**Fullstack:** Server-side rendered HTML still goes through this entire pipeline on the client. If your SSR returns deeply nested tables or floats, the layout stage is doing constraint propagation across hundreds of interdependent nodes — the HTML size is not the only rendering cost. Structural simplicity in markup directly reduces layout complexity.
+
+The pipeline is essentially a dependency graph: mutations flow forward through stages, and the browser's job is to find the minimal re-execution path from mutation to pixels.

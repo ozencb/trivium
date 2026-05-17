@@ -1,46 +1,28 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Event Sourcing** stores state as an append-only log of immutable events rather than a mutable current state. Instead of `UPDATE users SET balance = 500`, you record `MoneyDeposited(amount=200)` and derive the current state by replaying the log.
+## Event Sourcing
 
-## The Core Mechanism
+Instead of storing the *current state* of an entity, you store every *event* that led to that state. The database becomes an append-only log of facts; current state is always derived by replaying that log.
 
-The event log *is* the source of truth. Your database rows (or any other read model) are just a projection — a materialized view derived from replaying events. If you need current state, replay all events for an entity. If that's too slow, snapshot at a checkpoint and replay from there.
+### The core mechanism
 
-This inverts the usual mental model. Normally you mutate state and optionally emit events as a side effect. In event sourcing, events come first and state is always derived.
+In a traditional system, updating an order marks it `status = "shipped"` — the previous states are gone. In event sourcing, you append `OrderShipped { orderId, timestamp, carrier }` to the event log. Current state is a left-fold over the event stream: `reduce(events, initialState, applyEvent)`. The store is immutable; you never update or delete, only append.
 
-## Mental Model
+This distinction matters: the event log is the *source of truth*, not the projection. What you'd normally call "the database row" is actually a derived read model, reconstructed on demand or cached as a snapshot.
 
-Think of a bank account. A traditional system stores `{ balance: $500 }`. Event sourcing stores:
+### Concrete mental model
 
-```
-AccountOpened(initial=0)
-MoneyDeposited(amount=300)
-MoneyDeposited(amount=400)
-MoneyWithdrawn(amount=200)
-```
+Think of accounting. A bank never edits your balance directly — it posts transactions (credits, debits) and your balance is always the running sum. Event sourcing applies this model universally. The "account balance" is a projection; the transaction ledger is the source of truth. CQRS slots in naturally here: the write side appends events, the read side maintains projections optimized for queries.
 
-The balance of $500 is computed, not stored. You can answer questions the traditional model can't: what was my balance at 2pm on March 3rd? Who initiated each change? What would the balance be if we rolled back the last withdrawal?
+### Where this shows up
 
-## Why It Matters Beyond Auditability
+**Backend:** Consider an e-commerce order with states: `Placed → PaymentConfirmed → Picking → Shipped → Delivered`. Traditional CRUD can't tell you when the order spent 3 days stuck in Picking, or reconstruct what the system state looked like last Tuesday at 2am when a customer complained. With event sourcing you replay to any point in time, run temporal queries, and reproduce bugs deterministically — which is what "time-travel debugging" means in practice.
 
-The obvious benefit is a full audit trail, but that undersells it. The deeper value:
+**Data:** Event logs are naturally a Kafka-friendly model. Downstream consumers (analytics, ML pipelines, recommendation engines) subscribe and build their own projections without touching the write path. Your event history becomes a first-class data asset. Rebuilding a broken projection means replaying from the log, not running a migration or writing a backfill script.
 
-- **Temporal queries**: Reconstruct any past state by replaying up to a point in time.
-- **Projections can be rebuilt**: If your read model schema changes, or you realize you need a new one (say, a materialized view for analytics), replay all events and build it fresh.
-- **Event replay for debugging**: Reproduce exact system state at time of a bug.
-- **Natural fit with CQRS**: The event log *is* the write side. Read models are just projections of it — subscribe to the log, maintain whatever query-optimized structure you need.
+### What senior engineers know that juniors don't
 
-## Practical Scenarios
-
-**Backend**: Financial systems, order management, inventory. Anywhere you care about *what happened*, not just *what is*. Also useful for complex domain logic — instead of debugging why an order is in a weird state, replay its event history and watch it unfold.
-
-**Data**: Event stores map cleanly to Kafka or similar. Your event log becomes a durable, replayable stream. Data pipelines and ML feature stores can consume raw events and build their own projections independently of the operational system.
-
-## The Real Cost
-
-Querying current state requires a projection layer — you can't just `SELECT * FROM orders WHERE id = 123`. Event stores also grow without bound (mitigated by snapshots, but not eliminated). Schema evolution for events is genuinely hard: unlike a table migration, old events are immutable, so you need versioning or upcasting strategies when event structure changes.
-
-Event sourcing is most worth the overhead when your business domain is inherently historical — when *how you got here* is as important as *where you are*.
+The tradeoffs are the real interview signal. Event sourcing adds complexity: projections can fall out of sync, schema evolution of events is harder than migrating a table, and eventual consistency becomes explicit. The question isn't "should we use event sourcing" but "which *aggregates* genuinely benefit from audit history and temporal queries" — and using it surgically rather than system-wide. Knowing that you can hybrid (event source the Order aggregate, not user preferences) demonstrates you understand it as a tool, not a paradigm to adopt wholesale.

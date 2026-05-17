@@ -1,29 +1,9 @@
 // scripts/generate-concepts.ts
-import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
 import { loadAllConcepts } from "../src/lib/concepts";
-
-const MODEL = process.env.GENERATE_MODEL ?? "claude-sonnet-4-6";
-
-function callClaude(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["-p", "--model", MODEL], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (data) => { stdout += data; });
-    child.stderr.on("data", (data) => { stderr += data; });
-    child.on("close", (code) => {
-      if (code !== 0) reject(new Error(`claude exited ${code}: ${stderr}`));
-      else resolve(stdout.trim());
-    });
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
-}
+import { callClaude } from "./claude";
 
 const CATEGORY_PROMPT = `You are helping build a knowledge graph of software engineering concepts.
 
@@ -55,16 +35,14 @@ const GAP_PROMPT = `You are helping build a knowledge graph of software engineer
 Here is the current graph:
 {existing}
 
-Analyze this graph and identify the biggest gaps — important concepts that are missing. Consider:
-1. Broken references: concepts listed in "dependents" or "prerequisites" that don't exist as their own node yet
-2. Missing foundations: important concepts that would logically precede or connect existing ones
-3. Entire missing categories that a senior engineer should know (e.g., if there's no concurrency, no API design, no observability, etc.)
-4. Concepts that would create bridges between existing categories
+The following IDs are referenced in prerequisites/dependents but have no definition yet:
+{dangling}
 
 Generate {count} NEW concepts that fill the most critical gaps. Prioritize:
-- Concepts referenced but not defined (dangling IDs in prerequisites/dependents)
-- Foundational concepts that many others would depend on
+- The dangling IDs listed above — these are broken references that need definitions
+- Foundational concepts that many existing ones would depend on
 - Practical concepts a senior backend/SRE/fullstack engineer encounters regularly
+- Concepts that bridge between existing categories
 
 For each concept, output a YAML document separated by "---". Each must have:
 - id: kebab-case unique identifier
@@ -83,6 +61,23 @@ Rules:
 - Make sure IDs are unique and not already in the existing set
 
 Output ONLY the YAML documents, no markdown fences, no extra text.`;
+
+const REQUIRED_FIELDS = ["id", "title", "category", "roles", "lenses", "prerequisites", "dependents", "brief"] as const;
+
+function validateConcept(concept: Record<string, unknown>): string | null {
+  for (const field of REQUIRED_FIELDS) {
+    if (concept[field] === undefined) return `missing field: ${field}`;
+  }
+  for (const field of ["category", "roles", "lenses", "prerequisites", "dependents"] as const) {
+    if (!Array.isArray(concept[field])) return `${field} must be an array`;
+  }
+  if (typeof concept.brief !== "string") return "brief must be a string";
+  return null;
+}
+
+function stripMarkdownFences(text: string): string {
+  return text.replace(/^```[\w]*\n?/gm, "").replace(/^```$/gm, "");
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -105,23 +100,36 @@ async function main() {
       .replace("{count}", String(count))
       .replace("{category}", category);
   } else {
+    const definedIds = new Set(existing.map(c => c.id));
+    const referencedIds = new Set(existing.flatMap(c => [...c.prerequisites, ...c.dependents]));
+    const dangling = [...referencedIds].filter(id => !definedIds.has(id));
+
     console.log(`Finding gaps in the concept graph and generating ${count} concepts...`);
+    console.log(`Dangling references: ${dangling.length}`);
     prompt = GAP_PROMPT
       .replace("{existing}", existingSummary)
+      .replace("{dangling}", dangling.length > 0 ? dangling.join(", ") : "(none)")
       .replace("{count}", String(count));
   }
 
   console.log(`Existing graph: ${existing.length} concepts\n`);
 
   const response = await callClaude(prompt);
+  const cleaned = stripMarkdownFences(response);
 
-  const docs = response.split(/^---$/m).filter(d => d.trim());
+  const docs = cleaned.split(/^---$/m).filter(d => d.trim());
   let saved = 0;
 
   for (const doc of docs) {
     try {
       const concept = yaml.load(doc.trim()) as Record<string, unknown>;
-      if (!concept || !concept.id || !concept.title) continue;
+      if (!concept) continue;
+
+      const error = validateConcept(concept);
+      if (error) {
+        console.log(`  SKIP (${error}): ${concept.id ?? "unknown"}`);
+        continue;
+      }
 
       const id = concept.id as string;
       if (existing.some(c => c.id === id)) {

@@ -1,30 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Rate Limiting
 
-Rate limiting controls how many requests a client can make to an API within a time window — it exists because unbounded request rates can exhaust your infrastructure regardless of whether the source is malicious or just a buggy retry loop.
+Rate limiting is a traffic control mechanism that enforces ceilings on how many requests a client (or endpoint) can make within a time window. Without it, a single misbehaving or runaway client can saturate your service for everyone else.
 
-### Core Mechanism
+### The Core Mechanism
 
-The naive version is a counter: track how many requests a client has made in the current window, reject once they exceed a threshold, reset at window boundary. This works but has a "thundering herd" problem — every client who hit their limit resets at the same second and floods you simultaneously.
+The two dominant algorithms trade off burst tolerance against smoothness:
 
-More sophisticated approaches avoid this. A **sliding window** tracks request timestamps and counts only those within the last N seconds from *now*, not from an arbitrary clock tick. This smooths traffic but is memory-expensive at scale.
+**Token bucket**: A client starts with a bucket of N tokens. Each request consumes one token; tokens refill at a fixed rate. Bursts are allowed up to the bucket's capacity — a client can make 50 requests at once if they've accumulated 50 tokens. This is what most APIs actually use.
 
-The most practical production approach is the **token bucket** (which you'll explore next): each client has a bucket that fills with tokens at a fixed rate. Each request consumes a token. If the bucket is empty, the request is rejected. This allows short bursts while enforcing a sustained rate ceiling — which maps well to real usage patterns where a client might legitimately fire 10 requests at once then go quiet.
+**Leaky bucket**: Requests enter a queue and drain at a fixed rate, regardless of arrival pattern. It completely flattens bursts, which protects downstream dependencies but adds latency for legitimate spiky traffic. Better suited for internal queue-backed services than public APIs.
 
-### Concrete Model
+There's also **fixed window** (count requests per minute, reset at :00) — simple but has a boundary problem: 100 requests at 11:59:59 and 100 at 12:00:01 gives you 200 requests in 2 seconds. **Sliding window** fixes this by tracking a rolling 60-second view, at the cost of more memory per client.
 
-Think of a highway on-ramp with a metering light. Cars (requests) queue and get a green light at a controlled interval. Traffic upstream stays predictable. Some on-ramps allow brief bursts during off-peak; others are strict. The highway (your API) doesn't care about individual cars — it cares about aggregate flow.
+### Concrete Mental Model
 
-### Practical Scenarios
+Think of token bucket like a subway turnstile with a stored-up balance. If you walk in every day, you can build credit for a day when you need to run. Leaky bucket is a garden hose — the flow out is constant regardless of how hard you're pushing on the tap.
 
-**Backend:** You're building a payment API. Without rate limiting, a misconfigured client SDK retrying on 5xx at full speed will hit your payment processor hundreds of times per second, running up costs and potentially creating duplicate charge attempts. Rate limiting per API key stops the blast radius. You respond with `429 Too Many Requests` and a `Retry-After` header — the client knows to back off without guessing.
+### Practical Patterns
 
-**SRE:** You're on call. A new client starts hammering the /search endpoint at 10x normal volume — maybe a load test someone forgot to sandbox. Without rate limiting, this degrades latency for all tenants. With it, that client gets throttled at the edge (load balancer or API gateway), your backend never sees the spike, and you get an alert on elevated 429 rates rather than a page for degraded p99 latency. Rate limits are a circuit breaker at the perimeter.
+**Backend**: You'll typically implement rate limiting at the API gateway (Nginx, Kong, AWS API Gateway) for coarse-grained protection, plus at the application layer for fine-grained per-user or per-feature control. The critical implementation detail for multi-instance deployments: you need a shared atomic store — Redis with `INCR`/`EXPIRE` is the standard approach. Per-process counters silently multiply your effective limit by instance count.
 
-### What Makes It Non-Trivial
+**SRE**: Rate limiting is your first line of defense against unintentional DDoS — a client with a bug in a retry loop, a build system hammering your artifact registry. Always expose `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. Clients that can read these will back off gracefully; ones that can't will hammer your 429s, which leads to the **retry storm** failure mode: thousands of clients all hit the limit simultaneously, all wait the same duration, all retry at the same moment.
 
-The hard part isn't the algorithm — it's *where* you store the counter. Per-process counters break the moment you scale horizontally. You need a shared store (Redis is the standard choice) with atomic increment operations. And you have to decide your limiting key: by IP, by API key, by user ID, by endpoint, or some combination. The wrong granularity either over-throttles legitimate users or lets sophisticated clients evade limits by rotating identities.
+### What Separates Senior Engineers Here
+
+Knowing which layer to rate-limit at: CDN-level blocks volumetric attacks before they hit your origin; gateway-level handles per-key quotas; application-level enforces business rules like per-user tier limits. Each serves a different threat model, and conflating them is a common design mistake.
+
+The algorithm choice also matters: token bucket is the right default for public APIs because it tolerates legitimate burst patterns (batch jobs, mobile sync). Reaching for leaky bucket without a reason usually means you're solving a different problem — overload protection of a slow downstream, not client fairness.

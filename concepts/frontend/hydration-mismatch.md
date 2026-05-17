@@ -1,40 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Hydration Mismatch Debugging
 
-When SSR renders HTML on the server and the client hydrates it, React (or similar frameworks) expects the DOM it finds to match exactly what it would have rendered itself. A mismatch breaks this contract, causing React to either throw a warning, re-render the entire subtree, or produce invisible bugs where interactive state silently diverges from what the user sees.
+When React hydrates server-rendered HTML, it doesn't re-render — it *reconciles*: walking the existing DOM and attaching event listeners while assuming the tree matches what it would have rendered client-side. When it doesn't match, you get a mismatch, and React either silently replaces the DOM (dev mode warns, prod mode often doesn't) or throws entirely.
 
 **The core mechanism**
 
-During hydration, React doesn't re-render from scratch — it walks the existing server-rendered DOM and attaches event listeners while reconciling nodes against the virtual DOM it constructs client-side. If a node's tag, attributes, or text content differ even slightly, React detects the divergence and bails out, usually with a full client re-render of that subtree. In production, React suppresses the warning but still does the re-render — which defeats much of the SSR performance benefit and can produce layout flashes.
+During the reconciliation pass, React compares virtual DOM nodes against real DOM nodes by text content, tag type, and attribute values — not by identity. The invariant it enforces: the serialized server output must be byte-for-byte equivalent to what `renderToString` (or streaming equivalents) would produce for the *same props and state at the same point in time*. The key phrase is "same point in time" — the server renders at request time, the client renders at hydration time, and anything that differs between those two moments causes a mismatch.
 
-The tricky part: the mismatch often isn't in the component you're looking at. It propagates upward through the tree, and React reports the mismatch at the boundary, not the source.
+**Where mismatches actually come from**
 
-**Concrete mental model**
+The most common sources aren't obvious bugs — they're subtle environment differences:
 
-Think of it like two people assembling the same IKEA furniture from the same instructions, but one person skipped step 3. When they compare notes later, everything from step 4 onward looks different — even though the underlying mistake was small and early.
+- **`Date.now()` or `Math.random()` in render** — produces different values server vs. client.
+- **`typeof window !== 'undefined'` guards** — code that conditionally renders based on browser availability, which is undefined on the server.
+- **Browser extensions** — inject DOM nodes (ads, password managers) that React didn't render.
+- **Locale/timezone divergence** — a formatted date renders differently if the server is UTC and the client is in a different zone.
+- **Async data that resolves differently** — especially with streaming SSR, where the client might receive stale or partial cache.
 
-**Common causes**
+**Mental model**
 
-- **`Date.now()` or `Math.random()` in render** — server and client produce different values
-- **`typeof window !== 'undefined'` checks** — a component that renders nothing server-side renders something client-side, or vice versa
-- **Browser extensions** — injecting DOM nodes (ads, password managers) that React didn't put there
-- **Invalid HTML nesting** — `<p>` inside `<p>`, `<div>` inside `<a>` — browsers silently fix these differently on client vs. server
+Think of SSR output as a *snapshot contract*. The client is signing that contract blindly — it trusts the DOM is correct and just needs to attach behavior. The moment reality diverges from the snapshot, React has to choose between trusting the snapshot (keeping the DOM, potentially wrong) or trusting its own render (replacing the DOM, causing a flash). React 18 is more aggressive about replacing, which makes mismatches more visible but also more disruptive.
 
-**Frontend scenario**
+**Practical debugging**
 
-A `<Tooltip>` component reads `window.innerWidth` to decide positioning. Server renders it with a default, client renders it with the actual viewport — mismatch. Fix: wrap the width-dependent render in a `useEffect` or use `suppressHydrationWarning` if the difference is cosmetic and intentional.
+In dev mode, React logs the specific nodes that diverged. The useful pattern: suppress hydration warnings on a subtree with `suppressHydrationWarning` (legitimate for things like timestamps that are intentionally client-only), or use `useEffect` to defer client-only rendering until after hydration completes. Next.js's `dynamic(() => ..., { ssr: false })` is essentially a formalized version of this pattern.
 
-**Fullstack scenario**
+**Why this matters at the senior level**
 
-Your Next.js app renders a user greeting server-side. You pull the locale from `navigator.language` instead of a cookie or Accept-Language header. Server says "Hello", client says "Hola". The mismatch cascades if the greeting is inside a larger layout — React may re-render a wide subtree, causing a visible flash on load.
-
-**Debugging approach**
-
-1. Enable React's strict mode — it surfaces these in development
-2. Search for `suppressHydrationWarning` already in the codebase — it's often a sign someone already papered over a mismatch
-3. Diff the server-rendered HTML (`curl` the page) against what React would render client-side — they need to match byte-for-byte in text nodes and attribute order
-4. Isolate time/randomness/browser-API access behind effects or server-safe defaults
+Mismatches in production are often silent and intermittent — they surface as layout flashes, broken interactivity, or SEO-vs-user content divergence. Recognizing *why* they happen (not just that they happened) lets you design components that are hydration-safe by default: separating server-stable from client-volatile state, choosing the right rendering strategy per component, and knowing when SSR is actively harmful for a given piece of UI.

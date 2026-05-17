@@ -1,49 +1,37 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## iframe Performance Patterns
 
-Each iframe is a full browsing context — its own document, layout tree, and script execution environment. This isolation is powerful but has a real cost: an eager iframe competes for network bandwidth, triggers its own parse/execute cycle, and can delay your page's `load` event even though it appears visually contained.
+Iframes aren't just for embedding external content — they're a containment strategy. Because each iframe gets its own browsing context (its own document, render tree, and isolated script environment), expensive third-party rendering can't trigger layout recalculations in your main page. That isolation is the actual performance win.
 
-### Core Mechanism
+### The Core Mechanism
 
-The browser treats an iframe almost like a nested tab. When you set `src`, it initiates a full navigation: DNS lookup, TCP connection, HTML parse, subresource fetches, JS execution. The iframe's JS runs on its own event loop, so it won't block your main thread's JS — but painting and compositing are still shared, and heavy iframe rendering can cause jank.
+When a third-party widget runs inside an iframe, its DOM mutations, reflows, and script execution are scoped to its own context. A chat widget causing 200ms of layout thrash inside an iframe doesn't touch your CLS score or block your main thread's rendering. The browser still has to schedule iframe rendering, but the containment prevents the worst cascading effects.
 
-The key insight is that most iframes are not needed immediately. Deferring their lifecycle is the highest-leverage optimization.
+`loading="lazy"` defers fetching the iframe's `src` entirely until the element approaches the viewport — same heuristic as lazy images. For below-the-fold content (ads, embedded videos, comment sections), this eliminates the network request and parsing cost at page load.
 
-### The Three Main Patterns
+`srcdoc` lets you inject a placeholder directly as an HTML string attribute. Instead of a network round-trip for a loading skeleton, the browser renders from the attribute synchronously. Combine them: initial `srcdoc` shows a skeleton, then you swap `src` in when the user scrolls near it — or use `loading="lazy"` and let the browser handle the deferral.
 
-**1. Native lazy loading**
 ```html
-<iframe src="https://maps.example.com/embed" loading="lazy"></iframe>
-```
-Simple and effective for below-the-fold iframes. The browser defers loading until the iframe is within a threshold of the viewport.
-
-**2. Deferred `src` injection**
-For more control — or cross-browser coverage — you hold `src` empty and inject it via IntersectionObserver:
-```js
-const observer = new IntersectionObserver(([entry]) => {
-  if (entry.isIntersecting) {
-    entry.target.src = entry.target.dataset.src;
-    observer.disconnect();
-  }
-});
-observer.observe(document.querySelector('iframe[data-src]'));
+<iframe 
+  srcdoc="<style>body{background:#f0f0f0}</style><p>Loading...</p>"
+  loading="lazy"
+  src="https://embed.example.com/widget"
+  sandbox="allow-scripts allow-same-origin">
+</iframe>
 ```
 
-**3. Facade pattern**
-Don't render the iframe at all until user interaction. Show a screenshot or thumbnail, swap to the real iframe on click. YouTube's lite-embed approach does exactly this — the video player iframe is never loaded if the user doesn't click play. For ad-heavy pages, this alone can cut LCP and TBT significantly.
+### Where This Shows Up in Practice
 
-### Mental Model
+**Frontend:** Ads and embeds are the obvious case, but the pattern matters most for anything you don't control — comment systems, payment widgets, live chat. You can't optimize their internals, so you contain their impact instead. The gotcha: `sandbox` attribute restrictions can break third-party scripts that expect certain globals or storage access, so you'll often need `allow-same-origin allow-scripts allow-forms` and then audit what you're actually allowing.
 
-Think of it as "tabs inside a tab." You wouldn't open 15 background tabs on load and expect snappy UX. An eager iframe grid on a page is exactly that. The facade pattern is the equivalent of not opening the tab until someone actually wants it.
+**Fullstack:** When server-rendering pages with third-party integrations, the iframe boundary also prevents hydration conflicts — the embedded content never participates in your framework's reconciliation cycle. This is particularly useful when integrating legacy widgets into modern React/Next.js apps.
 
-### Practical Scenarios
+### The Senior Engineer Differentiator
 
-**Frontend:** Third-party embeds — chat widgets, maps, video players, payment forms — are the primary use case. The facade pattern shines here because these are interactive triggers (user clicks "Start Chat"), so the lazy swap feels invisible.
+The failure mode most engineers miss: `loading="lazy"` has no effect on iframes that are initially in the viewport, and cross-origin iframes still consume a connection from the browser's pool even when lazy. Knowing to audit Network > Initiator chains and checking that lazy iframes genuinely defer — not just appear to — is what separates someone who cargo-culted the attribute from someone who measured it.
 
-**Fullstack:** In micro-frontend architectures where teams deploy independently as iframes, the concern shifts. You still want lazy loading for non-critical micro-frontends, but you also need to think about duplicate dependency loading (React loaded 4 times across 4 iframes) and coordinating hydration order. Module federation or shared import maps can help, but the iframe isolation itself means you can't fully deduplicate — it's a tradeoff between team autonomy and bundle efficiency.
-
-The `sandbox` attribute is worth considering for both security and performance: restricting capabilities (`allow-scripts` only vs. full sandbox off) lets the browser make better optimization decisions and reduces the attack surface of third-party content.
+In design discussions, the question to raise is whether the third-party truly needs to be an iframe or whether a postMessage-based async integration would give you more control. Iframes are the right answer when you can't trust the embedded content's performance characteristics. That framing — containment as a deliberate choice, not a fallback — is what reads as senior thinking.

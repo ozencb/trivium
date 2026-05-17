@@ -1,30 +1,32 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-A Bloom filter answers the question "is this element in the set?" with a guarantee on one side: if it says **no**, it's definitely right. If it says **yes**, it might be wrong. That asymmetry — no false negatives, possible false positives — is the whole point.
+## Bloom Filters
 
-## The Mechanism
+A Bloom filter answers one question—"have I seen this before?"—using a fraction of the memory a hash set would require. The tradeoff is asymmetric: it can say "definitely not" with certainty, but "yes" means "probably yes, with some false positive rate you control at construction time."
 
-Under the hood: a bit array of size *m* (all zeros initially) and *k* independent hash functions.
+### The mechanism
 
-**Inserting** an element: run it through all *k* hash functions, each producing an index into the array. Set those *k* bits to 1.
+Underneath, it's a bit array of size `m` and `k` independent hash functions. To insert an element, you run it through all `k` hashes, each producing an index into the array—set those bits to 1. To query, run the same `k` hashes: if *any* bit is 0, the element was never inserted (guaranteed). If all bits are 1, it was *probably* inserted—another element could have set those same bits.
 
-**Querying** an element: run it through the same *k* functions, check all *k* bit positions. If *any* bit is 0 → the element was never inserted (a zero can't have been set by this element). If *all* bits are 1 → the element *probably* was inserted, but those bits may have been set by different elements colliding.
+There's no delete in the basic structure. Once a bit is set, you can't unset it without invalidating other elements that share it. (Counting Bloom filters extend this, replacing bits with counters, but at a memory cost.)
 
-This is why false negatives are impossible: insertion always sets bits, so a real member will always see all its bits as 1. False positives happen when hash collisions conspire to make an absent element look present.
+The false positive rate is deterministic given `m`, `k`, and the number of elements inserted `n`. The optimal `k` is `(m/n) * ln(2)`. At 10 bits per element with optimal `k`, you get roughly 1% false positives. At 1 byte per element, it's ~0.3%. A hash set storing the same data might use 50–200 bytes per element.
 
-The false positive rate is tunable — it's a function of *m* (array size), *k* (number of hash functions), and *n* (elements inserted). Larger array = lower collision probability. There's a sweet spot for *k* given *m* and *n*.
+### Mental model
 
-## Concrete Mental Model
+Picture a concert venue stamp check. The stamp proves you paid, but two guests could theoretically have identical stamps (collision). The bouncer can definitively say "no stamp, no entry" but occasionally lets through a gate-crasher with an accidentally matching stamp. You accept that rare false admission to avoid maintaining a massive guest list.
 
-Ten bits, two hash functions. You insert "alice" — bits 3 and 7 flip to 1. You insert "bob" — bits 1 and 7 flip. Now query "charlie": its hashes land on positions 1 and 3, both already 1. False positive — Charlie's never been seen, but the bits were set by Alice and Bob. Query "dave": lands on 2 and 5, bit 2 is still 0. Definitely absent. Correct.
+### Where this matters in practice
 
-## Where This Actually Shows Up
+**Backend:** API rate limiting and deduplication at scale. Before hitting Redis or Postgres to check if a request ID was already processed, a Bloom filter in memory eliminates the I/O for the ~99% of requests that are clearly new. LinkedIn and Cassandra use this pattern extensively.
 
-**Backend services**: Before hitting a database or cache to check existence (does this user ID exist? has this idempotency key been seen?), a Bloom filter can short-circuit the lookup entirely when the answer is "no." At high QPS, eliminating even 90% of "definitely not there" DB calls is significant.
+**Data:** This is the foundational concept behind LSM-tree read optimization. In RocksDB or LevelDB, each SSTable file has an associated Bloom filter. When you read a key, the engine checks the filter before doing any disk I/O. If the filter says "definitely not here," skip the file entirely—this is what makes point lookups on write-optimized storage tolerable.
 
-**Data systems — the LSM-Tree connection**: This is exactly why LSM-Trees (RocksDB, Cassandra, LevelDB) are read-viable despite storing data across many sorted files (SSTables) on disk. Each SSTable has a Bloom filter. On a read, the engine checks each file's filter before doing any I/O. If the filter says the key isn't there, skip the file entirely. Without this, a read would scan potentially dozens of files. With it, most files are eliminated in microseconds, making the read path O(1) amortized in the common case.
+**Content deduplication:** Crawlers (Googlebot, Common Crawl) use Bloom filters to avoid re-crawling URLs. The dataset is billions of URLs; a hash set would require terabytes.
 
-The tradeoff you're always making: a small, fixed memory budget (often just a few bits per element) buys you probabilistic membership testing at near-zero cost per query.
+### The invariant to hold onto
+
+The false positive rate increases as you insert more elements than the filter was sized for. Bloom filters aren't magic—they're a deliberate, tunable tradeoff. Size them at construction time based on expected cardinality and your acceptable FP rate, and they're one of the most practical data structures in systems work.

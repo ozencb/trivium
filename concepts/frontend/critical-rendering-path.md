@@ -1,31 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Critical Rendering Path (CRP)** is the ordered sequence of steps the browser must complete before it can paint anything on screen. Optimizing it is the most direct lever you have over perceived page load performance.
+## Critical Rendering Path
 
-## The mechanism
+The browser can't show pixels until it knows what to show (DOM) and how to style it (CSSOM) — the Critical Rendering Path is the mandatory sequence between bytes arriving and the first frame appearing. Every millisecond spent on this sequence is a millisecond the user sees nothing.
 
-The browser follows this sequence: parse HTML → build DOM → parse CSS → build CSSOM → merge into render tree → layout → paint. The word "critical" refers to *blocking*: resources that halt progress through this chain delay the first paint, regardless of how fast the rest of the page loads.
+**The mechanism, and why CSSOM is the bottleneck**
 
-Two rules govern what blocks what:
+HTML parsing is incremental — the browser builds the DOM as bytes stream in. CSS is not. The browser must download and parse *all* CSS before it can construct the CSSOM, because the cascade is order-dependent: a rule at line 8,000 of your stylesheet can override one at line 3. The browser has no way to partially apply CSS and then "fix it up" later without causing a visible flash or re-layout. So `<link rel="stylesheet">` in `<head>` is a full stop: nothing renders until that file is fetched and parsed.
 
-1. **CSS is render-blocking.** The browser won't paint until it has a complete CSSOM. This is because JS can read computed styles, so executing JS before CSSOM is complete could produce wrong results.
-2. **Synchronous scripts are parser-blocking.** When the HTML parser hits a `<script>` without `async`/`defer`, it stops building the DOM, waits for the script to download and execute, then resumes. This compounds with rule 1 — a script encountered mid-parse also waits for any in-flight CSS to finish first.
+JavaScript compounds this. Sync `<script>` tags block HTML parsing entirely (JS can call `document.write`). But crucially, CSS also blocks JS execution — if the browser hasn't finished building the CSSOM and it hits a `<script>`, it waits, because the script might query `getComputedStyle()`. The practical chain: CSS delays JS, JS delays DOM parsing, both delay rendering.
 
-The result: even a fast server response can produce a blank screen for several hundred milliseconds while the browser resolves this dependency chain.
+After DOM + CSSOM exist, the browser builds the render tree (DOM nodes that are actually visible, with their computed styles), runs layout (calculating geometry — this is expensive), and paints.
 
-## Mental model
+**Mental model**
 
-Think of a waterfall chart. Each render-blocking resource is a horizontal bar that pushes first paint to the right. A 150kb stylesheet + a synchronous analytics script means zero pixels until both are fully resolved — even if the visible portion of the page only needs 8kb of CSS.
+CSSOM is like a spreadsheet where cells can reference any other cell. You can't display partial results because one formula at the bottom might invalidate everything above it. You need the full evaluation before any output is meaningful.
 
-## Practical scenarios
+**Frontend**
 
-**Frontend:** This is why code-splitting matters. A monolithic 800kb React bundle is synchronous — the browser blocks paint until it downloads and executes. Splitting routes means the initial load only blocks on the minimum JS needed for that page. Similarly, inlining above-the-fold CSS directly in `<head>` and loading the full stylesheet asynchronously removes it from the critical path entirely. `async` scripts skip parser-blocking; `defer` additionally guarantees execution after DOM is parsed — both shrink the CRP.
+The classic trap: a monolithic CSS bundle linked in `<head>` delays FCP even if 90% of it applies only to routes the user hasn't visited. The fix is inlining critical (above-the-fold) CSS directly in the `<head>` as a `<style>` block, then loading the rest with `<link rel="stylesheet" media="print" onload="this.media='all'">` to defer it off the critical path. This is what tools like `critters` or `penthouse` automate.
 
-**Fullstack:** SSR shortens the CRP because content arrives in HTML instead of waiting for JS hydration. More aggressively, React 18's streaming SSR + Suspense lets the browser start parsing and painting the first HTML chunk while the server is still generating the rest, so you're not trading one blocking resource for another. On the infrastructure side, HTTP/2 server push lets you speculatively send CSS/JS before the browser has even parsed enough HTML to request them.
+**Fullstack**
 
-## Why this unlocks Resource Hints
+SSR gets HTML to the browser faster, but it doesn't eliminate CRP concerns. If your SSR template injects `<link rel="stylesheet" href="/bundle.css">` in `<head>`, the browser still blocks on that file before rendering. SSR's benefit is reducing the time-to-first-byte; the CRP still runs in full after that. This is why SSR + streaming (sending HTML in chunks) + critical CSS inlining stack together — each targets a different part of the pipeline.
 
-Resource hints (`preload`, `preconnect`, `prefetch`) only make sense once you've mapped your critical path. `preload` tells the browser to fetch a critical resource early — before the parser would normally discover it. Without understanding *which* resources are on the critical path, you'd just be guessing at what to hint.
+Understanding this is the prerequisite for resource hints (`preload`, `preconnect`) making sense: they're mechanisms for pulling render-blocking resources earlier in the timeline, before the parser even reaches the tag that requests them.

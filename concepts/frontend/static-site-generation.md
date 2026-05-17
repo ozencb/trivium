@@ -1,37 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Static Site Generation
 
-SSG pre-renders pages to static HTML **at build time**, before any request arrives. The key difference from SSR: work happens once during deployment, not per-request.
+SSG is the decision to do all rendering work at build time rather than request time — every page becomes a static HTML file that can be pushed to a CDN and served from an edge node closest to the user, with zero backend involvement per request. You're essentially trading deployment-time compute for near-zero runtime latency and infinite horizontal scale by default.
 
-### The core mechanism
+**The core mechanism**
 
-In SSR you already know, a Node process handles each request: fetches data, renders HTML, sends it. SSG moves that entire pipeline to build time. A framework like Next.js or Astro runs your data-fetching and rendering code during `next build`, writes the output to `.html` files, and at runtime a CDN serves those files directly — no server process involved.
+At build time, your framework (Next.js, Astro, Nuxt, etc.) calls your data-fetching functions, renders every page to HTML, and writes the output to disk. From that point forward, serving the page is just a file read. There's no Node process, no database query, no cold start — the CDN edge handles it. The tradeoff: the HTML is a snapshot. It reflects the world as it was when `npm run build` last ran.
 
-This means your "server" code runs exactly once per deployment, not once per user. The tradeoff is freshness: the data in the HTML is as stale as your last build.
+This is where SSG diverges from SSR in a meaningful way. SSR gives you request-time freshness because rendering happens on each request; SSG gives you request-time performance because rendering already happened. Understanding *which axis matters for a given page* is the actual design decision.
 
-### Mental model
+**A concrete mental model**
 
-Think of it as memoization at deployment scale. SSR is like computing a value on every function call. SSG is like computing it once and caching the result permanently — until you invalidate the cache (redeploy).
+Think of a documentation site. The content changes maybe once a week. If you SSR every doc page, you're spinning up compute 100,000 times a day to produce the same HTML output every single time. With SSG, you produce it once at deploy time and serve it forever until the next deploy. The freshness cost is zero because docs don't change between deploys anyway.
 
-```
-Build time:  getStaticProps() → render() → posts/my-article.html
-Request:     CDN serves posts/my-article.html directly
-```
+Flip to a product inventory page with real-time stock levels — SSG would show stale prices or incorrect availability. Wrong tool.
 
-No Lambda invocation, no database hit, no server spin-up. Just a file read from an edge node near the user.
+**Where it plays out in practice**
 
-### Practical scenarios
+For a *frontend engineer*, SSG means thinking about your data's "staleness tolerance." Marketing pages, blog posts, documentation, and pricing pages are natural SSG candidates — they're authored content with infrequent updates. Dynamic user dashboards or feeds are not.
 
-**Frontend:** Marketing sites, documentation, blogs — anywhere content changes infrequently. A docs site with 300 pages can be fully pre-rendered. Each page loads instantly, caching is trivial, and you get inherent resilience (no origin to go down). The cost is that a content update requires a redeploy, which is fine if your CI pipeline is fast.
+For a *fullstack engineer*, the interesting tension is in hybrid apps. Most real products aren't purely static or purely dynamic. Next.js lets you SSG some routes and SSR others in the same app, and understanding the boundary — what can be pre-rendered vs. what requires per-request rendering — is where SSG knowledge becomes a design skill, not just a config choice.
 
-**Fullstack:** SSG shines for data that's shared across users and expensive to compute — product catalogs, pricing pages, CMS-driven content. You'd SSG the product listing page (same for everyone, changes rarely) but SSR or client-fetch the cart/checkout (user-specific, must be real-time). Most real apps mix both: SSG for the cacheable parts, SSR or API routes for the dynamic parts.
+**Why this matters in senior conversations**
 
-### Why this matters beyond performance
-
-SSG shifts when your backend is stressed. A traffic spike on an SSR app means a spike in DB queries and compute. On an SSG app, the CDN absorbs it — your origin never sees the traffic. That's not just a speed optimization; it's a fundamentally different operational profile.
-
-This is the foundation for **Incremental Static Regeneration** (ISR), which solves SSG's freshness problem by adding time-based or on-demand revalidation — essentially giving you SSG's CDN performance with a configurable staleness window instead of "stale until next deploy."
+The differentiated insight isn't "SSG is fast." It's knowing the *failure modes*: stale data on high-traffic deploys, long build times when you have 50,000 pages, and the operational model where a content update requires triggering a full rebuild and redeploy. That's what leads you to Incremental Static Regeneration — SSG's answer to "what if I want static performance but don't want to rebuild everything on every content change."

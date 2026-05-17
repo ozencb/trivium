@@ -1,0 +1,15 @@
+id: document-stores
+title: Document Stores
+category:
+  - Databases
+  - NoSQL
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - practical
+prerequisites:
+  - acid-properties
+dependents: []
+brief: NoSQL databases (MongoDB, Firestore) that persist schema-flexible JSON documents, trading ACID joins and referential integrity for horizontal scalability and schema evolution speed.

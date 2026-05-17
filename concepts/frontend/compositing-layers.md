@@ -1,39 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Compositing Layers
 
-The browser doesn't draw your entire page as a single flat image — it splits portions of the page into independent surfaces called compositing layers, then hands them to the GPU to assemble. This separation means certain visual changes (transforms, opacity) can happen entirely on the GPU without touching the CPU-side paint pipeline.
+After the browser paints pixels, it doesn't always flatten everything into a single image. Instead, it can maintain separate textures in GPU memory—one per "layer"—and let the GPU combine (composite) them at draw time. This matters because moving or fading a layer is a GPU matrix operation that never touches CPU-side paint code.
 
-### The core mechanism
+**The mechanism**
 
-After layout and paint, the browser has a set of painted bitmaps. Compositing is the step where those bitmaps are combined into what you see on screen. A *compositing layer* is a bitmap that the browser promotes to its own GPU texture, so it can be moved, scaled, or faded independently from everything else.
+The browser's compositor thread is separate from the main thread. When an element has its own compositing layer, animations driven by `transform` or `opacity` can run entirely on the compositor thread—meaning a busy JavaScript event loop doesn't jank them. The GPU takes each texture, applies a transform matrix, and blends the results. No repaint, no rasterization, just a few floating-point multiplications.
 
-The key insight: once a layer is uploaded to the GPU as a texture, transforming it is essentially free — the GPU does matrix math on pixels it already has. No re-layout, no re-paint, no re-rasterization.
+Layer promotion happens explicitly or implicitly. Explicit: `will-change: transform` or `transform: translateZ(0)` tells the browser ahead of time. Implicit: certain CSS properties (`position: fixed`, `filter`, `clip-path`, some `z-index` arrangements) trigger promotion automatically, sometimes unexpectedly.
 
-### What triggers layer promotion
+**Concrete mental model**
 
-Certain properties force an element into its own layer:
-- `transform` with 3D functions (`translateZ`, `translate3d`)
-- `will-change: transform` or `will-change: opacity`
-- `position: fixed` (so the browser doesn't repaint on scroll)
-- `<video>`, `<canvas>`, `<iframe>` — they always get their own layer
-- Elements with CSS filters, or that are stacking-context ancestors of promoted layers
+Think of Photoshop. You have layer A (background) and layer B (a button). Moving layer B doesn't require redrawing A—Photoshop just repositions the layer. The browser compositor works the same way: each promoted element is a separate texture the GPU slides around. Painting is expensive; compositing is cheap.
 
-The "GPU hack" `transform: translateZ(0)` works because it forces layer promotion even though the transform itself does nothing visual — you're paying a memory cost to buy compositing.
+**Where this shows up in practice**
 
-### Concrete mental model
+The classic use case is animating `transform` instead of `left/top`. `left: 100px → left: 200px` triggers layout → paint → composite. `transform: translateX(200px)` skips straight to composite. Same visual result, completely different cost profile.
 
-Think of a Photoshop document. Layers at the bottom (painted by the CPU) get flattened into a single image. But some layers can stay "live" — the GPU keeps them as separate textures and assembles the final frame on every tick without touching the others. Scrolling a page with a `position: fixed` navbar is this: the navbar texture stays put while the content texture scrolls beneath it.
+Scroll-linked animations (`position: sticky`, parallax effects) are another hotspot. If sticky elements aren't on their own layer, every scroll tick forces repaint. Browsers often promote sticky elements automatically, but complex sticky headers with shadows or filters can fall out of GPU-land silently.
 
-### Practical implications
+**The pitfall senior engineers catch**
 
-**Animation:** Animating `transform` and `opacity` stays on the compositor thread. Animating `width`, `top`, `background-color` forces a re-layout or re-paint, which blocks the main thread. This is why every perf guide tells you to animate transforms instead.
+Layer explosion. Animating a list of 200 items with `will-change: transform` on each row creates 200 GPU textures simultaneously. VRAM spikes, the compositor's overdraw budget gets consumed, and performance degrades worse than if you'd done nothing. The fix is to promote only the actively-animated element—often by toggling a CSS class during the animation, then removing it.
 
-**Scroll performance:** Promoting scroll containers and sticky/fixed elements avoids repainting the whole page during scroll — critical on mobile.
+DevTools' Layers panel (Chrome) makes this visible. The "Memory" estimate per layer is real: a full-viewport element at 2x DPR can cost 4MB+ per layer.
 
-**Layer explosion:** Over-using `will-change` creates many GPU textures, eating memory. On low-end devices this causes jank or crashes. Promote selectively and remove `will-change` after animations complete.
+**The interview signal**
 
-**DevTools:** Chrome's Layers panel shows you exactly what's been promoted and why — worth opening once to build intuition for what your CSS is actually costing.
+Most engineers know "use transform, not top/left." Senior engineers explain *why*—compositor thread independence—and know when promotion backfires. Being able to reason about the tradeoff between animation smoothness and VRAM budget, and knowing how to verify layer counts in DevTools, marks someone who's debugged production jank rather than just read about it.

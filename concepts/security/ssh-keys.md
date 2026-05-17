@@ -1,35 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## SSH Key Authentication
+SSH key authentication is a challenge-response protocol that proves identity by demonstrating possession of a private key through cryptographic signature—the key itself is never transmitted. It replaces passwords for remote access because a stolen server database or network intercept yields nothing reusable.
 
-SSH key authentication replaces passwords with a cryptographic challenge-response protocol — you prove possession of a private key without ever transmitting it, which eliminates an entire class of credential-theft attacks.
+## How it actually works
 
-### The Core Mechanism
+When you connect, the server sends a random challenge (a nonce tied to the session). Your SSH client signs it with your private key and sends back the signature. The server verifies that signature against the public key it has stored (in `~/.ssh/authorized_keys`). A valid signature proves you have the private key; forging one without it is computationally infeasible.
 
-When you connect to an SSH server, the handshake goes roughly like this:
+This is distinct from TLS/HTTPS certificate auth in one key way: there's no certificate authority chain. Trust is explicit—your public key lives in `authorized_keys` because someone with existing access put it there. No PKI, no OCSP, no revocation lists. Revocation is just deleting the line.
 
-1. Your client advertises which public key it wants to authenticate with.
-2. The server checks `~/.ssh/authorized_keys` — if your public key is there, it generates a random challenge and sends it back, encrypted with your public key.
-3. Your client decrypts it using your private key, signs the result (combined with the session identifier) using that same private key, and sends the signature back.
-4. The server verifies the signature against your public key. A valid signature proves you hold the private key, without you ever revealing it.
+## Mental model
 
-The critical invariant: the private key never leaves your machine. The server only needs to know your public key, and even if the server is compromised, attackers gain nothing they can use to authenticate elsewhere.
+Think of it like a sealed envelope with a wax seal. The server knows what your seal looks like (public key). It hands you a document, you seal it, return it. If the seal matches, you're authenticated. The server never sees your signet ring (private key)—only its output.
 
-### Mental Model
+## Where this matters in practice
 
-Think of it like a padlock protocol. You give everyone a copy of your open padlock (public key). When a server wants to verify you, it locks a box with your padlock and sends it to you. Only you have the key that opens it. If you can open the box and prove its contents, you're authenticated — no secret ever crossed the wire.
+**Backend:** Automated deployments and CI/CD pipelines use key auth to pull from private git repos or push to servers. A common pattern is generating a dedicated deploy key per service—narrow-scope, can be rotated independently, and the private key lives as a CI secret rather than a shared password.
 
-### Practical Scenarios
+**SRE:** Bastion/jump host setups rely on agent forwarding (`ssh -A`) so you can authenticate to internal hosts using the key from your laptop, without copying the private key to the bastion. This is convenient but the forwarded agent can be hijacked by root on the bastion—prefer `ProxyJump` (`-J`) instead, which creates a direct tunnel without exposing the agent socket.
 
-**Backend:** When your application servers need to pull code from GitHub or communicate with a bastion host, you deploy a dedicated keypair. The private key lives in a secret manager (AWS Secrets Manager, Vault), injected at runtime. If the key is rotated or revoked, you change one authorized_keys entry — no password resets across dozens of services.
+**DevOps:** Configuration management tools (Ansible, Fabric) and infrastructure bootstrapping (cloud-init, Terraform provisioners) use key auth universally. The failure mode to watch: if your private key has a passphrase, unattended automation breaks unless you're using `ssh-agent` or a secrets manager to inject the key.
 
-**SRE:** Jump hosts / bastions rely on SSH keys for audit trails. Because each engineer has a unique keypair, you can trace exactly which key authenticated a session, then revoke individual access without disrupting others. Certificate authorities (like HashiCorp Vault's SSH secrets engine) take this further — they sign keys with a short TTL, so compromised keys expire automatically.
+## Common pitfalls
 
-**DevOps:** CI/CD pipelines (GitHub Actions, GitLab CI) use SSH deploy keys — a keypair where the public key is scoped to a single repo with read-only access. This is safer than giving the pipeline a personal access token with broader permissions. The private key is stored as an encrypted CI secret and injected into the runner's `~/.ssh/` at build time.
-
-### One Gotcha
-
-Key management is the real operational burden. `authorized_keys` files scattered across servers don't scale — which is why teams move to centralized SSH certificate authorities or tools like Teleport, where you're not managing individual key distribution but trusting a CA that signs short-lived certificates.
+- **Overly permissive `authorized_keys`**: Options like `command=` and `restrict` let you lock a key to a specific command—critical for automated access where you don't want full shell.
+- **Key reuse**: Using one key everywhere means one compromise is total compromise. Service-specific keys are worth the operational overhead.
+- **File permissions**: SSH will refuse to use a private key that's world-readable (`chmod 600` is required). Similarly, `~/.ssh` must be `700` or authentication silently fails.

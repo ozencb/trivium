@@ -1,35 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## TCP Basics
+TCP achieves reliable, ordered delivery by treating communication as a stateful contract: both sides track every byte sent and explicitly acknowledge receipt, retransmitting anything that goes missing.
 
-TCP (Transmission Control Protocol) is a connection-oriented protocol that guarantees ordered, reliable delivery of a byte stream between two endpoints. It exists because IP is inherently lossy and unordered — TCP adds the machinery to make it behave otherwise.
+---
 
-### The Core Mechanism
+**The core mechanism**
 
-TCP is fundamentally about two things: **establishing shared state** between endpoints, and **maintaining that state** across the lifetime of a connection.
+The internet is built on IP, which is best-effort — packets can be dropped, reordered, or duplicated. TCP sits on top and imposes a contract through three interlocking mechanisms:
 
-Before any data flows, both sides run a three-way handshake (SYN → SYN-ACK → ACK). This isn't ceremony — it bootstraps the **sequence numbers** that make everything else work. Every byte sent gets a sequence number; every byte received triggers an acknowledgment (ACK). The receiver says "I got up to byte N, send me N+1." If the sender doesn't hear an ACK within a timeout window, it retransmits.
+**Sequence numbers and acknowledgments.** Every byte in a TCP stream has a sequence number. The sender tracks what it's sent; the receiver tracks what it's received and sends ACKs confirming the highest contiguous byte it has. If the sender doesn't get an ACK within a timeout window, it retransmits.
 
-This ACK loop is the backbone of TCP's reliability. It means:
-- Packets can arrive out of order — TCP resequences them.
-- Packets can be dropped — TCP retransmits them.
-- Duplicates are discarded — sequence numbers catch them.
+**The three-way handshake.** Before any data flows, both sides synchronize sequence numbers (SYN → SYN-ACK → ACK). This establishes shared state — both sides know where the byte stream starts and agree to the rules.
 
-The sender doesn't wait for each ACK before sending the next packet. It maintains a **window** of in-flight bytes it's allowed to have unacknowledged. The receiver advertises how much buffer space it has (the **receive window**), and the sender stays within that limit. This is flow control — it prevents a fast sender from overwhelming a slow receiver.
+**Flow control via the receive window.** The receiver advertises how much buffer space it has. The sender can't flood the receiver — it can only have that many unacknowledged bytes "in flight" at once. This is why slow readers eventually slow down fast writers.
 
-Connection teardown is a four-way exchange (FIN → ACK, FIN → ACK) because each direction closes independently. This is why `TIME_WAIT` exists: the closing side has to wait to ensure its final ACK was received before discarding connection state.
+---
 
-### Mental Model
+**Mental model**
 
-Think of TCP like sending a long document via postal mail, split across many envelopes, each numbered. You send a batch, and for each one the recipient sends back "got #7, got #8..." If you don't hear back about #9 after a while, you resend it. You only send so many at once — you don't want to flood their mailbox before they've processed what's there.
+Think of TCP like a postal service that issues registered mail. You write sequence numbers on each envelope. The recipient sends back signed confirmations. If a confirmation doesn't arrive, you resend that envelope. The recipient can buffer out-of-order envelopes but hands them to the application only in order. The protocol's state machine — `LISTEN`, `SYN_SENT`, `ESTABLISHED`, `TIME_WAIT`, etc. — tracks where each connection is in this lifecycle.
 
-### Practical Implications
+---
 
-**Backend:** When you open a database connection, that three-way handshake costs real latency — typically one round trip. Connection pooling exists largely to amortize this cost. `SO_REUSEADDR` and `TCP_NODELAY` are knobs you'll hit when tuning servers.
+**Practical connections**
 
-**SRE:** `TIME_WAIT` exhaustion is a real failure mode under heavy churn. If a service opens thousands of short-lived connections per second, you can run out of ephemeral ports. `net.ipv4.tcp_tw_reuse` and connection pooling are the levers. Also: RSTs vs FINs in packet captures tell you *how* a connection died, which is diagnostic gold.
+**Backend:** When you open a database connection and fire queries, you're depending on TCP to deliver query bytes and result bytes in order. A query result with bytes reordered would be corrupt data — TCP prevents that transparently. Connection pool sizing is partly about the cost of the handshake, not just the connection itself.
 
-**Fullstack:** HTTP/1.1 keep-alive and HTTP/2 multiplexing are both attempts to avoid paying the TCP handshake cost per request. Understanding that HTTP/2 runs multiple streams over a single TCP connection explains why head-of-line blocking moved from the HTTP layer down to the TCP layer.
+**SRE:** `TIME_WAIT` states in `ss -s` output, half-open connections, and retransmit counters in `netstat -s` are all TCP state machine artifacts. Seeing elevated retransmits points to packet loss; seeing `SYN_RECV` flooding points to a SYN flood attack or a saturated accept queue.
+
+**Fullstack:** HTTP/1.1 and HTTP/2 run over TCP, so latency from connection establishment (the handshake) shows up in your waterfall charts. `Connection: keep-alive` reuses established TCP connections to avoid paying the handshake cost on every request. HTTP/3 moves to QUIC (UDP-based) partly to escape TCP's head-of-line blocking, where one lost packet stalls all streams.
+
+The key invariant to hold onto: TCP gives you a reliable, ordered byte *stream*, not packets. Whatever you write arrives at the other end in order or the connection fails — there's no partial success.

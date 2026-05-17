@@ -1,0 +1,16 @@
+id: time-series-databases
+title: Time-Series Databases
+category:
+  - Databases
+  - Specialized
+roles:
+  - backend
+  - sre
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+  - column-stores
+dependents: []
+brief: Storage engines (InfluxDB, TimescaleDB) optimized for monotonically timestamped data using columnar compression, automatic downsampling, and retention policies designed for high-write metrics workloads.

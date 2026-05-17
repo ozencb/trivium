@@ -1,51 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Structured Logging** is the practice of emitting log entries as machine-parseable data (typically JSON) rather than freeform strings — because logs you can query are worth exponentially more than logs you can only read.
+## Structured Logging
 
-## The core problem with unstructured logs
+Instead of writing `"User 42 logged in from 192.168.1.1"`, structured logging emits `{"event":"user_login","user_id":42,"ip":"192.168.1.1","ts":"2026-05-17T10:23:00Z"}`. The difference sounds cosmetic until you're debugging a production incident at 2am across 40 service instances.
 
-Traditional logging looks like:
+**The core mechanism**
 
-```
-[2026-05-16 14:32:01] ERROR: Failed to process order 8842 for user 991 - timeout after 3000ms
-```
+Free-form strings require regex or grep to extract meaning — fragile, slow, and impossible to aggregate. Structured logs are records with consistent fields. Log aggregators (Elasticsearch, Loki, Splunk, Datadog) ingest these and let you query `user_id:42 AND status:error` across millions of events instantly, or compute p99 latency by `service` and `endpoint` with a single query. The key insight is that logs become queryable data, not text.
 
-This is readable to a human scanning a terminal. It's nearly useless at scale. To find all timeouts over 2000ms for a specific service, you're writing fragile regex against inconsistent string formats across thousands of machines.
+Most implementations use JSON as the wire format, but the shape matters more than the serialization. Fields like `trace_id`, `span_id`, `service`, `level`, `duration_ms`, and `error.type` are the vocabulary that makes cross-service correlation possible. When a request flows through an API gateway → auth service → database, a shared `trace_id` threaded through every log entry lets you reconstruct the full timeline.
 
-Structured logging flips the model: instead of formatting data *into* a string, you emit the data *as* data.
+**Concrete example**
 
-```json
-{
-  "timestamp": "2026-05-16T14:32:01Z",
-  "level": "error",
-  "event": "order_processing_failed",
-  "order_id": 8842,
-  "user_id": 991,
-  "error": "timeout",
-  "duration_ms": 3000,
-  "service": "checkout"
-}
-```
+A checkout fails. With unstructured logs, you grep for "error" and get 10,000 lines. With structured logs, you query `trace_id:"abc123"` and see exactly which service, at what step, with what payload — sorted by timestamp. Then you pivot: `error.type:"timeout" AND service:"payment"` to see if it's systemic.
 
-Now every field is queryable, filterable, and aggregatable without string parsing. Your log aggregation system (Datadog, Loki, CloudWatch Insights, etc.) ingests these directly as structured records.
+**Where it matters in practice**
 
-## The mechanism
+- **Backend:** Every log call should include request context (user, tenant, request ID) injected via middleware — not passed explicitly. Libraries like `structlog` (Python), `zerolog` (Go), or `pino` (Node) make this ergonomic with context chaining.
+  
+- **SRE:** Structured logs are the foundation for alerting on semantic conditions rather than log volume. "Alert when `error.type:db_connection_refused` appears >10 times/minute" beats "alert when error count spikes."
 
-The key shift is treating log lines as **events with attributes** rather than messages. You define a schema per event type (implicitly or explicitly), and every field has a name and typed value. Libraries like `structlog` (Python), `zerolog`/`zap` (Go), or `winston` with JSON transport (Node) make this the default output format.
+- **Fullstack:** Correlating a frontend error report with a backend trace requires a shared request ID. Without structured logging on both sides, this correlation is manual and unreliable.
 
-A good structured log entry answers: *what happened, when, where, to what, with what outcome, and how long did it take.*
+**Common pitfalls senior engineers catch**
 
-## Practical scenarios
+- Logging sensitive data in field values (PII, tokens) — structured logs make it *easier* to accidentally expose this because fields are indexed and searchable.
+- Over-logging: high-cardinality fields like raw SQL queries or full request bodies will destroy your storage budget and slow indexing.
+- Inconsistent field names across services (`user_id` vs `userId` vs `uid`) break cross-service queries — this needs a schema convention enforced at the team level, not per-engineer judgment.
 
-**Backend:** You're debugging why 0.3% of payments fail. With structured logs, you query `event=payment_failed AND gateway=stripe AND error_code=card_declined` and immediately see they cluster around a specific card BIN range. With unstructured logs, you're `grep`-ing and manually correlating.
-
-**SRE:** You're oncall and latency spikes. Structured logs let you run `p99 of duration_ms grouped by endpoint` directly in your log query tool — no need to ship metrics for every possible dimension you might care about during an incident.
-
-**Fullstack:** Your API returns 500s intermittently. Structured logs with a `trace_id` field (set at request ingress and passed through every log call) let you reconstruct the exact chain of events for a single bad request across five microservices — something impossible with freeform strings.
-
-## The practical discipline
-
-The value compounds when you're *consistent*: same field names across services (`user_id` not `userId` in one place and `uid` in another), same severity semantics, and always including context fields (request ID, service name, environment). That consistency is what makes Log Aggregation — collecting logs centrally and querying across them — actually work.
+In design discussions, reaching for structured logging signals you're thinking about operability from day one, not retrofitting it after the first outage.

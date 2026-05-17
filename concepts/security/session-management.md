@@ -1,28 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Session Management
 
-HTTP is stateless — each request arrives with no memory of previous ones, so without session management, every request would require re-authentication. Sessions solve this by establishing a persistent identity token that travels with requests and maps back to server-side state.
+HTTP is stateless — each request arrives with no memory of prior ones. Session management is the layer that imposes identity continuity across those requests, so "logged in as Alice" persists from one click to the next.
 
-### The Core Mechanism
+### The two fundamental approaches
 
-After a user authenticates, the server creates a **session record** (typically stored in memory, Redis, or a database) containing identity and metadata — user ID, roles, expiry, maybe device info. It issues the client an opaque **session ID**, usually a cryptographically random string. The client stores this (cookie, header) and sends it on subsequent requests. The server looks it up, finds the associated state, and knows who's asking.
+**Server-side sessions**: On login, the server generates a random session ID, stores state (user ID, roles, expiry) in a backend store (Redis, DB), and hands the client an opaque cookie containing only that ID. Every subsequent request looks up the ID in the store to reconstruct identity.
 
-This is fundamentally a lookup table: session ID → user context. The ID itself means nothing without the server-side record it points to.
+**Signed client tokens (JWT et al.)**: The server encodes state directly into a token, signs it cryptographically, and sends it to the client. No server-side store needed — on each request the server just verifies the signature and reads the payload.
 
-Contrast this with JWTs, where the token *is* the state — the server validates a signature rather than doing a lookup. Sessions trade network/storage overhead for **revocability**: you can invalidate a session immediately by deleting the record. With a JWT, you can't un-issue a token without a blocklist, which reintroduces lookup overhead anyway.
+### The tradeoffs that actually matter
 
-### Concrete Mental Model
+**Revocation** is where JWTs bite people. Because the token is self-contained and stateless, you can't invalidate it before expiry without reintroducing a server-side store (a token blocklist) — which erases the scalability benefit. Server-side sessions revoke instantly: delete the session record and the user is logged out everywhere immediately. For anything with security sensitivity (admin panels, financial operations, "log out all devices"), this matters.
 
-Think of a coat check. You hand over your coat (credentials), get a numbered ticket (session ID), and use that ticket for the rest of the night. The ticket is worthless to someone else without your coat, and the venue can revoke it at any time by removing the coat from inventory. The ticket doesn't describe your coat — it just points to it.
+**Scalability** cuts the other way. Server-side sessions require either sticky sessions (routing a user's requests to the same server that holds their session, which limits horizontal scaling) or a shared external store like Redis. JWTs let any instance validate a request independently — no coordination needed. This is why JWTs are popular in microservices and API-heavy architectures.
 
-### Practical Scenarios
+**Token size**: JWTs grow with every claim you embed. Sending 2KB of token on every request adds up at scale; session IDs are 32 bytes.
 
-**Backend:** Session stores need to be shared across instances. If you're running 3 API servers and sessions live in local memory, a user hitting server 2 won't find their session from server 1. This is why Redis is the standard — a centralized, fast session store that all instances can reach. Session expiry, sliding windows (reset TTL on each request), and absolute timeouts are all implemented at this layer.
+### Concrete mental model
 
-**Fullstack:** The frontend usually stores the session ID in an `HttpOnly` cookie (inaccessible to JS, which mitigates XSS) with `Secure` and `SameSite=Strict` flags. On logout, the correct behavior is to delete the server-side record *and* clear the cookie — deleting only the cookie leaves the session valid for anyone who captured it. Next.js apps often use libraries like `iron-session` or `lucia` that abstract this, but they're all doing the same lookup under the hood.
+Think of it like a coat check. Server-side sessions: the coat check holds your coat (state), gives you a ticket (ID). JWT: they photograph your coat, seal it in an envelope you carry, and verify it's real by checking the official stamp each time. The coat check can always say "sorry, that ticket is no longer valid." The envelope system can't — once stamped, it's valid until it expires.
 
-**Key failure modes to know:** session fixation (attacker sets a session ID before login — mitigated by regenerating the ID post-authentication), session hijacking (stealing a valid ID via network sniffing or XSS), and improper expiry (sessions that never time out).
+### Practical scenarios
+
+**Backend (API server)**: If you're building an internal tool or anything requiring instant revocation (compromised accounts, permission changes), use server-side sessions backed by Redis. The shared store is worth the ops overhead.
+
+**Fullstack (SPA + API)**: JWTs are tempting because they work across origins without cookie friction. Use short-lived access tokens (15 min) plus a longer-lived refresh token stored in an `HttpOnly` cookie. The refresh token is server-side revocable; the access token is stateless but expires quickly enough to limit the blast radius of a leak.
+
+The most common mistake: issuing long-lived JWTs (days/weeks) because "they're stateless and easy," then realizing there's no way to log users out when an account is compromised.

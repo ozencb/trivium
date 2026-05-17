@@ -1,60 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## requestIdleCallback
 
-`requestIdleCallback` lets you schedule non-critical work to run during the gaps when the browser's main thread has nothing else to do — specifically the slack time between completing one frame and starting the next. It's the cooperative alternative to just running expensive work and hoping it fits inside the frame budget.
+The browser's main thread is a single-lane road: rendering, event handling, and JavaScript all share it. `requestIdleCallback` gives you a formal way to schedule work *only* when that road is empty — after the current frame has painted and before the next one is due.
 
-### Core Mechanism
+**The mechanism**
 
-After the browser paints a frame, if there's remaining time before the next frame needs to start (under 16ms at 60fps), it will invoke any queued idle callbacks. Your callback receives a `deadline` object with two properties:
-
-- `deadline.timeRemaining()` — milliseconds left in the current idle period (dynamically updated as you run)
-- `deadline.didTimeout` — whether the browser forced the callback to run because your optional `timeout` expired
-
-The canonical pattern for chunked work looks like this:
+The browser calls your callback with a `deadline` object exposing `timeRemaining()` (milliseconds left in the idle period) and `didTimeout` (whether your optional `timeout` option fired). Idle periods are typically the slack between a 16ms frame budget and however long rendering actually took. On a lightly-loaded page you might get 40–50ms chunks; on a busy one, barely any. The API signals you should *check before each unit of work*, not assume the whole budget is yours.
 
 ```js
-function processQueue(deadline) {
-  while (workQueue.length > 0 && deadline.timeRemaining() > 0) {
-    processItem(workQueue.shift());
+function processChunk(deadline) {
+  while (deadline.timeRemaining() > 1 && queue.length > 0) {
+    doExpensiveWork(queue.shift());
   }
-  if (workQueue.length > 0) {
-    requestIdleCallback(processQueue);
+  if (queue.length > 0) {
+    requestIdleCallback(processChunk, { timeout: 2000 });
   }
 }
-
-requestIdleCallback(processQueue, { timeout: 2000 });
+requestIdleCallback(processChunk, { timeout: 2000 });
 ```
 
-The `timeout` option is a safety valve: if idle time never materializes (sustained heavy load), the callback fires anyway with `didTimeout: true` — at that point you accept the jank risk rather than starve the work indefinitely.
+The `timeout` fallback matters: without it, a constantly busy page might never call your callback. With it, the browser will fire it even mid-frame if the deadline passes — which means you can't assume `timeRemaining()` > 0 when `didTimeout` is true. Check both.
 
-### Mental Model
+**Mental model**
 
-Think of a barista who does prep work (restocking, cleaning) only when there's no queue at the counter. They constantly check how much time they have before the next customer, and stop immediately when one arrives. The work still gets done, it just doesn't block service.
+Think of it like a restaurant kitchen during a dinner rush. You wouldn't deep-clean the prep station mid-service. You wait for a lull, do one tray's worth of cleaning, then check if another lull is coming. `requestIdleCallback` is the lull-detector.
 
-This is the explicit alternative to what Long Tasks API detects after the fact — instead of creating a long task that blocks the thread, you yield voluntarily and resume when safe.
+**Practical scenarios**
 
-### Practical Scenarios
+*Frontend:* Prefetching routes or serializing analytics events. After a page transition, the user's reading; you can quietly preload their likely next destination without competing with paint. Also useful for lazy-hydrating below-fold components — don't pay the JS cost until the browser has breathing room.
 
-**Frontend:**
-- Prefetching route data or images the user is likely to need next
-- Persisting draft content to `localStorage` without risking input lag
-- Running client-side analytics or telemetry batching
-- Pre-rendering off-screen content (virtual list rows, modal content)
+*Fullstack:* If you're running a Next.js or Remix app with significant client-side state, idle callbacks pair well with background sync patterns — flushing local draft saves to the server, revalidating stale cache entries, or warming up a Wasm module after the initial render settles.
 
-**Fullstack:**
-- In service workers: scheduling background sync or cache warming during idle periods
-- Precomputing personalization data on page load without competing with the initial render
-- Deferring non-critical indexedDB writes
+**When not to reach for it**
 
-### Watch Out For
-
-- **No Safari support** — you need a `setTimeout`-based polyfill in production
-- **Don't touch the DOM** in idle callbacks; layout queries or mutations can trigger additional work that blows past your deadline
-- `timeRemaining()` can return close to 0ms immediately — your chunking logic needs to handle that gracefully, not assume you'll always get meaningful time
-- Idle callbacks run at lower priority than `requestAnimationFrame`; if you need "soon but not critical," they're right; if you need "before next paint," you want rAF or a microtask
-
-The key insight connecting back to the rendering pipeline: rIC is you explicitly participating in the browser's scheduling model rather than fighting it.
+Avoid it for anything time-sensitive or user-triggered — click handlers, form validation, or anything that feeds visible state. Also avoid it in Safari before iOS 18; the API wasn't supported until late 2024, so you'll need a `setTimeout`-based polyfill for broader support. And don't treat it as a general "make this async" escape hatch — if a task genuinely blocks the thread for 200ms, chunking it with `requestIdleCallback` is only half the fix; the chunking strategy itself needs thought (this is where Long Tasks API telemetry tells you if you actually solved the problem).

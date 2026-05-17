@@ -1,33 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Timeout Patterns** are explicit deadlines you set on operations so a slow dependency can't hold your system hostage indefinitely — they turn unbounded waits into predictable failures.
+## Timeout Patterns
 
-## The Core Mechanism
+Without explicit timeouts, a slow or unresponsive dependency holds your thread/connection open indefinitely—one degraded upstream silently exhausts your thread pool and turns latency into a full outage. Timeouts are how you bound the blast radius of dependency failures before they become your failure.
 
-Without timeouts, a call to a downstream service that never responds blocks the thread (or event loop slot) waiting for it. At scale, enough of these pile up and exhaust your connection pool, thread pool, or request queue — not because the downstream is fully down, but because it's *slow*. Slow is often worse than down.
+### The Three Distinct Timeouts
 
-The key insight is that timeouts are not just about "giving up." They're about preserving your system's capacity to serve other requests. A thread blocked waiting is a thread that can't do useful work.
+Most HTTP clients expose at least two, often three:
 
-There are two distinct timeout types worth distinguishing:
+**Connect timeout** — how long to wait for the TCP handshake to complete. If the host is unreachable or the server's accept queue is full, your SYN sits unanswered. This should be short (1–3s). You either connect fast or you don't.
 
-- **Connection timeout**: how long to wait while establishing a connection (TCP handshake). Short and aggressive is fine here — if a peer can't complete a handshake in 200ms, something is fundamentally wrong.
-- **Read/request timeout**: how long to wait after the connection is established for the response to arrive. This is harder to tune because legitimate processing times vary.
+**Read timeout** — how long to wait for the *next chunk of data* once connected. Critical subtlety: this is *not* a total elapsed time limit. It resets with each received byte. A server that trickles 1 byte/sec can technically hold a connection open for minutes without ever tripping a read timeout set to 10s.
 
-A third pattern, **deadline propagation**, is what separates naive timeouts from robust ones. When service A calls B which calls C, A's 500ms timeout doesn't automatically flow to B and C. If B uses its own 2s timeout internally, it'll keep working long after A has already given up and returned an error to the client. The request becomes "orphaned" — consuming resources on B and C with no one waiting for the result. gRPC and HTTP headers like `X-Request-Deadline` exist specifically to propagate these deadlines end-to-end.
+**Total (deadline) timeout** — an absolute wall-clock limit from request start to final byte received. This is the one most engineers forget to set, and it's the one that actually enforces your latency budget. gRPC calls this a "deadline" and propagates it across hops.
 
-## Mental Model
+### Mental Model
 
-Think of it like a restaurant kitchen. You place an order (request). If the kitchen takes 45 minutes and you've already left (timeout at 10 minutes), the table is now free for someone else — but the kitchen is still cooking your meal. Deadline propagation is telling the kitchen "if I'm not here in 10 minutes, throw the food away."
+Three guards at different phases: connect timeout guards the handshake, read timeout guards the data stream, total timeout guards the clock. You need all three because each covers a failure mode the others miss.
 
-## Backend Context
+### For Backend Engineers
 
-When you're writing a service that calls a database or third-party API, set *both* connection and read timeouts explicitly. Most HTTP clients default to no timeout or absurdly long ones (e.g., Java's `HttpURLConnection` defaults to infinite). A database query that occasionally takes 30s under load will cascade into request queue saturation fast.
+Your per-call timeout must fit inside your service's own latency budget. If you have a 500ms SLO and make two serial downstream calls, each needs a hard cap well under 250ms—leaving room for your own processing. The common mistake is being "generous" with timeouts to reduce errors. What you actually get is thread pools filling with waiting-but-not-failed requests, and your service becoming the bottleneck.
 
-For idempotent operations, a timed-out request can be retried. For non-idempotent ones (payments, writes), a timeout means you genuinely don't know if the operation succeeded — you need idempotency keys to retry safely.
+Also: retrying on timeout without jitter or a retry budget is a thundering herd waiting to happen. A slow dependency that trips timeouts across your fleet triggers a synchronized retry storm at exactly the moment the dependency is already struggling.
 
-## SRE Context
+### For SREs
 
-Timeouts are the first line of defense before circuit breakers kick in. When tuning, p99 latency of the dependency under normal load is your floor — set timeouts below that and you'll manufacture errors. A common heuristic: timeout at 2–3× the p99. Track timeout rate as a signal; a spike means your dependency is degrading before it fully fails, which is your early warning to investigate or shed load.
+Timeout misconfiguration produces specific observable signatures. Read timeouts set too low on endpoints that return large payloads show up as intermittent errors correlated with response size—not request rate. Connect timeouts set too high during a network partition create a slow thread leak instead of immediate circuit-breaker trips, making incidents harder to detect.
+
+When tuning, look at p99.9 latency of the upstream, not p99. Your timeout should be above the normal high-percentile latency (so you're not timing out valid slow requests) but below the threshold where holding the connection hurts you more than failing fast.
+
+### What Separates Senior Engineers Here
+
+The senior engineer asks: *what's my total latency budget across the full request chain, and how does each hop's timeout fit into it?* They propagate deadlines so each downstream call inherits a shrinking budget rather than resetting to its own independent timeout. That's the bridge to Circuit Breaker—once you're measuring and enforcing per-call time budgets, you have the signal you need to trip a breaker before exhausting resources entirely.

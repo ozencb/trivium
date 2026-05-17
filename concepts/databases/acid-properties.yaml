@@ -1,0 +1,18 @@
+id: acid-properties
+title: ACID Properties
+category:
+  - Databases
+  - Transactions
+roles:
+  - backend
+  - fullstack
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites: []
+dependents:
+  - database-transactions
+  - document-stores
+  - column-family-stores
+brief: The four transaction guarantees—Atomicity, Consistency, Isolation, Durability—and the precise throughput and coordination costs each storage engine pays to uphold them.

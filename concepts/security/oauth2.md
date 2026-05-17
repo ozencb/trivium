@@ -1,34 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-OAuth 2.0 is a delegated authorization framework — it lets a user grant a third-party application limited access to a resource they own, without handing over their credentials. The key insight is separation: the entity that *authenticates* the user and the entity that *holds* the resource can be different systems.
+## OAuth 2.0
 
-## Core Mechanism
+OAuth 2.0 solves a specific trust problem: how do you let a third-party app act on a user's behalf without the user handing over their password? The answer is a structured delegation flow where an authorization server issues scoped, short-lived tokens after verifying user consent.
 
-OAuth 2.0 defines four roles: **Resource Owner** (the user), **Client** (your app), **Authorization Server** (issues tokens), and **Resource Server** (holds the protected data, e.g., a user's Google Drive files).
+### The Core Mechanism
 
-The most common flow is the **Authorization Code Flow**:
+Four actors, always: the **resource owner** (user), the **client** (your app), the **authorization server** (the IdP—Google, GitHub, etc.), and the **resource server** (the API holding the data).
 
-1. Your app redirects the user to the Authorization Server with a `client_id`, requested `scope`, and a `redirect_uri`.
-2. The user authenticates *directly* with the Authorization Server and approves the scope.
-3. The Auth Server redirects back to your app with a short-lived **authorization code**.
-4. Your backend exchanges that code (plus a `client_secret`) for an **access token** and optionally a **refresh token** — this exchange happens server-to-server, never in the browser.
-5. Your app uses the access token to call the Resource Server on behalf of the user.
+The authorization code flow (the one you should use) works like this:
 
-The code-exchange step matters: the authorization code is visible in the browser redirect, but the actual token lives only in your backend. This is why the Authorization Code Flow exists — it keeps credentials off the front channel.
+1. Client redirects the user to the authorization server with a `client_id`, requested `scopes`, and a `redirect_uri`.
+2. User authenticates and consents. Authorization server issues a short-lived **authorization code** and redirects back to the client.
+3. Client exchanges that code for an **access token** (and optionally a **refresh token**) via a back-channel server-to-server POST—never through the browser.
 
-## Mental Model
+The critical invariant: the access token is never visible to the browser during issuance. The authorization code is single-use and expires in seconds. This is why the flow uses two legs instead of one.
 
-Think of it like a hotel key card system. You (the user) check in with the front desk (Authorization Server), which gives you a key card (access token) scoped only to room 304 — not the master key. You hand that card to a bellhop (your app) to access your room. The bellhop never knew your identity, never touched the master credentials, and the card expires.
+### Mental Model
 
-## Practical Scenarios
+Think of it like a valet key. The resource owner (you) gives the valet (third-party app) a key that only opens specific doors (scopes), can't start the car past a certain time (expiry), and was issued by the manufacturer (authorization server)—not cut from your master key.
 
-**Backend:** You're building an API that needs to read a user's GitHub repositories. You register your app with GitHub, implement the Authorization Code Flow, store the access token per-user in your database, and use it to call GitHub's API. When the token expires, you use the refresh token to get a new one without re-prompting the user.
+### Practical Angles
 
-**Fullstack:** You're building a dashboard that integrates Google Calendar. Your Next.js backend handles the OAuth dance — redirects, code exchange, token storage. The frontend never sees tokens directly. On subsequent requests, your backend reads the stored token, calls Google's API, and returns the shaped data. The user's Google password is never in your system at any point.
+**Backend:** When your service consumes a third-party API (Stripe, Slack, GitHub), you're the client. Store refresh tokens encrypted at rest, never in logs. Rotate access tokens aggressively—if one leaks, its blast radius is bounded by expiry and scope.
 
-## What OAuth 2.0 Is *Not*
+**Fullstack:** SPAs and mobile apps can't keep a `client_secret` secret, so they use PKCE (Proof Key for Code Exchange)—a code verifier/challenge pair that binds the authorization request to the token exchange without a shared secret. Never use the implicit flow (tokens returned in URL fragments); it was deprecated for good reason—tokens end up in browser history and server logs.
 
-It's an authorization protocol, not authentication — it tells you what a user *can access*, not *who they are*. That gap is exactly what OpenID Connect fills by adding an identity layer on top.
+### Where Engineers Trip Up
+
+- **Storing access tokens in `localStorage`**: XSS can exfiltrate them. Prefer `httpOnly` cookies with a short-lived session or BFF pattern.
+- **Missing state parameter**: Without a random `state` param validated on redirect, the flow is vulnerable to CSRF.
+- **Conflating OAuth with authentication**: OAuth proves *authorization*, not identity. If you need to know *who* the user is, you need OpenID Connect on top of it—which adds an `id_token` (a JWT) to the response.
+
+Understanding where the authorization code ends and the token begins—and why the back-channel exchange exists—is what separates engineers who use OAuth from those who can design systems that depend on it correctly.

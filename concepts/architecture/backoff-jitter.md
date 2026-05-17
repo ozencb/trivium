@@ -1,46 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Jitter in Retries
 
-Exponential backoff staggers retries over time, but when many clients fail simultaneously, they stay synchronized — all retrying at the same intervals, creating coordinated thundering herds. Jitter breaks that synchronization by introducing randomness into retry delays.
+When a service goes down and comes back up, every client that failed at the same moment retries at the same moment — because they all computed the same exponential backoff from the same failure timestamp. Jitter breaks that lock-step by adding randomness to retry delays, so a thundering herd of synchronized retries becomes a trickle spread across time.
 
-### The core problem
+### The core mechanism
 
-Imagine 500 clients connected to a service that goes down for 20 seconds. With pure exponential backoff (base 1s, multiplier 2), every client retries at ~1s, ~2s, ~4s after the failure. When the service comes back up, it faces three synchronized spikes in quick succession — exactly the scenario most likely to prevent recovery. The clients aren't being malicious; they're just deterministic in the same way.
+Exponential backoff gives you delay growth: `base * 2^attempt`. Without jitter, 1,000 clients that all failed at T=0 will retry at T=1s, then T=2s, then T=4s — all together. The recovering service gets slammed in synchronized bursts that can knock it back down before it stabilizes.
 
-Jitter dissolves this by making each client's retry interval independently random within a window.
+The two main jitter approaches:
 
-### How it actually works
+**Full jitter**: `random(0, base * 2^attempt)` — delay is anywhere from zero to the computed max. Aggressive desynchronization, but some clients retry almost immediately.
 
-The simplest form — **full jitter** — replaces the computed delay with a uniform random value between 0 and that delay:
-
-```
-delay = random(0, min(cap, base * 2^attempt))
-```
-
-This spreads retries roughly uniformly across the window, converting synchronized spikes into a steady (manageable) drizzle of requests.
-
-**Equal jitter** is more conservative: it guarantees at least half the computed delay, adding randomness only to the upper half. Useful when you want a floor on retry spacing to avoid thrashing.
-
-**Decorrelated jitter** (from Marc Brooker's AWS paper) is subtler — each retry's sleep is derived from the *previous* sleep rather than the attempt count, which naturally decorrelates clients even without shared state:
-
+**Decorrelated jitter** (AWS's recommended approach):
 ```
 sleep = min(cap, random(base, previous_sleep * 3))
 ```
+Each attempt's delay is based on the previous one, with randomness layered in. This tends to produce the smoothest distribution across clients.
 
-This produces the best distribution under heavy load at the cost of being slightly harder to reason about.
+The goal in both cases is the same: clients that failed together should not retry together.
 
 ### Mental model
 
-Think of it like a crowded train platform where everyone's watch shows the same time. When the train arrives, everyone rushes at once. Jitter is like making everyone's watch slightly wrong in a random direction — the crowd spreads out naturally without any central coordination.
+Imagine 500 people all reach for a doorknob at exactly the same time. The door can only handle 20 at once. Without jitter, you get waves of 500, 500, 500 trying every few seconds. With jitter, each person waits a random interval and they arrive as a continuous stream — the door never gets overwhelmed again.
 
 ### Practical scenarios
 
-**Backend**: Any client calling a downstream service (database, payment processor, third-party API) should add jitter to retries. Without it, a single brief network hiccup causes a coordinated retry storm that can cascade into a sustained outage. This is especially acute in microservice architectures where multiple replicas of the same service all fail simultaneously.
+**Backend (service-to-service calls)**: If your auth service blips and 300 application servers all fail their token validation at T=0, unjitered retries will hit your auth service with a 300-request spike every `2^n` seconds. With jitter, those 300 retries spread across the next few seconds and the auth service recovers cleanly. This is especially common in k8s deployments where many replicas are doing the same work.
 
-**SRE**: Jitter shows up in dashboards as the difference between a clean sawtooth pattern (no jitter — bad sign during incidents) and a smooth curve (jitter working as intended). When writing runbooks, "retry in 30 seconds" is dangerous advice for distributed systems — you're inadvertently programming humans to create thundering herds. The runbook should say "retry in 20–40 seconds" or let the client library handle it.
+**SRE / incident response**: The thundering herd after a cache invalidation or database failover is a textbook re-outage pattern. If you're postmorteming "the service came back up but went down again immediately," synchronized retries without jitter are often the culprit. Jitter is one of those controls that's cheap to add but only becomes obviously necessary after you've been paged at 2am for a bounce-loop.
 
-One often-overlooked place: scheduled jobs (cron, batch workers). If 50 instances of a job all start at :00 and hit the same resource, adding startup jitter (`sleep random(0, 30)`) at launch is cheap insurance.
+### When to reach for it
+
+Any time you have multiple clients retrying the same dependency — which is almost always. It's a two-line change with outsized value. If you're configuring a retry library, jitter is usually a parameter you set, not something you implement. Default to full or decorrelated jitter; "equal jitter" (half the computed value plus a random half) is a reasonable middle ground if you need a minimum delay floor.

@@ -1,34 +1,26 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Progressive Web Apps
+PWAs are the browser's answer to the question: *why do native apps get to live on the home screen and work offline?* They're not a single API — they're a deployment posture: serve over HTTPS, register a service worker, and ship a manifest. That combination unlocks platform-level capabilities the browser otherwise withholds.
 
-A PWA is a web app that uses platform APIs — primarily Service Workers and the Web App Manifest — to close the gap between what a browser tab can do and what a native app can do. The "progressive" part means these enhancements layer on top of a working web app; users on unsupporting browsers still get the base experience.
+**The core mechanism**
 
-### Core Mechanism
+The service worker is the load-bearing piece. It's a proxy that sits between your app and the network, controlling every fetch. On install, you populate a cache; on subsequent requests, your strategy (cache-first, network-first, stale-while-revalidate) determines what the user sees. The manifest tells the OS how to represent your app — icon, name, display mode (`standalone` removes browser chrome), start URL, theme colors. Together, browsers use these signals to offer "Add to Home Screen" prompts and enable push notifications via the Push API + Notification API.
 
-PWAs aren't a single API — they're a convergence of capabilities that browsers gate behind an "installability" check. The browser evaluates criteria (HTTPS, a valid manifest with required fields, a registered Service Worker) and, when met, surfaces an install prompt. Once installed, the app gets its own window, appears in the OS app launcher, and can run without a browser chrome.
+**Mental model**
 
-The Service Worker is the real engine. It acts as a programmable network proxy sitting between your app and the network. This unlocks:
+Think of a service worker as a shared worker that never dies between page loads but *does* restart between browser sessions. It holds no DOM reference. Its lifecycle is: `install → activate → fetch/push/sync`. The tricky part is cache versioning — on deploy, you bump a cache name, the new SW installs alongside the old one, and only takes over once all old tabs are closed (`skipWaiting` forces the handoff immediately, but that can cause subtle state mismatches if the old and new SW versions expect different data shapes).
 
-- **Offline support** — cache assets and API responses; serve them when the network is gone
-- **Background sync** — queue writes made offline, flush them when connectivity returns
-- **Push notifications** — receive messages even when the app isn't open
+**Where this matters in practice**
 
-The manifest handles the "feels native" surface: name, icons, theme color, display mode (`standalone` hides browser UI), and start URL.
+*Frontend:* The `workbox` library handles most service worker boilerplate (cache strategies, precaching, background sync). You rarely write raw SW code. The real judgment call is cache strategy per route: static assets → cache-first with long TTL; API responses → network-first with fallback; user-generated content → stale-while-revalidate.
 
-### Mental Model
+*Fullstack:* PWAs change your deployment contract. Push notifications require a VAPID key pair server-side; you store subscription objects in your DB and send via the Web Push protocol. Background sync lets you queue mutations offline and flush when connectivity returns — but your backend needs to be idempotent, because sync retries. If you're building something like a field-service app, a note-taking tool, or anything used in spotty connectivity, PWA is the right reach.
 
-Think of a PWA as a web app that has negotiated a lease with the OS. The browser is the landlord — it audits your credentials (manifest + SW + HTTPS), then grants you a key to run in a first-class slot alongside native apps. You still run in a sandboxed browser engine, but you're no longer a tab.
+**Senior-level differentiation**
 
-### Practical Scenarios
+Where engineers trip up: assuming "PWA = offline support" is free. Cache invalidation is hard. Serving stale HTML while the JS changes can break your app silently. The correct pattern is to cache the app shell separately from content, and use versioned cache keys tied to deployments.
 
-**Frontend:** You're building a dashboard that field technicians use on-site, often with spotty connectivity. A SW with a cache-first strategy for static assets and a stale-while-revalidate strategy for API data means the app loads instantly and degrades gracefully offline. Background sync queues any form submissions made offline and retries them transparently when signal returns — no user action needed.
-
-**Fullstack:** Push notifications require a server component. When a user installs your PWA, the browser generates a push subscription object (endpoint + keys). Your frontend sends this to your backend, which stores it. When an event occurs server-side (order shipped, CI build failed), your server sends a push message via the Web Push protocol to the browser's push service. The SW receives it via the `push` event and displays a notification — even if the app isn't open. This is the same delivery mechanism native apps use, routed through the browser vendor's infrastructure rather than APNs or FCM directly.
-
-### The Tradeoff to Know
-
-iOS Safari has historically lagged in PWA support — push notifications only landed in iOS 16.4, SW storage limits are tighter, and some APIs (background sync, periodic background sync) are still missing. PWAs are a strong choice for Android-first or desktop-first apps; for iOS parity, you may still need a native shell.
+In design discussions, the real question isn't "should we build a PWA?" — it's "what's our offline story, and is the complexity worth it vs. just a native app?" For B2C web products with mobile traffic, PWA is almost always worth it. For internal tooling or desktop-first products, often not.

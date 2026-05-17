@@ -1,0 +1,15 @@
+id: column-family-stores
+title: Column-Family Stores
+category:
+  - Databases
+  - NoSQL
+roles:
+  - backend
+  - data
+lenses:
+  - practical
+prerequisites:
+  - database-indexing
+  - acid-properties
+dependents: []
+brief: Wide-column NoSQL databases (Cassandra, HBase) organizing data into sparse sorted column families, offering tunable consistency and massive write throughput at the cost of ACID guarantees.

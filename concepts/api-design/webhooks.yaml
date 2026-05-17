@@ -1,0 +1,15 @@
+id: webhooks
+title: Webhooks
+category:
+  - API Design
+  - Event-Driven
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - idempotency
+  - tls-handshake
+dependents: []
+brief: HTTP callbacks where a server pushes event notifications to a consumer-registered URL, eliminating polling and requiring delivery retry logic paired with idempotent handler design.

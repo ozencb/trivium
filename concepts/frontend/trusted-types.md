@@ -1,39 +1,40 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Trusted Types** is a browser API that eliminates DOM XSS at the source by making it a type error to assign arbitrary strings to dangerous sink APIs like `innerHTML`. Where CSP restricts *what resources load*, Trusted Types restricts *what values reach the DOM*.
+## Trusted Types
 
-## Core Mechanism
+Trusted Types is a browser API that lets you lock down the specific DOM sinks where XSS lives — `innerHTML`, `document.write`, `eval`, `src` attributes on scripts — so that only objects produced by your own vetted policy functions can be passed to them. CSP tells the browser *what resources to allow*; Trusted Types tells it *who is allowed to construct dangerous strings at all*.
 
-The browser exposes a small set of "dangerous sinks" — `innerHTML`, `outerHTML`, `document.write`, `eval`, `src` on scripts, etc. Normally these accept any string. With Trusted Types enforced (via CSP header `require-trusted-types-for 'script'`), passing a plain string throws a `TypeError`. The only values those sinks will accept are objects of specific `TrustedHTML`, `TrustedScript`, or `TrustedScriptURL` types.
+### The core mechanism
 
-You create those objects only through a policy:
+You define one or more "policies" — named factories that produce typed wrapper objects (`TrustedHTML`, `TrustedScript`, `TrustedScriptURL`). The browser enforces at the sink level that only these typed objects can be assigned. Raw strings are rejected. This moves XSS defense from "try to remember to sanitize before every dangerous assignment" to a structural constraint the runtime itself enforces.
 
 ```js
-const policy = trustedTypes.createPolicy('my-app', {
-  createHTML: (input) => DOMPurify.sanitize(input), // sanitize here
+const policy = trustedTypes.createPolicy('sanitize-html', {
+  createHTML: (input) => DOMPurify.sanitize(input),
 });
 
-element.innerHTML = policy.createHTML(userContent); // works
-element.innerHTML = userContent;                    // TypeError
+// This throws a TypeError at runtime (and is blocked by CSP header):
+el.innerHTML = userContent;
+
+// This works — DOMPurify runs inside the policy, output is a TrustedHTML object:
+el.innerHTML = policy.createHTML(userContent);
 ```
 
-The critical insight: you're not adding sanitization everywhere — you're *centralizing* it. You define exactly one (or a few named) policies that know how to produce trusted values. All the other code just calls those policies. The browser enforces that nothing else can reach the sinks.
+Pair it with the CSP header `require-trusted-types-for 'script'` and any raw-string assignment to a dangerous sink becomes a hard failure — not a missed lint warning, not a "we hope someone sanitized this upstream."
 
-## Mental Model
+### Where it actually matters
 
-Think of it like a type-safe DB query layer. Raw strings in SQL are injection-vulnerable. Parameterized queries are safe because the DB driver handles escaping. Trusted Types does the same for the DOM: your policy is the parameterized query layer, and the browser refuses raw string "interpolation" entirely.
+**Frontend:** The common failure mode in SPAs isn't `eval` — it's `innerHTML` used for rich text, markdown rendering, or template interpolation. With Trusted Types, you force all such code through a single policy. Auditing your XSS posture becomes "find all policy definitions" rather than "grep the entire codebase for innerHTML and hope you didn't miss one."
 
-## Practical Scenarios
+**Fullstack:** Server-rendered apps often pass HTML fragments through template literals or string concatenation before hydration. Trusted Types is a meaningful backstop here, though the policy boundary matters — if your policy's `createHTML` just returns the string verbatim, you've built a bypass, not a defense.
 
-**Frontend SPAs**: React/Vue/Angular largely protect you already via their virtual DOM, but you probably have escape hatches — `dangerouslySetInnerHTML`, `v-html`, `[innerHTML]`. Those still go through raw DOM APIs. Trusted Types catches violations from third-party scripts or legacy code that bypasses the framework, which is exactly where surprises live.
+### Common pitfalls
 
-**Fullstack rendering**: If you server-render HTML and hydrate it, or use a CMS where content goes through `innerHTML` for rich text, Trusted Types enforces that *every* path through that content goes through your sanitizer policy. A new engineer can't add `element.innerHTML = data.body` without it immediately failing in development.
+- **Permissive policies.** A policy that calls no sanitizer and just wraps the string is structurally identical to no policy. The type system is only as strong as what happens inside `createHTML`.
+- **Third-party libraries.** Many older libraries assign to `innerHTML` directly. You'll hit violations immediately on adoption — expect a compatibility shakeout. The `default` policy (assigned to `trustedTypes.defaultPolicy`) is an escape hatch for migrating incrementally, but it's also a footgun if left too permissive.
+- **Enforcement vs. reporting.** Start with `Content-Security-Policy-Report-Only` + Trusted Types in report mode to surface violations before flipping to enforcement.
 
-**Audit surface**: `createPolicy` calls become your security audit targets. Instead of grepping the whole codebase for `innerHTML`, you grep for policy definitions. That's a much smaller, intentional surface.
-
-## Adoption Reality
-
-Browser support is good (Chromium-based, Firefox behind a flag). The friction is third-party scripts — many violate Trusted Types and you can't fix their code. The practical path is report-only mode first (`Content-Security-Policy-Report-Only`) to identify violations, then migrate your own code, then decide how to handle third-party violations (usually via a liberal catch-all policy scoped only to their domain).
+Reach for this when you're hardening a mature frontend application or building a new one where XSS risk is real — user-generated content, rich editors, dynamic HTML rendering. It's not worth retrofitting a tiny internal tool, but for anything customer-facing it's one of the highest-leverage browser security primitives available today.

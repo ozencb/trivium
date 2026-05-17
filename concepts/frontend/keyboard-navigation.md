@@ -1,35 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Keyboard Navigation
 
-Keyboard navigation is the ability to interact with a web application using only a keyboard — no mouse, no touch. It exists because a significant portion of users either can't use a pointing device (motor disabilities, power users, vim devotees) or rely on assistive technology like screen readers that operate through the keyboard.
+Keyboard navigation is the practice of ensuring every interactive UI element is reachable and operable without a mouse. It matters both for accessibility (motor disabilities, screen reader users) and power users who prefer keyboards — and it's one of the most commonly broken things in modern SPAs.
 
 ### The Core Mechanism
 
-Browsers give you tab order for free: interactive elements (`<a>`, `<button>`, `<input>`, etc.) are focusable by default, and Tab/Shift+Tab cycles through them in DOM order. But "it works with Tab" is not the same as "it's navigable." The real job is managing focus state deliberately.
+The browser gives you a traversal model for free: `Tab` moves focus forward through focusable elements (`a`, `button`, `input`, `select`, `textarea`, and anything with `tabindex`), `Shift+Tab` reverses it. But "focusable" and "operable" are different things. A `<div>` with an `onClick` is reachable via mouse but invisible to Tab traversal — this is the most common mistake.
 
-Every interactive region needs three things:
+The deeper model is the **roving tabindex** pattern for composite widgets. A widget like a menu, tab panel, or data grid shouldn't put every item in the Tab sequence — that would mean pressing Tab 50 times to escape a dropdown. Instead, the container gets `tabindex="0"`, internal items get `tabindex="-1"` (programmatically focusable, not Tab-reachable), and arrow keys move focus internally. Tab exits the whole widget. This is how native `<select>` works, and it's what you implement manually for custom equivalents.
 
-1. **Focusability** — the element must be in the tab order (native elements are; `<div>` and `<span>` are not unless you add `tabindex`)
-2. **Visibility** — the focused element must have a visible focus ring (`:focus-visible` is your friend; `outline: none` is the enemy)
-3. **Operability** — the element must respond to keyboard events, not just click. A `<div>` with an `onClick` handler does nothing when you press Enter or Space
+### Concrete Mental Model
 
-### Mental Model
+Think of the keyboard interface as a **two-level navigation system**: Tab moves between regions/widgets, arrow keys navigate within them. A toolbar with 8 buttons should be one Tab stop — you arrow through the buttons, Tab to the next landmark. Users have strong expectations here from years of using native OS controls.
 
-Think of keyboard navigation as two separate systems layered on top of each other:
+### Frontend Implications
 
-- **Tab navigation**: moves between interactive regions (form fields, links, buttons)
-- **Arrow navigation**: moves within a region (radio groups, menu items, tabs, listboxes)
+The main pitfalls in React/Vue/Angular work:
 
-This distinction — borrowed from the ARIA Authoring Practices Guide — is called the "roving tabindex" pattern. A tab panel component should have `tabindex="0"` on the active tab and `tabindex="-1"` on inactive ones, then use arrow keys internally to switch between tabs. This keeps the overall tab sequence manageable rather than forcing users to Tab through every tab to reach the content below.
+- Using `div` or `span` for interactive elements instead of `button` or `a` — you lose Tab, Enter, Space, and screen reader semantics in one move
+- Dynamic content (modals, dialogs, dropdowns) not managing focus: when a modal opens, focus should move into it; when it closes, focus should return to the trigger
+- Custom components (date pickers, comboboxes, autocompletes) skipping the roving tabindex pattern entirely
 
-### Practical Scenarios
+Libraries like Radix UI and Headless UI get this right. Understanding why they work the way they do separates engineers who use them from engineers who can extend or debug them.
 
-**Frontend**: You build a custom dropdown using `<div>` elements for performance reasons. Without extra work, it's completely inaccessible. You need: `role="combobox"` and `role="option"`, `tabindex="0"` on the trigger, arrow key handlers to move between options, Enter to select, Escape to close, and focus management to return focus to the trigger on close.
+### Fullstack Implications
 
-**Fullstack**: You render a modal server-side and inject it into the DOM. When it opens, focus must programmatically move into it (`dialog.focus()` or the first focusable child). When it closes, focus must return to the trigger element. If you don't do this, a keyboard user loses their place in the page entirely — after dismissing the modal, focus drops back to the top of the document.
+Server-rendered apps (Next.js, Rails, traditional MPA) have an underappreciated advantage: native HTML elements handle most of this for free. Where it breaks is SPA-style client routing — navigating to a new "page" without a real browser navigation means focus stays wherever it was, usually a nav link buried in the header, and screen reader users get no announcement that the page changed. You need to explicitly manage focus on route transitions.
 
-The common failure mode isn't ignorance of the feature — it's treating keyboard support as an afterthought and discovering that custom components built from `<div>`s require explicit effort to make usable.
+### Why It Differentiates Senior Engineers
+
+In design reviews, being the person who asks "how does this custom dropdown behave with a keyboard?" signals systems thinking. Most accessibility bugs in production aren't missing alt text — they're focus traps, unreachable interactive elements, and widgets that hijack arrow keys globally. Knowing the keyboard interaction model at this level means you catch those in design, not after an audit.

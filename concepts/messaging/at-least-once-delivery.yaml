@@ -1,0 +1,19 @@
+id: at-least-once-delivery
+title: At-Least-Once Delivery
+category:
+  - Messaging
+  - Reliability
+roles:
+  - backend
+  - sre
+  - data
+lenses:
+  - foundational
+  - practical
+prerequisites:
+  - message-queues
+dependents:
+  - dead-letter-queues
+  - idempotency
+  - exactly-once-semantics
+brief: A delivery guarantee where the broker retries until the consumer acknowledges receipt, meaning duplicates are possible and all downstream processing must be idempotent.

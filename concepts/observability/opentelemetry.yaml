@@ -1,0 +1,21 @@
+id: opentelemetry
+title: OpenTelemetry
+category:
+  - Observability
+  - Standards
+roles:
+  - backend
+  - sre
+  - fullstack
+  - devops
+lenses:
+  - practical
+  - career
+prerequisites:
+  - distributed-tracing
+  - metrics-collection
+  - structured-logging
+dependents:
+  - span-propagation
+  - trace-sampling
+brief: A vendor-neutral CNCF standard providing a unified instrumentation SDK and wire protocol for traces, metrics, and logs, eliminating observability vendor lock-in at the instrumentation layer.

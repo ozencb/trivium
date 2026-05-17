@@ -1,47 +1,36 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Idempotency Keys
 
-Idempotency keys are client-generated tokens attached to mutating requests so that a server can detect and deduplicate retries — giving clients safe retry semantics without double-executing side effects.
+Idempotency keys solve the retry problem for non-idempotent operations: when a POST request times out, you don't know if the server processed it or not, so you can't safely retry without risk of double-charging or double-booking. A client-generated key lets the server say "I've seen this exact request before — here's the result I already computed."
 
-### The Core Mechanism
+**The mechanism**
 
-You already know idempotency as a property of operations. Idempotency *keys* are how you retrofit that property onto operations that aren't naturally idempotent (like charging a credit card or creating an order).
+The client generates a unique key (typically a UUID v4) before making the request and sends it in a header like `Idempotency-Key: <uuid>`. The server stores a mapping of `(key, endpoint) → response` in a durable store — usually Redis or Postgres — before processing the operation. On a duplicate request with the same key, it returns the stored response immediately without re-executing the logic. The key is scoped to an endpoint or resource type to prevent collisions across different operations.
 
-The flow:
+The critical detail: you store the result *after* processing completes, not before. This means two truly simultaneous duplicates might both execute. Most implementations handle this with a lock per key — acquire before processing, release after storing the result. Any concurrent duplicate that can't acquire the lock waits and then gets the stored result.
 
-1. Client generates a unique key (UUID, typically) before sending the request
-2. Client sends the request with `Idempotency-Key: <uuid>` in the header
-3. Server checks its store: has this key been seen before?
-   - **No** → execute, store the key alongside the response, return it
-   - **Yes** → return the stored response without re-executing
-4. Client can safely retry on network failure, timeout, or any ambiguous error — the server handles deduplication
+**Concrete example**
 
-The key insight: the *client* owns the key, so it can attach the same key to every retry attempt. The server never has to distinguish "first request" from "retry" at the business logic layer.
+You're building a payment endpoint. The client sends:
 
-### Concrete Example
+```
+POST /charges
+Idempotency-Key: 7f4c1b2a-9e8d-4f3a-b1c2-d3e4f5a6b7c8
+Body: { amount: 5000, customer_id: "cus_abc" }
+```
 
-You're building a payment endpoint. User clicks "Pay $100." The request fires, the server charges the card, but the connection drops before the 200 reaches the client. Did it work? Unknown.
+Network drops after the server charges the card but before the response arrives. Client retries with the same key. Server looks up the key, finds the charge already succeeded, returns the original `200` with the charge object. No double charge.
 
-Without idempotency keys: retry = potential double charge.
+**Practical patterns**
 
-With them: the client generated `idem-key: abc-123` before clicking. It retries with the same key. The server looks up `abc-123`, finds the completed charge, and returns the original response. No second charge.
+*Backend:* Key expiration matters. Stripe keeps keys for 24 hours; after that, the same key is treated as a new request. Choose TTL based on your retry window. Also: if a request fails with a `500`, do you store that? Generally no — only store completed (success or client-error) results, since server errors should be retryable.
 
-### Backend Considerations
+*Fullstack:* Generate the key on the client at the moment the user initiates the action (button click), not on retry. This way every distinct user intent gets a unique key, and retries from network errors share the same one. Don't regenerate the key on retry — that defeats the purpose. Store it in memory or session state for the lifetime of that operation.
 
-The deduplication store needs to be durable (usually a database or Redis with persistence). You need to decide:
-- **TTL**: Stripe keeps keys for 24 hours. Too short breaks slow retries; too long burns storage.
-- **Granularity**: keys are typically scoped per user/tenant to avoid cross-user collisions.
-- **What to store**: the full response body, not just "seen." Clients expect the same response on retry.
-- **Concurrent requests with the same key**: your store needs a lock or atomic check-and-set so two simultaneous retries don't both pass the "not seen" check.
+**When to use it**
 
-### Fullstack Considerations
-
-On the client side, key generation must happen *before* the request, not inside the retry loop — otherwise each retry gets a new key and deduplication breaks. This means the key lives in component/request state, not generated inline at the fetch call.
-
-For form submissions specifically: generate the key when the form mounts or when the user first interacts, persist it, and clear it only after a confirmed success response.
-
-This pattern is how Stripe, Braintree, and most payment APIs handle retry safety. It's also increasingly common in any API where double-execution is expensive — order creation, notifications, ledger entries.
+Any time you have a POST/PATCH that creates or mutates state and your clients will retry on failure — which they should on network errors. Payment processing is the canonical case, but the same applies to order creation, subscription changes, or any operation where "run it twice" causes real damage. If you're designing a public API where clients are responsible for retry logic, offering idempotency key support is table stakes.

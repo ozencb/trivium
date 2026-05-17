@@ -1,46 +1,39 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## ES Modules
 
-ES Modules (ESM) is JavaScript's native, standardized module system — the mechanism by which files declare what they export and what they depend on. It replaced a fragmented ecosystem of CommonJS, AMD, and UMD by making modules a first-class language feature rather than a runtime convention.
+ES Modules (ESM) are JavaScript's native module system, defined in the ES2015 spec. The key property that distinguishes them from everything that came before: the dependency graph is **statically determinable** — fully knowable before a single line of code executes.
 
-**The core idea: static structure**
+### The core mechanism
 
-The critical distinction between ESM and predecessors like CommonJS isn't syntax — it's *when* dependencies are resolved. In CommonJS, `require()` is a function call that runs at runtime, which means it can live inside conditionals, loops, or functions. The module graph isn't knowable until the code executes.
+`import` and `export` statements are syntactically restricted to the top level of a file and must use static string literals as specifiers. You cannot write `import x from someVariable` or put an `import` inside an `if` block. This is not an oversight — it's a deliberate constraint that makes the module system analyzable at parse time.
 
-```js
-// CommonJS — dynamic, runtime-resolved
-if (process.env.NODE_ENV === 'production') {
-  const logger = require('./prod-logger');
-}
-```
+When a bundler (or the browser's module loader) encounters an entry point, it can recursively resolve every `import`, build the full dependency graph, and know the complete set of exports for every module **without executing any code**. Compare this to CommonJS `require()`, which is just a function call — it can appear inside conditionals, loops, or callbacks, and its argument can be a runtime-computed string. A CommonJS dependency graph is only fully known at runtime.
 
-ESM `import` declarations are static and must appear at the top level. The JS engine can parse them without executing any code.
+ESM also introduces **live bindings**: when you import a named export, you don't get a copy of the value — you get a reference that updates if the exporting module modifies it. This is the mechanism behind patterns like re-exporting a mutable store value.
+
+### Concrete example
 
 ```js
-// ESM — static, parse-time-resolved
-import { log } from './logger'; // always top-level
+// math.js
+export const add = (a, b) => a + b;
+export const subtract = (a, b) => a - b;
+
+// app.js
+import { add } from './math.js';
 ```
 
-This single constraint — static imports — is what gives bundlers the ability to build a complete dependency graph before running anything. It's the prerequisite for tree shaking: if the graph is known ahead of execution, unused exports can be identified and eliminated at build time.
+A bundler sees that `subtract` is never imported anywhere in the graph. Because ESM guarantees the export list is static and `subtract` has no side effects, the bundler can confidently eliminate it. This is tree shaking — it's only possible because the graph is fully known pre-execution.
 
-**Live bindings, not copies**
+### Frontend
 
-Another mechanical difference: ESM exports are *live bindings*, not value copies. If module A exports a counter and increments it, module B importing that counter sees the updated value. CommonJS would have given B a snapshot at require-time.
+Browsers implement ESM natively via `<script type="module">`. The browser fetches the entry point, parses it, discovers imports, fetches those in parallel, and so on — all before execution. The static graph enables parallel fetching and predictable execution order (depth-first, parent waits for children).
 
-This matters for patterns like circular dependencies and re-exported primitives, where CJS can silently hand you stale values.
+### Fullstack
 
-**Mental model**
+Node.js supports both CommonJS and ESM, but they don't interop cleanly. An ESM file cannot synchronously `require()` a CommonJS module (and vice versa has awkward restrictions). This interop boundary is a real source of pain in libraries that need to support both ecosystems — which is why you see dual-package builds (`"main"` for CJS, `"exports"` for ESM) in most modern npm packages.
 
-Think of CJS as a lazy vending machine — you ask for things at runtime, one by one, and the machine figures it out on the spot. ESM is more like filing a manifest before departure — all dependencies are declared upfront, the environment resolves the full graph, then execution begins. The manifest approach is more predictable and analyzable.
-
-**In practice**
-
-*Frontend*: Every modern bundler (Rollup, Vite, webpack 5 with `experiments.outputModule`) builds on ESM's static structure. When you import only `{ useState }` from React, a bundler using ESM semantics can statically verify whether the rest of React's exports are reachable and eliminate them. This only works because imports are guaranteed to be top-level declarations.
-
-*Fullstack*: Node.js has supported ESM natively since v12 (stable in v14). But CJS/ESM interop remains genuinely awkward — you can't `require()` an ESM module, and `import()` of a CJS module loses named exports. If you're building a library today, deciding which format to ship (or both, via dual-package hazard) is a real architectural decision.
-
-The underlying insight to carry forward: ESM's value isn't ergonomics — it's that static analyzability is a hard prerequisite for the entire ecosystem of build-time optimizations that modern frontend tooling depends on.
+Understanding the static graph invariant is the foundation for grasping tree shaking, why dynamic `import()` is a separate escape hatch, and why bundlers can do sophisticated optimizations that were simply impossible in the CommonJS era.

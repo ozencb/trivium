@@ -1,36 +1,38 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Content Security Policy
 
-CSP is an HTTP response header that tells the browser which sources it's allowed to load and execute resources from. Where XSS prevention tries to stop malicious content from entering the DOM, CSP is a second line of defense: even if injection succeeds, the browser won't execute the payload.
+CSP is an HTTP response header that tells the browser exactly which origins are allowed to load scripts, styles, fonts, frames, and other resources — and the browser enforces this before executing anything. Even if an attacker successfully injects a `<script>` tag via XSS, CSP stops it from running if the source isn't on the allowlist.
 
-### Core Mechanism
+**The core mechanism**
 
-The server sends a `Content-Security-Policy` header. The browser parses it before executing anything on the page. Every resource load — scripts, styles, images, fetch requests — gets checked against the policy. Violations are blocked (and optionally reported).
+CSP works by having your server send a `Content-Security-Policy` header with directives like:
 
 ```
-Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.example.com; connect-src 'self' https://api.example.com
+Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.example.com; style-src 'self' 'unsafe-inline'
 ```
 
-Key directives: `script-src` controls what JS can execute, `connect-src` controls fetch/XHR destinations, `default-src` is the fallback. The dangerous values are `'unsafe-inline'` (allows inline `<script>` tags) and `'unsafe-eval'` (allows `eval()`). Allowing either largely defeats the purpose.
+Each directive targets a resource type. `default-src` is the fallback. `script-src` controls JavaScript. The browser parses this before rendering and blocks anything that doesn't match — with violations optionally reported to an endpoint via `report-uri` or `report-to`.
 
-The modern escape hatch for legitimate inline scripts is **nonces**: the server generates a cryptographically random value per request, injects it as `nonce="abc123"` on trusted `<script>` tags, and includes `'nonce-abc123'` in the policy. An injected `<script>` can't know the nonce, so it gets blocked even though inline execution is "allowed."
+The mental model: CSP is a firewall at the resource-loading layer, not the network layer. It doesn't prevent the injected content from reaching the DOM — it prevents the browser from *acting* on it.
 
-### Mental Model
+**Where engineers get it wrong**
 
-Think of CSP as an allowlist enforced by the browser itself, not your code. Your app logic can't be bypassed — the browser is the enforcer. The browser doesn't care that an attacker tricked your app into rendering `<script src="evil.com/x.js">` if `evil.com` isn't in `script-src`.
+The most common pitfall is `'unsafe-inline'` and `'unsafe-eval'`. These effectively disable script protection, but teams reach for them because inline scripts are everywhere in legacy apps or because frameworks like Angular historically needed `eval`. The correct path is nonces (`'nonce-abc123'`) or hashes — you whitelist specific inline script blocks by their SHA hash rather than opening the floodgates.
 
-### Practical Scenarios
+Another trap: setting `report-only` mode, watching violations, and never graduating to enforcement. Report-only is how you audit before shipping, not a permanent state.
 
-**Frontend**: Frameworks like Next.js or Remix generate inline scripts for hydration data. You can't use a strict policy without either nonces (generated server-side per request) or hashes (SHA256 of the inline content). This shapes how you configure your meta-framework's CSP middleware.
+**Practical scenarios**
 
-**Fullstack**: CSP header generation belongs in your middleware layer, not static config, because nonces must be fresh per request and injected into the HTML before the browser parses it. A common pattern: middleware generates a nonce, stores it in request context, the template injects it into `<script nonce="...">` tags, and the header includes it.
+*Frontend*: When building a React/Vue SPA, CSP lets you lock down `script-src` to your CDN and your own origin. Nonces get generated server-side per request and injected into the HTML — this is why SSR matters for CSP; a pure static build makes nonces harder to manage.
 
-**SRE**: Use `Content-Security-Policy-Report-Only` to deploy a policy in observation mode — violations are reported to your `report-uri` endpoint but not blocked. This is how you migrate an existing app to strict CSP without taking down prod. Reports also surface real attacks happening in production.
+*Fullstack*: Your Express/Next/Rails app sets the header. Libraries like `helmet` (Node) make this a one-liner, but the defaults are often too permissive. You need to audit every third-party script (analytics, A/B testing tools) and explicitly allow their domains — which also forces a conversation about supply chain risk.
 
-### Bridge to Trusted Types
+*SRE*: CSP violation reports are signal. A spike in blocked resources can mean someone injected a payload, a deployment broke a script hash, or a third-party changed their CDN URL. Routing `report-to` to a log aggregator and alerting on anomalies gives you early XSS detection without waiting for user reports.
 
-CSP's `require-trusted-types-for 'script'` directive is what activates Trusted Types enforcement. Without CSP, Trusted Types is advisory. With it, the browser hard-blocks any raw string assignment to DOM sinks like `innerHTML` — which is why understanding CSP is the prerequisite.
+**Why it matters at the senior level**
+
+CSP is the defense-in-depth layer below XSS prevention. Sanitization can have bugs; CSP limits blast radius when it does. In design reviews, proposing CSP with nonces signals you're thinking about the threat model holistically. It also sets up understanding of **Trusted Types**, which pushes enforcement down to the DOM API level — the next evolution past header-based policy.

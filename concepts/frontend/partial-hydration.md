@@ -1,38 +1,34 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-**Partial Hydration** is the technique of hydrating only the interactive parts of a server-rendered page, leaving static sections as inert HTML. Full hydration pays the JavaScript cost for every component, even ones that never respond to user input — partial hydration eliminates that waste.
+## Partial Hydration
 
----
+Full hydration is a tax you pay whether or not the user ever clicks anything. Partial hydration lets you pay only for the interactivity you actually ship — the rest stays inert HTML.
 
-**Core mechanism**
+**The core mechanism**
 
-Standard hydration walks the entire component tree: download JS for everything, re-execute renders in memory, reconcile against the existing DOM, attach listeners. Even a static `<Header>` that's just a logo and some links goes through this process.
+In a standard SSR setup, the server renders a full HTML document, then the client downloads the entire JS bundle and replays component initialization across the whole tree (reconciling virtual DOM, attaching event listeners, restoring state). Partial hydration breaks this: you annotate which components need client-side behavior, and only those get hydrated. Everything else is static markup the browser never touches with JavaScript.
 
-Partial hydration breaks the tree into two classes at build or render time: components that need a JS runtime, and components that don't. Static components ship zero JavaScript — they exist only as HTML. Interactive components hydrate independently.
-
-The hard part is that most component models weren't designed for this. React's reconciler, for example, expects to own the entire tree. Supporting partial hydration requires the framework to treat components as independent hydration boundaries rather than nodes in a single managed graph.
-
----
+The framework needs to solve a boundary problem here — it must know where a hydration island begins and ends without running JS on the surrounding tree. This is why partial hydration isn't just a config flag; it typically requires explicit component boundaries or compiler support.
 
 **Mental model**
 
-Think about a news article page: nav, hero image, article body, a comment widget, a newsletter signup. Only the widget and the form have real interactivity. With full hydration, you're paying JS execution cost for the article body — paragraphs of text that will never change. With partial hydration, those paragraphs stay frozen as HTML. The comment widget and signup form each hydrate on their own, isolated from the rest.
+Think of your page as a newspaper. The article text, byline, and layout are print — static, no behavior needed. The comments section, the share button, the subscription widget — those need JS. Partial hydration means you deliver the whole newspaper as HTML but only wire up the dynamic widgets. The article doesn't need a React runtime; the comment box does.
 
----
+**Concrete example**
 
-**Frontend scenarios**
+A marketing landing page: hero section, feature grid, testimonials, a pricing toggle (interactive), and a CTA with a modal (interactive). With full hydration, React boots for all of it. With partial hydration, only the pricing toggle and modal component receive JavaScript. The rest is untouched HTML. On a 3G connection, this is the difference between "usable immediately" and "blank white screen."
 
-Content-heavy sites — blogs, docs, marketing pages — see the biggest gains. If 80% of your page is static, full hydration is a large runtime tax with no user-visible benefit. Partial hydration cuts Time to Interactive directly, because the browser isn't parsing and executing JS for components that do nothing. Lower TBT and faster LCP improve Core Web Vitals, which matters if SEO is in scope.
+**Where this matters in practice**
 
----
+*Frontend:* Content-heavy pages with sparse interactivity — blogs, docs sites, e-commerce product pages — are the obvious wins. When you're doing performance audits and Time-to-Interactive is high despite good HTML load times, excess hydration is often the culprit.
 
-**Fullstack scenarios**
+*Fullstack:* In Next.js you approximate this with `'use client'` boundaries — components without that directive don't ship client JS. Astro makes it explicit with `client:load` / `client:idle` / `client:visible` directives. The tradeoff: you have to think about component boundaries up front, which adds design overhead.
 
-In SSR/SSG setups (Next.js, Remix, Astro, SvelteKit), you're already sending fully-rendered HTML from the server. Partial hydration is the logical next step: fast first paint from the server, then selective hydration only where the user needs to interact. Astro makes this concrete with `client:load`, `client:idle`, `client:visible` — each component opts into its own hydration timing explicitly.
+**The senior-engineer angle**
 
-This shifts the mental model from "is this a server or client component?" to "does this component need a runtime at all?"
+This is where you earn your seat in architecture discussions. Junior engineers reach for client components by default. The sharp question to ask is: *does this component actually need to run JavaScript on the client, or does it just need to look like it does?* Knowing the hydration cost of a component tree — and knowing when to push interactivity to the edges — is the difference between a performant app and one that ships a React runtime to render a paragraph tag.
 
-It's also the direct prerequisite for **Islands Architecture**, which formalizes this into self-contained interactive regions with independent hydration lifecycles, and connects to **Resumability**, which pushes further by asking whether you need to hydrate at all — or can you just resume from serialized server state.
+Partial hydration is also the conceptual foundation for Islands Architecture (explicit interactive islands in a static sea) and Resumability (skipping hydration entirely by serializing framework state at the server).

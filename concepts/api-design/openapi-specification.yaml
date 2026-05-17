@@ -1,0 +1,15 @@
+id: openapi-specification
+title: OpenAPI Specification
+category:
+  - API Design
+  - Documentation
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+  - career
+prerequisites:
+  - rest-constraints
+dependents: []
+brief: A machine-readable YAML/JSON contract for REST APIs that drives SDK generation, mock servers, interactive documentation, and contract tests from a single versioned source of truth.

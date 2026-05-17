@@ -1,38 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Alerting
 
-Alerting is the mechanism that converts metrics and SLO state into actionable signals — it's how your observability system stops being passive and starts demanding attention. Without alerting, you're flying with instruments but no warnings.
+Alerting is the practice of defining conditions on your metrics and logs that trigger notifications when something demands human attention. Done well, it's the difference between your on-call engineer sleeping through minor blips and waking up when users are actually hurting.
 
-### The Core Mechanism
+### The Core Idea: Symptoms, Not Causes
 
-An alert is fundamentally a threshold rule evaluated against a time series. But the interesting engineering lies in *what* you threshold and *when* you fire.
+The fundamental insight is to alert on **what users experience**, not on internal system states. This is the symptom-based vs. cause-based distinction. A high CPU alert is cause-based — CPU can spike for a dozen reasons, most benign. A "5% of requests are returning 5xx errors" alert is symptom-based — users are directly affected, and this almost always needs attention regardless of root cause.
 
-The naive approach alerts on raw metrics: CPU > 80%, error count > 100. The problem is these are noisy and often meaningless in isolation. Modern alerting shifts toward alerting on **symptoms, not causes** — specifically on SLO burn rates.
+This pairs directly with your SLIs and SLOs. If your SLO is "99.9% of requests complete in under 200ms," your alert fires when that burn rate is on track to exhaust your error budget within a defined window. This is called **burn rate alerting** and it's the most principled approach: you're not guessing at thresholds, you're asking "are we consuming our error budget faster than sustainable?"
 
-Instead of "error rate exceeded 1%," you write: "We've consumed more than 5% of our monthly error budget in the last hour." That's a burn rate alert. At that pace, your budget runs out in ~20 hours — urgent, actionable, and directly tied to user impact.
+### Concrete Mental Model
 
-Burn rate alerts have a multi-window structure: a fast window (e.g., 1h) catches sudden spikes, a slow window (e.g., 6h) catches slow burns. Both must fire together to reduce false positives. This pattern comes from the Google SRE Workbook and is worth understanding as the baseline.
-
-### Concrete Example
-
-Say your SLO is 99.9% availability over 30 days. That's roughly 43 minutes of allowed downtime. Your error budget is 0.1% of total requests.
-
-A 14.4x burn rate means you'd exhaust the budget in ~50 hours. You'd want a page. A 1x burn rate means you're exactly on track — no alert needed. At 2x, you might want a ticket, not a page.
-
-You configure: fire if the 1h burn rate > 14.4 AND the 6h burn rate > 6. This gives you high confidence the problem is real and sustained.
+Think of your error budget as a tank of water with a slow leak. A momentary spike (fast leak) that self-heals doesn't drain the tank. But a sustained degradation (slow leak) will. A well-designed alert fires on *rate of drain*, not instantaneous flow. This is why Google's SRE book recommends two complementary alerts per SLO: one for fast burns (1-hour window, ~14x burn rate) and one for slow burns (6-hour window, ~6x burn rate) — catching both sudden outages and subtle degradation.
 
 ### Practical Scenarios
 
-**SRE:** You own the alerting policy. You define severity tiers — page vs. ticket vs. dashboard annotation — based on burn rate magnitude. The discipline is keeping pages rare and high-signal so on-call engineers don't tune out.
+**SRE/Backend:** You've got a payment service. Alert on "payment success rate < 99%" for 5 minutes, not on "database query latency p99 > 500ms." The DB alert creates noise; it might be a batch job. The payment alert tells you users are losing money *right now*.
 
-**DevOps/Platform:** You're configuring alertmanager or similar routing. Key decisions: grouping (bundle related alerts to avoid notification floods), inhibition (suppress downstream alerts when upstream is down), and silencing during planned maintenance.
+**DevOps:** During a deploy, watch error rates and latency at the edge (load balancer or gateway) before congratulating yourself. A canary that's 5% of traffic but showing 10% error rate should page before it rolls further. This requires alerting on *relative* degradation from baseline, not just absolute thresholds.
 
-**Backend engineer:** Your service gets an alert integrated at deploy time. You need to understand whether your SLOs are defined tightly enough that a bad deploy will actually fire an alert before too much damage is done. If your alert only fires after 6 hours of burn, a bad 2am deploy could hurt real users for hours before anyone wakes up.
+**General:** Avoid "flapping" alerts — conditions that oscillate in and out of threshold. Adding a `for: 5m` clause (sustained condition) in tools like Prometheus dramatically reduces noise without meaningfully delaying real pages.
 
-### The Real Discipline
+### What Separates Senior Engineers
 
-Alerting quality degrades over time. Alerts get added, rarely get removed, and on-call engineers start ignoring pages they've been conditioned to believe are false positives. Treating alert fatigue as a first-class engineering problem — with regular reviews of alert-to-incident ratios — is what separates teams that have good alerting from teams that have a lot of alerts.
+Most engineers configure alerts reactively after incidents. Senior engineers define SLIs first, then derive alerts from error budget burn rates, then tune them against historical data. They can explain why a particular threshold was chosen, and they treat alert fatigue as a system design failure — not a human problem.

@@ -1,49 +1,43 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
-## Broadcast Channel API
+**Broadcast Channel API** gives you a named message bus shared across all same-origin browsing contexts — tabs, iframes, workers — without polling, localStorage hacks, or a WebSocket. It's the browser's built-in solution to the "how do I sync state across tabs?" problem.
 
-The Broadcast Channel API is a simple pub/sub mechanism for communicating between browsing contexts — tabs, windows, iframes, and workers — that share the same origin. It fills the gap where `postMessage` requires a direct reference to the target, but you just want to shout something to whoever's listening.
+## The core mechanism
 
-### Core mechanism
-
-You create a channel by name, and any context on the same origin that opens a channel with the same name is automatically part of the group. Post a message on one end, every other subscriber receives it. The sender does *not* receive its own message.
+You create a channel by name; any context on the same origin that opens a channel with the same name joins the same bus. Post a message on one end, every other subscriber fires an `onmessage` event. That's it — no server round-trip, no shared memory, just structured-clone-serialized messages over the browser's internal IPC.
 
 ```js
-// Tab A
-const channel = new BroadcastChannel('app-state');
-channel.postMessage({ type: 'USER_LOGGED_OUT' });
+// In tab A (or a worker)
+const ch = new BroadcastChannel('cart');
+ch.postMessage({ type: 'item_added', id: 42 });
 
-// Tab B (same origin, independently opened)
-const channel = new BroadcastChannel('app-state');
-channel.onmessage = (event) => {
-  if (event.data.type === 'USER_LOGGED_OUT') {
-    clearLocalSession();
-    redirectToLogin();
-  }
-};
+// In tab B
+const ch = new BroadcastChannel('cart');
+ch.onmessage = (e) => console.log(e.data); // { type: 'item_added', id: 42 }
 ```
 
-That's the whole API surface. No setup beyond the channel name. Messages are structured-cloned, so you can send objects, arrays, blobs — anything the structured clone algorithm supports.
+One subtlety worth knowing: the sender does **not** receive its own message. If you want loopback, you need to handle that explicitly.
 
-### Mental model
+## Mental model
 
-Think of it as a named topic on an in-browser event bus. Any context that subscribes to the topic gets the messages. It's ephemeral — no persistence, no replay — just live delivery to whoever is currently listening. If no one is listening when you post, the message is dropped silently.
+Think of it like a named pub/sub topic scoped to the browser session. Unlike `localStorage` + `storage` events (the classic hack), messages aren't persisted and aren't subject to string serialization — you send real objects. Unlike `SharedArrayBuffer`, there's no shared memory concern; messages are copied, not referenced.
 
-### Where this matters in practice
+## When to reach for it
 
-**Frontend:** The canonical use case is tab synchronization. If a user logs out in one tab, you want every other tab to respond — redirect, clear sensitive UI, drop cached data. Without Broadcast Channel, you'd hack this with `localStorage` events (which fire on write from *other* tabs, a quirky side effect rather than a real API). Broadcast Channel is the intentional tool for this.
+**Tab/worker coordination:** A service worker invalidates a cache and needs to tell all open tabs to refetch. Auth logout — one tab logs out, others need to redirect immediately. Shopping cart updates that should reflect across all open windows without a server round-trip.
 
-Another pattern: coordinating a service worker with the page. A service worker can post cache invalidation signals or background sync results to all open tabs without needing to track client references.
+**Fullstack context:** If you're running a BFF or SSR app (Next.js, Remix), you'd still use this on the client side for cross-tab sync. It pairs well with optimistic UI — tab A commits a mutation, broadcasts a `{ type: 'invalidate', key: 'orders' }` so tab B's query cache knows to refetch.
 
-**Fullstack:** In SSR or hybrid apps (Next.js, Remix), the server can't help you here — this is purely client-side. But it becomes relevant when you have multi-tab state that the server doesn't own, like optimistic UI state, draft content, or in-memory feature flag overrides. If the user edits a draft in one tab, you can broadcast a "draft updated" signal so other tabs don't show stale state before a server round-trip.
+**With workers:** Since Web Workers and Service Workers can join the same channel, it's a clean coordination layer between your main thread and background workers without the one-to-one constraint of `postMessage`.
 
-### Caveats worth knowing
+## Pitfalls
 
-- Same-origin only. Cross-origin tabs are completely isolated.
-- No message history. Join after a message was sent and you missed it.
-- Close channels explicitly (`channel.close()`) to avoid memory leaks, especially in SPAs where the channel outlives the component that created it.
+- **No persistence:** messages are fire-and-forget; a tab that opens *after* a broadcast missed it. If you need late-joiners to catch up, you still need shared state (IndexedDB, localStorage, server).
+- **Same-origin only:** cross-origin iframes can't participate. Not a workaround for iframe communication.
+- **No acknowledgment:** it's broadcast, not request/response. If you need confirmation a message was received, layer that yourself.
+- **Channel name collisions:** treat channel names like event namespaces — prefix them (`myapp:cart`) to avoid conflicts with third-party scripts.
 
-It's a small API with a narrow job, but for tab coordination it's the right tool — cleaner than `localStorage` hacks and more straightforward than SharedWorker for simple broadcast scenarios.
+Reach for this when you want lightweight cross-context sync and the "missed message on late join" tradeoff is acceptable. For anything requiring durability or cross-origin scope, you need a different tool.

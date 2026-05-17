@@ -1,0 +1,15 @@
+id: csrf-prevention
+title: CSRF Prevention
+category:
+  - Security
+  - Web
+roles:
+  - backend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - cors
+  - tls-handshake
+dependents: []
+brief: Defenses—synchronizer tokens, SameSite cookies, and double-submit patterns—that verify state-changing requests originate from your application rather than a cross-origin attacker.

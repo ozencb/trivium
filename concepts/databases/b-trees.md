@@ -1,30 +1,31 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## B-Trees
 
-A B-Tree is a self-balancing tree data structure that keeps data sorted and allows searches, insertions, and deletions in O(log n) time. Databases use them almost universally for indexes because they minimize disk I/O — the thing that actually kills query performance.
+Most tree structures—like binary search trees—assume random access to individual nodes is cheap. Databases can't make that assumption. Fetching a node from disk costs orders of magnitude more than fetching it from RAM, and you pay per *block read*, not per byte. B-Trees are designed around this reality: they pack many keys into a single node so each disk read pulls in as much useful data as possible.
 
-### The Core Mechanism
+**The core mechanism**
 
-A B-Tree generalizes a binary search tree by allowing each node to have *many* keys and *many* children — not just two. Each node holds between `t-1` and `2t-1` keys (where `t` is the minimum degree), and non-leaf nodes have one more child than they have keys. Keys within a node are sorted, and the subtree between key[i] and key[i+1] holds all values in that range.
+A B-Tree of order `t` enforces these invariants at every node:
+- Each node holds between `t-1` and `2t-1` keys (except the root, which needs at least 1).
+- All leaves are at the same depth.
+- Keys within a node are sorted; child pointers between keys route searches to the correct subtree.
 
-The critical invariant: **all leaf nodes sit at the same depth**. The tree grows upward (at the root) rather than downward. When a node fills up, it splits and pushes its median key up to the parent. This keeps the tree perfectly balanced without rotations.
+That last invariant is the key insight. Unlike a binary tree where each node has 2 children, a B-Tree node might have hundreds. The tree stays extremely shallow—a B-Tree storing a billion entries with `t=500` is only about 4 levels deep. That means at most 4 disk reads to find anything.
 
-### Mental Model
+When you insert a key and a node overflows past `2t-1` keys, it *splits*: the median key gets promoted to the parent, and the node divides into two valid nodes. This split propagates upward only if the parent also overflows—which rarely cascades far. Deletion is the mirror image: if a node falls below `t-1` keys, it borrows from a sibling or merges with one.
 
-Think of a physical phone book organized as a tree. The root page might just say "A–M go left, N–Z go right." Each subsequent page narrows the range until you hit a leaf with actual records. Now imagine the phone book has 1 billion entries but each page can hold 1,000 entries. You'll find any name in at most 3–4 page turns. That's B-Trees: wide nodes, shallow trees, few disk reads.
+**Mental model**
 
-In practice, a B-Tree with order 1000 and 1 billion entries needs only ~3 levels. A binary tree would need ~30. Each level is a disk read. The difference is enormous.
+Think of a phone book. The outer cover tells you letters A-Z; opening to "M" gives you sub-ranges; drilling down a few more levels lands you on the exact name. You never read every page—you read a few "summary" pages that route you to the answer. B-Tree nodes are those summary pages, each one fitting neatly on a single disk block.
 
-### Where You'll Actually See This
+**Where this matters in practice**
 
-**Backend / databases:** When you run `EXPLAIN` on a slow query and see "Index Scan," that index is almost certainly a B-Tree (PostgreSQL, MySQL InnoDB, SQLite — all default to B-Tree indexes). Range queries like `WHERE age BETWEEN 25 AND 40` work efficiently because the sorted order in the tree maps directly to the range. Hash indexes would fall apart here.
+*Backend engineers* hit B-Trees through database indexes. When Postgres creates an index on `users.email`, it's building a B-Tree. That's why `WHERE email = 'x'` is O(log n) and doesn't require a full table scan—the index tree routes you to the row's location in a handful of reads.
 
-**Data engineering:** When you're designing a table that gets hit with high-cardinality range scans — time-series data, audit logs, sorted IDs — a B-Tree index on the timestamp column lets the query engine skip straight to the relevant block without scanning. Understanding this tells you *why* random UUID primary keys hurt insert performance: every insert must find the right position in the tree, potentially causing page splits throughout.
+*Data engineers* encounter them in storage engines like InnoDB and RocksDB (which uses a variant, LSM-trees). Knowing that B-Tree writes require node splits—and that a heavily write-loaded index can cause page fragmentation—explains why bulk-loading data with indexes disabled and then building the index afterward is dramatically faster.
 
-**Filesystems:** ext4, NTFS, HFS+ all use B-Tree variants internally to store directory entries, which is why listing a directory with millions of files is still fast.
-
-The practical insight: B-Trees are the reason "add an index" fixes queries. The structure trades write overhead (maintaining sorted order, handling splits) for dramatically cheaper reads — the right tradeoff for read-heavy workloads that dominate most databases.
+The self-balancing property isn't magic: it's the split/merge rules maintaining depth invariants on every write. That discipline is what gives B-Trees their predictable O(log n) guarantees across read-heavy and write-heavy workloads alike.

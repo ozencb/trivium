@@ -1,44 +1,30 @@
 ---
 model: claude-sonnet-4-6
-prompt_version: 459a3b0ff906
+prompt_version: c367b0e2e48d
 ---
 
 ## Atomic / Utility-First CSS
 
-Atomic CSS is a methodology where you style elements by composing many small, single-purpose classes rather than writing semantic component classes. The driving insight is that CSS specificity and cascade management become the dominant maintenance cost at scale, and utility classes sidestep that entirely.
+Utility-first CSS flips the authoring model: instead of writing semantic class names that bundle multiple styles (`card`, `button--primary`), you compose single-purpose classes directly in HTML (`flex gap-4 rounded bg-blue-500 text-white`). The payoff is that your stylesheet stops growing as your app grows — you only ever ship the classes you actually reference.
 
-### The core mechanism
+**The core mechanism**
 
-Traditional CSS maps classes to components: `.card { display: flex; padding: 16px; background: white; }`. Atomic CSS inverts this — each class does exactly one thing: `flex`, `p-4`, `bg-white`. Your HTML carries the styling directly; your stylesheet barely grows as your application does.
+Traditional CSS has a dead-weight problem. You write `.card { padding: 1rem; border-radius: 4px; box-shadow: ... }` for one component, then later write nearly identical rules for `.panel` or `.tile`. Over time you accumulate thousands of lines of overlapping declarations, specificity wars from overrides, and a build artifact no one dares delete rules from because something might break.
 
-The mental model: think of utility classes as inline styles with constraints. Inline styles are maximally explicit but unconstrained — any value, no reuse. Utility classes are explicit *and* constrained — only values your design system permits, with built-in reuse.
+Atomic CSS inverts this. The full "vocabulary" of possible utilities is defined upfront (or generated on demand), and your build tool tree-shakes to only emit classes that appear in your templates. With Tailwind specifically, a project with 50 pages still ships roughly the same ~10 KB of CSS as a project with 5 pages — the growth curve is flat.
 
-```html
-<!-- Traditional -->
-<div class="card card--featured">...</div>
+**Concrete mental model**
 
-<!-- Utility-first -->
-<div class="flex flex-col p-4 bg-white rounded-lg shadow-md border border-blue-200">...</div>
-```
+Think of it like inline styles, but with design-system constraints. `style="padding: 13px"` is unconstrained and unshareable. `p-3` maps to a spacing scale token and applies to the cascade, responds to breakpoints (`md:p-6`), and participates in hover/focus states (`hover:bg-blue-600`). You get the co-location of inline styles without their downsides.
 
-The second version is verbose at the call site, but you can read exactly what it does without opening a CSS file.
+**Frontend**
 
-### Why this matters beyond aesthetics
+In component-driven apps (React, Vue, Svelte), the utility approach aligns naturally with the component mental model — styles live next to the markup that uses them. The common pushback is "the HTML gets ugly," but in practice the alternative is toggling between a `.tsx` and a `.module.css` file for every tweak. Senior engineers recognize that readability of the final HTML matters less than developer iteration speed and the absence of style collisions across a large team.
 
-1. **Dead code elimination is trivial.** Traditional CSS accumulates dead rules because it's hard to know what's still used. With atomic classes, unused utilities never appear in HTML, so tree-shaking (e.g., Tailwind's PurgeCSS step) removes them automatically.
+**Fullstack**
 
-2. **No naming tax.** Naming things is hard. `.card-header-inner-wrapper` names proliferate because you have to name every layer. Utilities eliminate the naming problem entirely for most styling decisions.
+On server-rendered stacks (Rails, Django, Laravel with Inertia, etc.), utility CSS shines because there's no JS bundle owning a component graph for CSS Modules to attach to. You get Tailwind for free with minimal config, and the purge step handles dead-code elimination at build time by scanning template files.
 
-3. **Specificity stays flat.** Every utility is a single class (specificity 0,1,0). No specificity wars, no `!important` creep.
+**When to reach for it — and when not to**
 
-### Practical scenarios
-
-**Frontend SPA:** In a React/Vue component library, atomic CSS means your component styles live in JSX/template alongside structure and logic. Refactoring a component doesn't leave orphaned CSS rules. Tokens like spacing, color, and typography are enforced by the available class set rather than by convention.
-
-**Fullstack (Rails, Django, Laravel):** Server-rendered templates benefit heavily — you're already co-locating markup and data, so co-locating style is natural. Tailwind particularly shines here because you get design-system constraints without a JS build pipeline being required for the CSS itself.
-
-### The real tradeoff
-
-The cost is readability at the HTML level — class lists get long. The standard mitigation is component extraction: once a pattern repeats, wrap it in a component (React component, Rails partial, etc.) and the repetition disappears. Atomic CSS doesn't replace components; it changes *where* the styling logic lives.
-
-Tailwind CSS is the dominant implementation, but the concept predates it — libraries like Tachyons (2014) and Basscss popularized the approach.
+Utility-first is a strong default for greenfield projects and design-system-less teams. It's a harder sell when you're layering onto a large existing stylesheet (specificity collisions) or when your design team produces heavily custom, one-off layouts — at that point you're writing long `class` strings for bespoke geometry that a few CSS custom properties would express more clearly. The nuanced position — which reads well in design discussions — is: utility-first for spacing, color, typography; custom CSS or `@apply` for genuinely complex or repeated visual patterns.

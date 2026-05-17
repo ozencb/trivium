@@ -1,0 +1,15 @@
+id: monorepo-frontend-tooling
+title: Monorepo Frontend Tooling
+category:
+  - Frontend
+  - Build
+roles:
+  - frontend
+  - fullstack
+lenses:
+  - practical
+prerequisites:
+  - bundler-internals
+dependents:
+  - module-graph-optimization
+brief: Build orchestrators (Nx, Turborepo) that enable scalable monorepo development through remote caching, task pipelines, and affected-only execution across packages.
