@@ -1,8 +1,6 @@
 import { loadAllConcepts } from "@/lib/concepts";
 import { getDb, getAllProgress } from "@/lib/db";
 import { STATUS_COLORS } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import type { ConceptStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -29,43 +27,48 @@ export default function BrowsePage() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto py-16 px-4">
-      <h1 className="text-xl font-bold tracking-tight mb-1">Browse Concepts</h1>
-      <p className="text-sm text-muted-foreground mb-10">
+    <div className="max-w-3xl mx-auto py-10 px-6">
+      <h1 className="text-lg font-semibold tracking-tight mb-1">Browse</h1>
+      <p className="text-sm text-muted-foreground mb-8">
         All concepts organized by category.
       </p>
 
       {sortedCategories.map(([category, catConcepts]) => (
-        <div key={category} className="mb-10">
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-            {category}
-          </h2>
-          <div className="space-y-1.5">
+        <div key={category} className="mb-8">
+          <div className="flex items-center gap-3 mb-1 px-1">
+            <h2 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider shrink-0">
+              {category}
+            </h2>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <div>
             {catConcepts.map((concept) => {
               const status = progressMap.get(concept.id) ?? "unseen";
               return (
-                <Card key={concept.id}>
-                  <CardContent className="py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{concept.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {concept.brief}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {concept.roles.map((role) => (
-                        <Badge key={role} variant="outline" className="text-xs">
-                          {role}
-                        </Badge>
-                      ))}
-                      <div
-                        className={
-                          "w-2 h-2 rounded-full " + STATUS_COLORS[status]
-                        }
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+                <div
+                  key={concept.id}
+                  className="flex items-start gap-3 px-2.5 py-2 rounded-md hover:bg-accent/50 transition-colors"
+                >
+                  <div
+                    className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${STATUS_COLORS[status]}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{concept.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {concept.brief}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                    {concept.roles.map((role) => (
+                      <span
+                        key={role}
+                        className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded border border-border"
+                      >
+                        {role}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               );
             })}
           </div>

@@ -19,7 +19,7 @@ export function FilterControls({
 }: FilterControlsProps) {
   function toggleRole(role: Role) {
     if (selectedRoles.includes(role)) {
-      onRolesChange(selectedRoles.filter(r => r !== role));
+      onRolesChange(selectedRoles.filter((r) => r !== role));
     } else {
       onRolesChange([...selectedRoles, role]);
     }
@@ -27,7 +27,7 @@ export function FilterControls({
 
   function toggleLens(lens: Lens) {
     if (selectedLenses.includes(lens)) {
-      onLensesChange(selectedLenses.filter(l => l !== lens));
+      onLensesChange(selectedLenses.filter((l) => l !== lens));
     } else {
       onLensesChange([...selectedLenses, lens]);
     }
@@ -36,9 +36,13 @@ export function FilterControls({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Role</p>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by role">
-          {ALL_ROLES.map(role => (
+        <p className="text-xs text-muted-foreground mb-2">Role</p>
+        <div
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Filter by role"
+        >
+          {ALL_ROLES.map((role) => (
             <button
               key={role}
               type="button"
@@ -57,9 +61,13 @@ export function FilterControls({
         </div>
       </div>
       <div>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Lens</p>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by lens">
-          {ALL_LENSES.map(lens => (
+        <p className="text-xs text-muted-foreground mb-2">Lens</p>
+        <div
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Filter by lens"
+        >
+          {ALL_LENSES.map((lens) => (
             <button
               key={lens}
               type="button"

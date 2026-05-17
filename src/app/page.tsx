@@ -4,7 +4,6 @@ import { getDb, getAllProgress } from "@/lib/db";
 import { STATUS_TEXT_COLORS } from "@/lib/constants";
 import { ProgressBar } from "@/components/progress-bar";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +31,13 @@ export default function Home() {
   ];
 
   return (
-    <div className="max-w-2xl mx-auto py-16 px-4">
-      <h1 className="text-xl font-bold tracking-tight mb-1">
-        Trivium
-      </h1>
-      <p className="text-sm text-muted-foreground mb-10">
-        Master the prerequisites. Unlock what&apos;s next.
-      </p>
+    <div className="max-w-3xl mx-auto py-10 px-6">
+      <div className="mb-10">
+        <h1 className="text-lg font-semibold tracking-tight mb-1">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          Master the prerequisites. Unlock what&apos;s next.
+        </p>
+      </div>
 
       <ProgressBar
         known={known}
@@ -46,28 +45,27 @@ export default function Home() {
         label="Overall Progress"
       />
 
-      <div className="grid grid-cols-4 gap-3 mt-10">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8">
         {statuses.map((status) => (
-          <Card key={status.label}>
-            <CardContent className="pt-4 pb-3">
-              <p className="text-sm text-muted-foreground mb-1">
-                {status.label}
-              </p>
-              <p className={cn("text-2xl font-bold", status.color)}>
-                {status.count}
-              </p>
-            </CardContent>
-          </Card>
+          <div
+            key={status.label}
+            className="rounded-lg bg-card ring-1 ring-foreground/[0.06] px-3.5 py-3"
+          >
+            <p className="text-xs text-muted-foreground mb-1">{status.label}</p>
+            <p className={cn("text-xl font-bold tabular-nums", status.color)}>
+              {status.count}
+            </p>
+          </div>
         ))}
       </div>
 
-      <div className="mt-10 flex gap-3">
-        <Link href="/session" className={cn(buttonVariants({ size: "lg" }))}>
+      <div className="mt-8 flex gap-2.5">
+        <Link href="/session" className={cn(buttonVariants())}>
           Start Session
         </Link>
         <Link
           href="/browse"
-          className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
+          className={cn(buttonVariants({ variant: "outline" }))}
         >
           Browse
         </Link>

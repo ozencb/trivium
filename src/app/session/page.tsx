@@ -70,9 +70,11 @@ export default function SessionPage() {
 
   if (!started) {
     return (
-      <div className="max-w-2xl mx-auto py-16 px-4">
-        <h1 className="text-xl font-bold tracking-tight mb-1">Study Session</h1>
-        <p className="text-sm text-muted-foreground mb-8">
+      <div className="max-w-3xl mx-auto py-10 px-6">
+        <h1 className="text-lg font-semibold tracking-tight mb-1">
+          Study Session
+        </h1>
+        <p className="text-sm text-muted-foreground mb-6">
           Filter by role and lens, or leave empty for all concepts.
         </p>
         <FilterControls
@@ -81,7 +83,7 @@ export default function SessionPage() {
           onRolesChange={setRoles}
           onLensesChange={setLenses}
         />
-        <Button className="mt-8" size="lg" onClick={() => setStarted(true)}>
+        <Button className="mt-6" onClick={() => setStarted(true)}>
           Start Session
         </Button>
       </div>
@@ -98,7 +100,7 @@ export default function SessionPage() {
 
   if (error && !current) {
     return (
-      <div className="max-w-xl mx-auto py-16 px-4">
+      <div className="max-w-xl mx-auto py-10 px-6">
         <p className="text-sm text-destructive mb-4">{error}</p>
         <Button size="sm" variant="outline" onClick={() => fetchNext()}>
           Retry
@@ -109,8 +111,8 @@ export default function SessionPage() {
 
   if (done) {
     return (
-      <div className="max-w-xl mx-auto py-16 px-4">
-        <h2 className="text-xl font-bold mb-2">Session Complete</h2>
+      <div className="max-w-xl mx-auto py-10 px-6">
+        <h2 className="text-lg font-semibold mb-2">Session Complete</h2>
         <p className="text-sm text-muted-foreground mb-1">
           You&apos;ve reviewed all available concepts.
         </p>
@@ -134,9 +136,9 @@ export default function SessionPage() {
   if (!current) return null;
 
   return (
-    <div className="py-16 px-4">
+    <div className="py-10 px-6">
       <div className="max-w-xl mx-auto mb-4">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">
+        <p className="text-xs text-muted-foreground tabular-nums">
           {reviewed} reviewed this session
         </p>
       </div>

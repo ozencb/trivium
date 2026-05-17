@@ -12,7 +12,7 @@ export default function ProgressPage() {
   db.close();
 
   const progressMap = new Map(
-    progress.map(p => [p.concept_id, p.status as ConceptStatus])
+    progress.map((p) => [p.concept_id, p.status as ConceptStatus]),
   );
 
   const byCategory = new Map<string, { total: number; known: number }>();
@@ -45,38 +45,59 @@ export default function ProgressPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-16 px-4">
-      <h1 className="text-xl font-bold tracking-tight mb-10">Progress</h1>
+    <div className="max-w-3xl mx-auto py-10 px-6">
+      <h1 className="text-lg font-semibold tracking-tight mb-8">Progress</h1>
 
       <section className="mb-10">
-        <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">By Category</h2>
-        <div className="space-y-4">
+        <h2 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-4">
+          By Category
+        </h2>
+        <div className="space-y-3">
           {[...byCategory.entries()]
             .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([cat, stats]) => (
-              <ProgressBar key={cat} label={cat} known={stats.known} total={stats.total} />
+              <ProgressBar
+                key={cat}
+                label={cat}
+                known={stats.known}
+                total={stats.total}
+              />
             ))}
         </div>
       </section>
 
       <section className="mb-10">
-        <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">By Role</h2>
-        <div className="space-y-4">
+        <h2 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-4">
+          By Role
+        </h2>
+        <div className="space-y-3">
           {[...byRole.entries()]
             .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([role, stats]) => (
-              <ProgressBar key={role} label={role} known={stats.known} total={stats.total} />
+              <ProgressBar
+                key={role}
+                label={role}
+                known={stats.known}
+                total={stats.total}
+              />
             ))}
         </div>
       </section>
 
       <section className="mb-10">
-        <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">By Lens</h2>
-        <div className="space-y-4">
+        <h2 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-4">
+          By Lens
+        </h2>
+        <div className="space-y-3">
           {[...byLens.entries()]
             .sort((a, b) => a[0].localeCompare(b[0]))
             .map(([lens, stats]) => (
-              <ProgressBar key={lens} label={lens} known={stats.known} total={stats.total} />
+              <ProgressBar
+                key={lens}
+                label={lens}
+                known={stats.known}
+                total={stats.total}
+              />
             ))}
         </div>
       </section>
