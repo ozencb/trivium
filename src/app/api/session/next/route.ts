@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ...next,
-      explanation: explanation?.content ?? null,
+      explanation: explanation?.content || null,
     });
   } finally {
     db.close();

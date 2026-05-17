@@ -22,7 +22,7 @@ export async function GET(
     return NextResponse.json({
       ...concept,
       status: progress?.status ?? "unseen",
-      explanation: explanation?.content ?? null,
+      explanation: explanation?.content || null,
     });
   } finally {
     db.close();
