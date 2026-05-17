@@ -4,6 +4,8 @@ Study-session app that surfaces high-impact software engineering concepts you do
 
 > Built almost entirely through vibe coding to test the capabilities of latest models.
 
+![Demo](docs/recordings/demo.gif)
+
 ## How It Works
 
 1. Concepts defined as YAML (metadata) + Markdown (explanation) file pairs
