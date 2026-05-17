@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ConceptCard } from "@/components/concept-card";
 import { FilterControls } from "@/components/filter-controls";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ export default function SessionPage() {
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reviewed, setReviewed] = useState(0);
+  const seenRef = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
 
   const fetchNext = useCallback(async () => {
@@ -25,6 +26,7 @@ export default function SessionPage() {
       const params = new URLSearchParams();
       if (roles.length) params.set("roles", roles.join(","));
       if (lenses.length) params.set("lenses", lenses.join(","));
+      if (seenRef.current.size) params.set("seen", [...seenRef.current].join(","));
 
       const res = await fetch("/api/session/next?" + params.toString());
       if (!res.ok) throw new Error("Failed to fetch next concept");
@@ -64,6 +66,7 @@ export default function SessionPage() {
   }
 
   function handleAdvance() {
+    if (current) seenRef.current.add(current.id);
     setReviewed((r) => r + 1);
     fetchNext();
   }
@@ -125,6 +128,7 @@ export default function SessionPage() {
             setStarted(false);
             setDone(false);
             setReviewed(0);
+            seenRef.current = new Set();
           }}
         >
           New Session

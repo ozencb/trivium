@@ -8,10 +8,14 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const roles = searchParams.get("roles")?.split(",").filter(Boolean) ?? [];
   const lenses = searchParams.get("lenses")?.split(",").filter(Boolean) ?? [];
+  const seen = new Set(searchParams.get("seen")?.split(",").filter(Boolean) ?? []);
 
   let concepts = loadAllConcepts();
   if (roles.length || lenses.length) {
     concepts = filterConcepts(concepts, { roles, lenses });
+  }
+  if (seen.size) {
+    concepts = concepts.filter(c => !seen.has(c.id));
   }
 
   const db = getDb();
