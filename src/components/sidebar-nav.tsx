@@ -8,7 +8,7 @@ import {
   List,
   Network,
   BarChart3,
-  Github,
+  GitFork,
 } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -54,7 +54,7 @@ export function SidebarNav() {
           aria-label="GitHub"
           className="p-2 rounded-md transition-colors text-muted-foreground hover:text-foreground"
         >
-          <Github size={16} strokeWidth={1.5} />
+          <GitFork size={16} strokeWidth={1.5} />
         </a>
         <ThemeToggle compact />
       </header>
@@ -100,7 +100,7 @@ export function SidebarNav() {
             aria-label="GitHub"
             className="p-1.5 rounded-md transition-colors text-muted-foreground hover:text-foreground"
           >
-            <Github size={15} strokeWidth={1.5} />
+            <GitFork size={15} strokeWidth={1.5} />
           </a>
           <ThemeToggle />
         </div>
