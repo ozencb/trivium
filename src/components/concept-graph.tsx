@@ -49,6 +49,7 @@ export function ConceptGraph() {
     new Set(),
   );
   const [popover, setPopover] = useState<GraphNode | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/concepts")
@@ -246,19 +247,50 @@ export function ConceptGraph() {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-3 px-4 py-2.5 border-l border-border shrink-0">
-          {Object.entries(STATUS_COLORS).map(([status, color]) => (
-            <span
-              key={status}
-              className="flex items-center gap-1.5 text-[10px] text-muted-foreground whitespace-nowrap"
-            >
+        <div className="relative shrink-0 border-l border-border">
+          <button
+            onClick={() => setLegendOpen(!legendOpen)}
+            className="flex items-center gap-1 px-3 py-2.5 md:hidden"
+            aria-label="Toggle legend"
+          >
+            {Object.values(STATUS_COLORS).map((color) => (
               <span
-                className="w-2 h-2 rounded-full shrink-0"
+                key={color}
+                className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: color }}
               />
-              {status.replace("_", " ")}
-            </span>
-          ))}
+            ))}
+          </button>
+          {legendOpen && (
+            <div className="absolute right-0 top-full z-10 flex flex-col gap-2 px-4 py-3 bg-card border border-border rounded-b-lg shadow-lg md:hidden">
+              {Object.entries(STATUS_COLORS).map(([status, color]) => (
+                <span
+                  key={status}
+                  className="flex items-center gap-1.5 text-[10px] text-muted-foreground whitespace-nowrap"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  {status.replace("_", " ")}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="hidden md:flex items-center gap-3 px-4 py-2.5">
+            {Object.entries(STATUS_COLORS).map(([status, color]) => (
+              <span
+                key={status}
+                className="flex items-center gap-1.5 text-[10px] text-muted-foreground whitespace-nowrap"
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                {status.replace("_", " ")}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
