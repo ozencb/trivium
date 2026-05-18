@@ -8,6 +8,7 @@ import {
   List,
   Network,
   BarChart3,
+  Github,
 } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -46,6 +47,15 @@ export function SidebarNav() {
             </Link>
           );
         })}
+        <a
+          href="https://github.com/ozencb/trivium"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub"
+          className="p-2 rounded-md transition-colors text-muted-foreground hover:text-foreground"
+        >
+          <Github size={16} strokeWidth={1.5} />
+        </a>
         <ThemeToggle compact />
       </header>
 
@@ -82,7 +92,16 @@ export function SidebarNav() {
             })}
           </ul>
         </nav>
-        <div className="px-5 py-3 border-t border-border">
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between">
+          <a
+            href="https://github.com/ozencb/trivium"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+            className="p-1.5 rounded-md transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <Github size={15} strokeWidth={1.5} />
+          </a>
           <ThemeToggle />
         </div>
       </aside>
